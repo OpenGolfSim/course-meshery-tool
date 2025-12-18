@@ -89,3 +89,40 @@ jobs:
         with:
           name: meshery-${{ matrix.os }}
           path: ${{ steps.find_zip.outputs.zipfile }}
+
+  release:
+    needs: build
+    name: Create Release
+    runs-on: ubuntu-latest
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    steps:
+      - name: Set the version environment variable
+        run: echo "VERSION=${{ github.ref_name }}" >> $GITHUB_ENV
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: meshery-macos-latest
+          path: ./release-assets/macos
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: meshery-windows-latest
+          path: ./release-assets/windows
+
+      # - name: Re-zip macos
+      #   run: |
+      #     ditto -c -k --keepParent release-assets/macos/*/*.app ./meshery-macos.zip
+      - name: Re-zip macos
+        run: |
+          cd release-assets/macos
+          zip -r ../meshery-macos-$VERSION.zip .
+      
+      - name: Re-zip windows
+        run: |
+          cd release-assets/windows
+          zip -r ../meshery-windows-$VERSION.zip .
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/**/*.zip
