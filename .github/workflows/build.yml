@@ -37,16 +37,11 @@ jobs:
         run: npm run make
 
 
-      - name: Locate zip file and set path variable
-        id: find_zip # Give this step an ID to reference its outputs
+      - name: Locate zip file
+        id: find_zip
         run: |
-          if [ "$RUNNER_OS" == "Windows" ]; then
-            $zipFile = Get-ChildItem -Path "$($env:GITHUB_WORKSPACE)\out\make\zip\win32\x64\" -Filter *.zip | Select-Object -First 1
-            echo "ZIP_PATH=$zipFile" | Out-File -FilePath $env:GITHUB_ENV -Append
-          else
-            zipFile=$(find out/make -name "*.zip" | head -n 1)
-            echo "ZIP_PATH=$zipFile" >> $GITHUB_ENV
-          fi
+          zipfile=$(find output -type f -name '*.zip' | head -n 1)
+          echo "zipfile=$zipfile" >> $GITHUB_OUTPUT
         shell: bash
 
       # - name: Find mac zip
@@ -71,5 +66,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: meshery-${{ matrix.os }}
-          path: ${{ env.ZIP_PATH }}
+          path: ${{ steps.find_zip.outputs.zipfile }}
 
