@@ -61,7 +61,6 @@ jobs:
       
       - name: "Building electron app for windows"
         if: ${{ startsWith(matrix.os, 'windows') }}
-        env:
         run: npm run make
 
       - name: Locate zip file
