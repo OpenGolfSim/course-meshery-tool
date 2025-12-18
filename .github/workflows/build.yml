@@ -25,6 +25,9 @@ jobs:
         with:
           node-version: 20
 
+      - name: "Install dependencies"
+        run: npm install
+
       - name: "Building electron app"
         # env:
           # APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
