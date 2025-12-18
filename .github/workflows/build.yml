@@ -28,12 +28,27 @@ jobs:
       - name: "Install dependencies"
         run: npm install
 
+      - name: Import Signing Certificate
+        if: ${{ startsWith(matrix.os, 'macos') }}
+        env:
+          MACOS_KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          echo "$MACOS_CERTIFICATE"
+          echo "$MACOS_CERTIFICATE" | base64 --decode > /tmp/cert.p12
+          ls -l /tmp/cert.p12
+          security import /tmp/cert.p12 -f pkcs12 -k ~/Library/Keychains/login.keychain-db -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security unlock-keychain -p "" ~/Library/Keychains/login.keychain-db
+          security find-identity -v -p codesigning
+
       - name: "Building electron app"
-        # env:
-          # APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          # APPLE_ID: ${{ secrets.APPLE_ID }}
-          # APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
-          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        env:
+          OSX_SIGN: 1
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npm run make
 
 

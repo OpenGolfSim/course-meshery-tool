@@ -7,9 +7,23 @@ module.exports = {
     authors: 'OpenGolfSim',
     description: 'OpenGolfSim Meshery is a tool for converting and building you course meshes',
     asar: true,
+    icon: 'images/Meshery',
+    appCategoryType: 'public.app-category.developer-tools',
     extraResource: [
       './extra-resources'
-    ]
+    ],
+    ...process.env.OSX_SIGN && {
+      osxSign: {
+        identity: process.env.APPLE_SIGNING_IDENTITY,
+        hardenedRuntime: true
+      },
+      osxNotarize: {
+        tool: 'notarytool',
+        appleId: process.env.APPLE_ID,
+        appleIdPassword: process.env.APPLE_ID_PASSWORD,
+        teamId: process.env.APPLE_TEAM_ID
+      },
+    }
   },
   rebuildConfig: {},
   makers: [
