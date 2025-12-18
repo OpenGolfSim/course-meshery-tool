@@ -7,7 +7,10 @@ contextBridge.exposeInMainWorld('meshery', {
   clearSVG: () => ipcRenderer.invoke('svg.clear'),
   selectTerrainFile: () => ipcRenderer.invoke('raw.select'),
   clearTerrain: () => ipcRenderer.invoke('raw.clear'),
-  generateMesh: (layer, heightScale) => ipcRenderer.invoke('mesh.generate', layer, heightScale),
   exportMeshes: (meshData) => ipcRenderer.invoke('mesh.export', meshData),
-  getCurrentState: () => ipcRenderer.invoke('state.get'),
+  // getCurrentState: () => ipcRenderer.invoke('state.get'),
+  openExternalUrl: (href) => ipcRenderer.invoke('url.open', href),
+  on: (event, callback) => ipcRenderer.on(event, callback),
+  off: (event, callback) => ipcRenderer.off(event, callback),
+  // onError: (callback) => ipcRenderer.on('error', callback),
 });

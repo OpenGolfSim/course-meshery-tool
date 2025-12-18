@@ -1,8 +1,114 @@
 const PoissonDiskSampling = require('poisson-disk-sampling');
+const PolygonOffset = require("polygon-offset");
 const { Delaunay } = require('d3-delaunay');
+const logger = require('electron-log/renderer');
 
 const EPSILON = 1e-8; // or whatever small threshold
 
+const log = logger.scope('WORKER');
+
+function smoothHeightMap(heights, terrainSize, radius = 1, passes = 1) {
+  if (!heights || terrainSize < 2 || radius < 1) return heights;
+  let input = heights.slice();
+  let output = new Float32Array(heights.length);
+
+  for (let pass = 0; pass < passes; pass++) {
+    for (let z = 0; z < terrainSize; z++) {
+      for (let x = 0; x < terrainSize; x++) {
+        let sum = 0, count = 0;
+        for (let dz = -radius; dz <= radius; dz++) {
+          for (let dx = -radius; dx <= radius; dx++) {
+            const nx = x + dx, nz = z + dz;
+            if (nx >= 0 && nx < terrainSize && nz >= 0 && nz < terrainSize) {
+              sum += input[nz * terrainSize + nx];
+              count++;
+            }
+          }
+        }
+        output[z * terrainSize + x] = sum / count;
+      }
+    }
+    // Swap buffers for next pass if more
+    [input, output] = [output, input];
+  }
+  // If odd number of passes, result is in input, else in output
+  return (passes % 2 === 1)
+    ? Float32Array.from(input)
+    : Float32Array.from(output);
+}
+
+function preserveBoundaryAndDedupe(boundaryPts, holePts, extraPts, minDist = 0.02) {
+  if (!minDist) minDist = 1e-6;
+  const minDistSq = minDist * minDist;
+
+  // Start with boundary and hole points always preserved
+  const output = [...boundaryPts, ...holePts];
+
+  for (let i = 0; i < extraPts.length; i++) {
+    const [x, y] = extraPts[i];
+    let tooClose = false;
+
+    // Check against all preserved points
+    for (let j = 0; j < output.length; j++) {
+      const [bx, by] = output[j];
+      const dx = x - bx, dy = y - by;
+      if (dx * dx + dy * dy < minDistSq) {
+        tooClose = true;
+        break;
+      }
+    }
+
+    // Also check already accepted added points
+    if (!tooClose) {
+      output.push(extraPts[i]);
+    }
+  }
+  return output;
+}
+
+function sampleAlongRing(ring, edgeDensity) {
+  let points = [];
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i];
+    const b = ring[(i + 1) % ring.length];
+    const dist = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const nDivs = Math.max(1, Math.ceil(dist / edgeDensity));
+    for (let t = 0; t < nDivs; t++) {
+      points.push([
+        a[0] + (b[0] - a[0]) * (t / nDivs),
+        a[1] + (b[1] - a[1]) * (t / nDivs)
+      ]);
+    }
+  }
+  return points;
+}
+
+function adaptiveMinDistanceFactory(layer, minX, minY) {
+  // Edge settings, fallback to spacing
+  const edgeMin = layer.edge?.edgeDensity ?? layer.spacing;
+  const edgeThreshold = layer.edge?.threshold ?? 0;
+  const baseSpacing = layer.spacing;
+
+  return function adaptiveMinDistance({ x, y }) {
+    // x, y are in bbox; transform to mesh coords
+    const px = x + minX, py = y + minY;
+
+    const distToOuter = distanceToPolygonEdge([px, py], layer.polygon);
+    let distToInner = Infinity;
+    for (const hole of layer.holes) {
+      const d = distanceToPolygonEdge([px, py], hole);
+      if (d < distToInner) distToInner = d;
+    }
+    const minDistToEdge = Math.min(distToOuter, distToInner);
+
+    if (layer.edge && edgeThreshold > 0 && minDistToEdge <= edgeThreshold) {
+      // Linear interpolation: closest to edge = edgeMin, fades up to baseSpacing
+      return edgeMin + (baseSpacing - edgeMin) * (minDistToEdge / edgeThreshold);
+    } else {
+      return baseSpacing;
+    }
+  };
+}
 
 function computeVertexColors(allPoints, polygon, holes, blendDist = 2) {
   const vertexColors = []; // Flat array: [r,g,b,a, r,g,b,a, ...] or however you need
@@ -12,7 +118,6 @@ function computeVertexColors(allPoints, polygon, holes, blendDist = 2) {
     const [x, z] = allPoints[i];
     const pt = [x, z];
     const distToOuter = distanceToPolygonEdge(pt, polygon);
-
 
     // Compute 2D distance to outer edge (polygon, not holes)
     // const distToOuter = distanceToPolygonEdge([x, z], polygon);
@@ -62,6 +167,7 @@ function computeVertexColors(allPoints, polygon, holes, blendDist = 2) {
   }
   return vertexColors;
 }
+
 function digMesh(positions, polygon, holes, depth = 2, curve = 'smooth', curvePower = 2) {
   let maxDist = 0;
   const insideList = [];
@@ -101,6 +207,7 @@ function distanceToPolygonEdge(pt, ring) {
   }
   return min;
 }
+
 function pointToSegmentDist(px, py, x1, y1, x2, y2) {
   const dx = x2 - x1, dy = y2 - y1;
   if (dx === 0 && dy === 0) return Math.hypot(px - x1, py - y1);
@@ -109,7 +216,6 @@ function pointToSegmentDist(px, py, x1, y1, x2, y2) {
   const xx = x1 + t * dx, yy = y1 + t * dy;
   return Math.hypot(px - xx, py - yy);
 }
-
 
 function svgToTerrain(x, z, svgSize, terrainSize = 4097) {
   // Clamp/limit to prevent overflow on edges
@@ -139,7 +245,6 @@ function interpHeight(heights, tx, tz, terrainSize = 4097) {
   const h1 = h01 * (1 - fx) + h11 * fx;
   return h0 * (1 - fz) + h1 * fz;
 }
-
 
 function isPointInPolygon(point, ring, holes) {
   if (!pointInRing(point, ring)) return false;
@@ -192,29 +297,74 @@ function triangleArea2D(p0, p1, p2) {
   );
 }
 
-function generateMesh({ layer, settings: { heightMap, svgWidth, terrainSize, heightScale } }) {
+function distanceWeight(dist, maxDist) {
+  return dist >= maxDist ? 0 : dist <= 0 ? 1 : 1 - dist / maxDist;
+}
+
+function generateMesh({ layer, settings: { heightMap, svgSize, terrainSize, heightScale } }) {
   // console.time('diskSample');
   const boundaryPts = layer.polygon;
   const holePts = layer.holes.flat();
   // const { pts, triangles } = triangulateWithConstraints(layer.polygon, layer.holes || [], spacing);
   const { width, height, minY, minX } = getBoundingBox([layer.polygon, ...layer.holes]);
 
+  // TODO: move to setting on layer
+  const edgeInfluenceRange = 5;
+
   // Sample points with Poisson-disk
   const pds = new PoissonDiskSampling({
     shape: [width, height], // use polygon bbox
     minDistance: layer.spacing,   // controls "edge length" of triangles
+    // minDistance: adaptiveMinDistanceFactory(layer, minX, minY),
+    // minDistance: ({ x, y }) => adaptiveMinDistance(layer, [x + minX, y + minY]),
+    // minDistance: ({ x, y }) => getAdaptiveMinDistance([x + minX, y + minY], layer.polygon, layer.holes, layer.spacing),
     tries: 30
   });
 
   // Optionally seed with boundary/holes points to preserve contour
   layer.polygon.forEach(point => pds.addPoint(point));
-
   layer.holes.forEach(h => h.forEach(p => pds.addPoint(p)));
+
   // const pts = pds.fill();
   const samples = pds.fill().map(([x, y]) => [x + minX, y + minY]);
   // console.timeEnd('diskSample');
   const interiorSamples = samples.filter(pt => isPointInPolygon(pt, layer.polygon, layer.holes));
-  const allPoints = [...boundaryPts, ...holePts, ...interiorSamples];
+
+  // if (layer.edge?.edgeDensity && layer.edge.threshold > 0) {
+  //   const offset = new PolygonOffset();
+  //   // How many rings inward to cover threshold?
+  //   const nRings = 1; // Math.ceil(layer.edge.threshold / layer.edge.edgeDensity);
+
+  //   for (let r = 1; r <= nRings; r++) {
+  //     const distance = -r * layer.edge.edgeDensity;
+  //     let offsetPoly = offset.data(layer.polygon).offset(distance)[0];
+
+  //     // Defensive: skip empty, degenerate, or self-intersecting rings
+  //     if (!offsetPoly) continue;
+  //     if (offsetPoly.length < 3) continue;
+
+  //     // Optionally, remove points closer than a certain threshold within the ring itself
+  //     let filteredRing = [];
+  //     for (let pt of offsetPoly) {
+  //       if (!filteredRing.some(p => Math.hypot(p[0] - pt[0], p[1] - pt[1]) < 1e-6)) {
+  //         filteredRing.push(pt);
+  //       }
+  //     }
+  //     if (filteredRing.length < 3) continue;
+
+  //     edgeRingPoints.push(...sampleAlongRing(filteredRing, layer.edge.edgeDensity));
+  //   }
+
+  //   // for (let r = 1; r <= nRings; r++) {
+  //   //   const distance = -r * layer.edge.edgeDensity; // Negative for inward offset
+  //   //   const offsetPoly = offset.data(layer.polygon).offset(distance)[0];
+  //   //   if (!offsetPoly) break; // Sometimes polygon vanishes if too much inset
+  //   //   edgeRingPoints.push(...sampleAlongRing(offsetPoly, layer.edge.edgeDensity));
+  //   // }
+  //   // Optionally: Also process holes, outwards, in similar fashion
+  // }
+
+  const allPoints = preserveBoundaryAndDedupe(boundaryPts, holePts, interiorSamples);
 
   // console.time('triangulation');
   // Delaunay triangulation
@@ -237,12 +387,15 @@ function generateMesh({ layer, settings: { heightMap, svgWidth, terrainSize, hei
 
 
   const positions = [];
+  let finalHeightMap = heightMap;
+  finalHeightMap = smoothHeightMap(heightMap, terrainSize, 2);
+
   for (const [x, z] of allPoints) {
     let y = 0;
     if (heightMap) {
-      const [tx, tz] = svgToTerrain(x, z, svgWidth, terrainSize);
+      const [tx, tz] = svgToTerrain(x, z, svgSize[0], terrainSize);
       // Get/interpolate terrain height
-      y = interpHeight(heightMap, tx, tz, 4097);
+      y = interpHeight(finalHeightMap, tx, tz, terrainSize);
 
       // If Unity height range is [0, 65535], you might want to scale to meters
       // For example, if your terrain in Unity is 600m tall, scale = 600/65535
@@ -255,37 +408,28 @@ function generateMesh({ layer, settings: { heightMap, svgWidth, terrainSize, hei
   }
 
   if (layer.dig?.depth) {
-    console.log('layer.dig', layer.id, layer.dig);
     digMesh(positions, layer.polygon, layer.holes, layer.dig.depth, layer.dig.curve, layer.dig.curvePower);
   }
-  const colors = computeVertexColors(allPoints, layer.polygon, layer.holes, layer.blend);
-  console.log('gen-colors', colors);
+
+  // fill with white
+  let colors = new Array(allPoints.length * 3).fill(1);
+  if (layer.blend && layer.blend > 0) {
+    colors = computeVertexColors(allPoints, layer.polygon, layer.holes, layer.blend);
+  }
+
   return {
     triangles: finalTriangles,
     points: positions,
     colors
   };
+
 }
 
 
-// Data passed during worker creation is available here
-// console.log(`Worker received data: ${workerData}`);
-
-// Perform a CPU-intensive calculation
-// let result = 0;
-// for (let i = 0; i < 1_000_000_000; i++) {
-//   result++;
-// }
-// Send the result back to the main thread
-// parentPort.postMessage(result);
-
-// parentPort.on('message', (message) => {
-//   if (message.action === 'generate') {
-
-//   }
-// });
-
 self.onmessage = (event) => {
-  const result = generateMesh(event.data);
-  postMessage({ ...event.data, mesh: result });
+  if (event.data) {
+    log.info(`Starting mesh worker job: ${event.data.layer.id}`);
+    const result = generateMesh(event.data);
+    postMessage({ ...event.data, mesh: result });
+  }
 };

@@ -18,42 +18,6 @@ import { useFrame } from '@react-three/fiber';
 
 export default function MeshLayer(props) {
   const ref = useRef();
-  // const api = useBounds();
-
-  // const boundaryPts = props.layer.polygon; // [[x, y], ...]  (original shape)
-  // const holePts = props.layer.holes.flat(); // [[x, y], ...]
-  // // const { pts, triangles } = triangulateWithConstraints(props.layer.polygon, props.layer.holes || [], spacing);
-  // const {width, height, minY, minX} = getBoundingBox([props.layer.polygon, ...props.layer.holes]);
-
-  // // Sample points with Poisson-disk
-  // const pds = new PoissonDiskSampling({
-  //   shape: [width, height], // use polygon bbox
-  //   minDistance: props.layer.spacing,   // controls "edge length" of triangles
-  //   tries: 30
-  // });
-
-  // // Optionally seed with boundary/holes points to preserve contour
-  // props.layer.polygon.forEach(point => pds.addPoint(point));
-
-  // props.layer.holes.forEach(h => h.forEach(p => pds.addPoint(p)));
-  // // const pts = pds.fill();
-  // const samples = pds.fill().map(([x, y]) => [x + minX, y + minY]);
-  // const interiorSamples = samples.filter(pt => isPointInPolygon(pt, props.layer.polygon, props.layer.holes));
-  // const allPoints = [...boundaryPts, ...holePts, ...interiorSamples];
-
-  // // Delaunay triangulation
-  // const delaunay = Delaunay.from(allPoints);
-  // const triangles = Array.from(delaunay.triangles); // grouped as [i0, i1, i2,...]
-
-  // // Remove triangles whose centroid is outside the polygon:
-  // const finalTriangles = [];
-  // for (let i = 0; i < triangles.length; i += 3) {
-  //   const [a, b, c] = [triangles[i], triangles[i+1], triangles[i+2]];
-  //   const centroid = triCentroid(allPoints[a], allPoints[b], allPoints[c]);
-  //   if (isPointInPolygon(centroid, props.layer.polygon, props.layer.holes)) {
-  //     finalTriangles.push([a, b, c]);
-  //   }
-  // }
 
   const { generateMesh, settings } = useMeshery();
   const [material, setMaterial] = useState(new THREE.MeshBasicMaterial({ 
@@ -92,29 +56,7 @@ export default function MeshLayer(props) {
     // timer.current = setTimeout(delayedAction, 1000);  
     // console.log('effect');
     delayedAction();
-
-    // console.log('regnerate mesh', worker);
-    // worker.postMessage({ layer: props.layer, heightScale: props.heightScale });
-
-    // window.meshery.generateMesh(props.layer, props.heightScale).then(data => {
-    //   console.log('data', data);
-    //   setMeshData(data);
-    //   if (props.onLoaded) {
-    //     props.onLoaded(props.layer);
-    //   }
-    // });
   }, [props.layer.mesh]);
-
-  // const handleWorkerMessage = (event) => {
-  //   console.log(`Worker said : "${event.data}"`);
-  // }
-
-  // useEffect(() => {
-  //   worker.addEventListener('message', handleWorkerMessage);
-  //   return () => {
-  //     worker.removeEventListener('message', handleWorkerMessage);
-  //   }
-  // }, []);
 
   const geometry = useMemo(() => {
     const geometry = new THREE.BufferGeometry();
@@ -123,9 +65,6 @@ export default function MeshLayer(props) {
     }
     const positions = meshData.points;
     const indices = meshData.triangles;
-    console.log('positions', positions.length);
-    console.log('indices', indices.length);
-    console.log('colors', meshData.colors);
 
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     geometry.setIndex(indices);
@@ -147,15 +86,6 @@ export default function MeshLayer(props) {
 
 
   const toggleColors = useCallback(() => {
-    console.log('toggleColors', settings.vertexColors, settings.wireframe);
-    // if (!settings.vertexColors) {
-    //   // Switch back to vertex colors
-    //   material.color = new THREE.Color(1, 1, 1); // Reset base color if needed
-    // } else {
-    //   // Switch to a solid color (hide vertex colors)
-    //   // material.vertexColors = false; // Crucial to turn off
-    //   material.color = new THREE.Color(`#${props.layer.color}`);
-    // }
     material.color = !!settings.vertexColors ? new THREE.Color(1, 1, 1) : new THREE.Color(`#${props.layer.color}`);
     material.vertexColors = !!settings.vertexColors;
     material.wireframe = !!settings.wireframe;
@@ -175,11 +105,6 @@ export default function MeshLayer(props) {
   useEffect(() => {
     if (geometry) {
       toggleColors();
-      // const colorsAttribute = geometry.getAttribute('color');
-      // if (colorsAttribute) {
-      //   console.log("UPDATE!");
-      //   colorsAttribute.needsUpdate = true;
-      // }
     }
   }, [geometry, settings.vertexColors, settings.wireframe]);
 
@@ -221,7 +146,7 @@ export default function MeshLayer(props) {
       ref={ref}
       name={props.layer.id}
       geometry={geometry}
-      position={[-(props.viewBox[0]/2), 0, -(props.viewBox[0]/2)]}
+      position={[-(settings.svgSize[0]/2), 0, -(settings.svgSize[0]/2)]}
       onClick={handleMeshClick}
       material={material}
     >

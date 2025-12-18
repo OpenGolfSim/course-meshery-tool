@@ -3,7 +3,13 @@ const { FuseV1Options, FuseVersion } = require('@electron/fuses');
 
 module.exports = {
   packagerConfig: {
+    name: 'Meshery',
+    authors: 'OpenGolfSim',
+    description: 'OpenGolfSim Meshery is a tool for converting and building you course meshes',
     asar: true,
+    extraResource: [
+      './extra-resources'
+    ]
   },
   rebuildConfig: {},
   makers: [
@@ -13,7 +19,7 @@ module.exports = {
     },
     {
       name: '@electron-forge/maker-zip',
-      platforms: ['darwin'],
+      platforms: ['darwin', 'win32'],
     },
     {
       name: '@electron-forge/maker-deb',
