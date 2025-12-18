@@ -36,15 +36,40 @@ jobs:
           # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npm run make
 
-      - name: Find zip output
-        id: zipfile
+
+      - name: Locate zip file and set path variable
+        id: find_zip # Give this step an ID to reference its outputs
         run: |
-          ZIP_PATH=$(find out/make -name '*.zip' | head -n 1)
-          echo "zip_path=$ZIP_PATH" >> $GITHUB_OUTPUT
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            $zipFile = Get-ChildItem -Path "$($env:GITHUB_WORKSPACE)\out\make\zip\win32\x64\" -Filter *.zip | Select-Object -First 1
+            echo "ZIP_PATH=$zipFile" >> $env:GITHUB_ENV
+          else
+            zipFile=$(find out/make -name '*.zip' | head -n 1)
+            echo "ZIP_PATH=$zipFile" >> $GITHUB_ENV
+          fi
+        shell: bash # Use bash as the shell for the "run" command to handle the if/else logic easily
+
+      # - name: Find mac zip
+      #   id: zipfile
+      #   if: ${{ startsWith(matrix.os, 'macos') }}
+      #   run: |
+      #     ZIP_PATH=$(find out/make -name '*.zip' | head -n 1)
+      #     echo "zip_path=$ZIP_PATH" >> $GITHUB_OUTPUT
+
+      # - name: Find windows zip
+      #   id: zipfile
+      #   if: ${{ startsWith(matrix.os, 'windows') }}
+      #   run: |
+      #     dir "$($env:GITHUB_WORKSPACE)\out\make\zip\win32\x64\"
+      #     $zipFile = Get-ChildItem -Path "$($env:GITHUB_WORKSPACE)\out\make\zip\win32\x64\" -Filter *.zip | Select-Object -First 1
+      #     if ($zipFile) {
+      #       echo "ZIP_RELEASE=desktop-beta/artifacts/OpenGolfSim-${{ env.SHORT_SHA }}/$($zipFile.Name)" | Out-File -FilePath $env:GITHUB_ENV -Append
+      #     }
+
 
       - name: Upload zip artifact
         uses: actions/upload-artifact@v4
         with:
-          name: electron-forge-zip
-          path: ${{ steps.zipfile.outputs.zip_path }}
+          name: meshery-${{ matrix.os }}
+          path: ${{ env.ZIP_PATH }}
 
