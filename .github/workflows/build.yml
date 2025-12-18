@@ -26,7 +26,7 @@ jobs:
           node-version: 20
 
       - name: "Building electron app"
-        env:
+        # env:
           # APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           # APPLE_ID: ${{ secrets.APPLE_ID }}
           # APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
