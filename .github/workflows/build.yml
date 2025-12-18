@@ -42,12 +42,12 @@ jobs:
         run: |
           if [ "$RUNNER_OS" == "Windows" ]; then
             $zipFile = Get-ChildItem -Path "$($env:GITHUB_WORKSPACE)\out\make\zip\win32\x64\" -Filter *.zip | Select-Object -First 1
-            echo "ZIP_PATH=$zipFile" >> $env:GITHUB_ENV
+            echo "ZIP_PATH=$zipFile" | Out-File -FilePath $env:GITHUB_ENV -Append
           else
-            zipFile=$(find out/make -name '*.zip' | head -n 1)
+            zipFile=$(find out/make -name "*.zip" | head -n 1)
             echo "ZIP_PATH=$zipFile" >> $GITHUB_ENV
           fi
-        shell: bash # Use bash as the shell for the "run" command to handle the if/else logic easily
+        shell: bash
 
       # - name: Find mac zip
       #   id: zipfile
