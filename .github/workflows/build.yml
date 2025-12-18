@@ -49,15 +49,20 @@ jobs:
       #     security unlock-keychain -p "" ~/Library/Keychains/login.keychain-db
       #     security find-identity -v -p codesigning
 
-      - name: "Building electron app"
+      - name: "Building electron app for mac"
+        if: ${{ startsWith(matrix.os, 'macos') }}
         env:
           OSX_SIGN: 1
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npm run make -- --arch=universal --platform=darwin
+      
+      - name: "Building electron app for windows"
+        if: ${{ startsWith(matrix.os, 'windows') }}
+        env:
         run: npm run make
-
 
       - name: Locate zip file
         id: find_zip
@@ -112,15 +117,15 @@ jobs:
       # - name: Re-zip macos
       #   run: |
       #     ditto -c -k --keepParent release-assets/macos/*/*.app ./meshery-macos.zip
-      - name: Re-zip macos
-        run: |
-          cd release-assets/macos
-          zip -r ../meshery-macos-$VERSION.zip .
+      # - name: Re-zip macos
+      #   run: |
+      #     cd release-assets/macos
+      #     zip -r ../meshery-macos-$VERSION.zip .
       
-      - name: Re-zip windows
-        run: |
-          cd release-assets/windows
-          zip -r ../meshery-windows-$VERSION.zip .
+      # - name: Re-zip windows
+      #   run: |
+      #     cd release-assets/windows
+      #     zip -r ../meshery-windows-$VERSION.zip .
 
       - name: Create release
         uses: softprops/action-gh-release@v2
