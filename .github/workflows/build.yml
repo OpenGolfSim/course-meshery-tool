@@ -40,8 +40,8 @@ jobs:
       - name: Locate zip file
         id: find_zip
         run: |
-          zipfile=$(find output -type f -name '*.zip' | head -n 1)
-          echo "zipfile=$zipfile" >> $GITHUB_OUTPUT
+          ZIP_PATH=$(find out/make -name '*.zip' | head -n 1)
+          echo "zipfile=$ZIP_PATH" >> $GITHUB_OUTPUT
         shell: bash
 
       # - name: Find mac zip
