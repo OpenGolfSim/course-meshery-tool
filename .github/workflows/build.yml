@@ -1,0 +1,47 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+    branches: ["main"]
+
+jobs:
+
+  build:
+    name: Building Meshery
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v1
+
+      - name: Install node + npm
+        uses: actions/setup-node@v1
+        with:
+          node-version: 20
+
+      - name: "Building electron app"
+        env:
+          # APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          # APPLE_ID: ${{ secrets.APPLE_ID }}
+          # APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npm run make
+
+      - name: Find zip output
+        id: zipfile
+        run: |
+          ZIP_PATH=$(find out/make -name '*.zip' | head -n 1)
+          echo "zip_path=$ZIP_PATH" >> $GITHUB_OUTPUT
+
+      - name: Upload zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: electron-forge-zip
+          path: ${{ steps.zipfile.outputs.zip_path }}
+
