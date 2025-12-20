@@ -1,7 +1,7 @@
 {
   "name": "ogs-meshery",
   "productName": "ogs-meshery",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "A course building tool to create course meshes",
   "main": ".webpack/main",
   "scripts": {
