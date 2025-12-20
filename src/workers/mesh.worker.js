@@ -1,7 +1,7 @@
 import Delaunator from 'delaunator';
 import PoissonDiskSampling from 'poisson-disk-sampling';
 // const PolygonOffset = require("polygon-offset");
-const { Delaunay } = require('d3-delaunay');
+import { Delaunay } from 'd3-delaunay';
 import logger from 'electron-log/renderer';
 import { smoothTerrainData } from '../lib/terrain';
 import { distanceToPolygonEdge, isPointInPolygon } from '../lib/mesh';
