@@ -63,12 +63,16 @@ jobs:
         if: ${{ startsWith(matrix.os, 'windows') }}
         run: npm run make
 
-      - name: Locate zip file
+      - name: Locate and rename zip file
         id: find_zip
+        env:
+          ZIP_NAME=meshery-${{ matrix.os }}.zip
         run: |
           ZIP_PATH=$(find out/make -name '*.zip' | head -n 1)
-          echo "zipfile=$ZIP_PATH" >> $GITHUB_OUTPUT
+          mv $ZIP_PATH out/$ZIP_NAME
+          echo "zipfile=out/$ZIP_NAME" >> $GITHUB_OUTPUT
         shell: bash
+
 
       # - name: Find mac zip
       #   id: zipfile
@@ -129,4 +133,6 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          files: release-assets/**/*.zip
+          files: |
+            
+          # files: release-assets/**/*.zip
