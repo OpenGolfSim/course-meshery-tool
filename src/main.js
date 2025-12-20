@@ -9,24 +9,6 @@ import { parseRaw } from './lib/heightmap';
 import { resourceRoot } from './lib/app';
 import { dataCache, smoothTerrainData } from './lib/terrain';
 
-const basePath = 'brian/react-devtools';
-const reactDevToolsPath = path.join(resourceRoot(), basePath);
-
-// let formContext = {
-//   layers: [],
-//   svg: null,
-//   raw: null
-// };
-// let palette;
-
-// const logPreload = path.join(resourceRoot(), 'electron-log-preload.js');
-// console.log('logPreload', logPreload);
-
-// log.initialize();
-
-// let svgState = { layers: [], svg: null };
-// let rawState = { raw: null };
-
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (require('electron-squirrel-startup')) {
   app.quit();
@@ -59,22 +41,18 @@ const createWindow = async () => {
   mainWindow.webContents.openDevTools();
 };
 
-// This method will be called when Electron has finished
-// initialization and is ready to create browser windows.
-// Some APIs can only be used after this event occurs.
 app.whenReady().then(async () => {
-  // try {
-  //   palette = await parsePalette();
-  // } catch (error) {
-  //   log.error('Unable to load color palette', error);
-  // }
 
-  const ext = await session.defaultSession.extensions.loadExtension(
-    reactDevToolsPath, { allowFileAccess: true }
-  );
-  console.log('ext', ext);
+  if (process.env.REACT_DEVTOOLS) {
+    const ext = await session.defaultSession.extensions.loadExtension(
+      process.env.REACT_DEVTOOLS, { allowFileAccess: true }
+    );
+    if (ext?.version) {
+      log.info(`Loaded dev tools extension: ${ext?.version}`);
+    }
+  }
+
   createWindow();
-  // const ext = await session.defaultSession.loadExtension(reactDevToolsPath, { allowFileAccess: false });
 
   // On OS X it's common to re-create a window in the app when the
   // dock icon is clicked and there are no other windows open.
@@ -138,17 +116,6 @@ ipcMain.handle('url.open', async (_, href) => {
     shell.openExternal(href);
   }
 });
-
-// ipcMain.handle('svg.clear', async () => {
-//   formContext = {
-//     ...formContext,
-//     layers: [],
-//     svg: null,
-//     height: null,
-//     width: null
-//   };
-//   return formContext;
-// });
 
 ipcMain.handle('raw.select', async (event, layer) => {
   const result = await dialog.showOpenDialog({
