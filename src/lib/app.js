@@ -1,7 +1,5 @@
-const { app } = require('electron');
+import { app } from 'electron';
 
-function resourceRoot() {
+export function resourceRoot() {
   return app.isPackaged ? process.resourcesPath : app.getAppPath();
 }
-
-module.exports = { resourceRoot };

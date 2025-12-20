@@ -36,6 +36,7 @@ export default function ErrorDialog(props) {
         {/* <Stack direction="column" spacing={3}> */}
           <Button
             fullWidth
+            color="secondary"
             variant="contained"
             startIcon={<MenuBookIcon />}
             onClick={() => window.meshery.openExternalUrl('https://help.opengolfsim.com/tools')}

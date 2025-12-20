@@ -3,6 +3,74 @@ import * as THREE from 'three';
 import { useMeshery } from '../contexts/Meshery.jsx';
 import { useBounds } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
+import log from 'electron-log/renderer';
+import { isPointInPolygon, distanceToPolygonEdge } from '../lib/mesh';
+
+function cubicBezierY(points, t) {
+  // points: [[x0,y0], [x1,y1], [x2,y2], [x3,y3]]
+  // t: [0,1]
+  const y0 = 1 - points[0][1];
+  const y1 = 1 - points[1][1];
+  const y2 = 1 - points[2][1];
+  const y3 = 1 - points[3][1];
+  const mt = 1 - t;
+  return (
+    y0 * mt * mt * mt +
+    3 * y1 * mt * mt * t +
+    3 * y2 * mt * t * t +
+    y3 * t * t * t
+  );
+}
+
+function digMesh(original, positions, polygon, holes, digOptions) {
+  const { curvePower, curve, curvePoints, depth, distance } = digOptions;
+  let maxDist = 0;
+  const insideList = [];
+
+  for (let i = 0; i < original.length; i += 3) {
+    const x = original[i];
+    const y = original[i + 1];
+    const z = original[i + 2];
+
+    const pt2D = [x, z]; // [x,z] for polygon
+    if (isPointInPolygon(pt2D, polygon, holes)) {
+      const dist = distanceToPolygonEdge(pt2D, polygon);
+      if (dist > maxDist) maxDist = dist;
+      insideList.push({ idx: i / 3, dist, point: [x, y, z] });
+    }
+  }
+  console.log('maxDist', maxDist);
+  const digDistance = distance * maxDist;
+
+  for (const obj of insideList) {
+    let t = Math.min(obj.dist / digDistance, 1);
+    // let t = maxDist ? obj.dist / maxDist : 0;
+    // console.log('draw', t, obj);
+    let f;
+    switch (curve) {
+      case 'linear':
+        f = t;
+        break;
+      case 'pow':
+        f = 1 - Math.pow(1 - t, curvePower);
+        break; // Inverted!
+      case 'sine':
+        f = Math.sin(t * Math.PI / 2);
+        break;
+      case 'bezier':
+        // ??
+        f = cubicBezierY(curvePoints, t);
+        break;
+      default:
+        f = t * t * (3 - 2 * t);
+    }
+    // Lower the y (height) value
+    // positions[obj.idx] -= f * depth;
+    const [x, y, z] = obj.point;
+    const reduce = (f * depth);
+    positions.setXYZ(obj.idx, x, y - reduce, z);
+  }
+}
 // import path from 'node:path';
 
 // import { svgToTerrain, interpHeight } from '../utils/terrain';
@@ -19,62 +87,83 @@ import { useFrame } from '@react-three/fiber';
 export default function MeshLayer(props) {
   const ref = useRef();
 
-  const { generateMesh, settings } = useMeshery();
+  const { generateMesh, conformMesh, finalHeightMap, settings, updateLayerById } = useMeshery();
   const [material, setMaterial] = useState(new THREE.MeshBasicMaterial({ 
     wireframe: settings.wireframe,
-    vertexColors: settings.vertexColors
-    // transparent: true,
+    vertexColors: settings.vertexColors,
+    transparent: true,
+    opacity: 1
     // opacity: 0.8,
   }))
-  const [meshData, setMeshData] = useState();
+  // const [meshData, setMeshData] = useState();
 
   const timer = useRef();
-  const delayedAction = useCallback(() => {
-    generateMesh({
-      layer: props.layer
-      // heightScale: props.heightScale,
-      // terrainSize: props.terrainSize,
-    }).then(response => {
-      if (response.mesh) {
-        setMeshData(response.mesh);
-      }
+  const delayedAction = useCallback(async () => {
+    try {
+      const response = await generateMesh(props.layer);
+      // if (response.mesh) {
+      //   setMeshData(response.mesh);
+      // }
+      console.log('response', props.layer.id, response);
+      updateLayerById(props.layer.id, { mesh: response.mesh });
+
+      // const conformed = await conformMesh(props.layer); // { layer: props.layer, mesh: response.mesh });
+      // if (conformed.mesh.points) {
+      //   updateLayerById(props.layer.id, { mesh: { ...response.mesh, points: conformed.mesh.points } });
+      //   // setMeshData(old => ({ ...old, points: conformed.mesh.points }));
+      // }
+      
       if (props.onLoaded) {
         props.onLoaded(props.layer);
       }
-    }).catch(error => {
-      console.error('mesh error', error);
-    });
+    } catch (error) {
+      log.error('mesh error', error);
+    }
   }, [props.layer, props.onLoaded]);
 
 
-  useEffect(() => {
-    clearTimeout(timer.current);
-    if (props.layer.mesh) {
-      return;
-    }
-    // debounce
-    // timer.current = setTimeout(delayedAction, 1000);  
-    // console.log('effect');
-    delayedAction();
-  }, [props.layer.mesh]);
+  // useEffect(() => {
+  //   clearTimeout(timer.current);
+  //   if (props.layer.mesh) {
+  //     return;
+  //   }
+  //   // debounce
+  //   // timer.current = setTimeout(delayedAction, 1000);  
+  //   // console.log('effect');
+  //   delayedAction();
+  // }, [props.layer.mesh]);
+
+  const meshPosition = useMemo(() => {
+    return [-(settings.svgSize[0]/2), 0, -(settings.svgSize[1]/2)];
+  }, [settings.svgSize]);
 
   const geometry = useMemo(() => {
     const geometry = new THREE.BufferGeometry();
-    if (!meshData) {
+    if (!props.layer.mesh) {
       return geometry;
     }
-    const positions = meshData.points;
-    const indices = meshData.triangles;
-
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    const positions = props.layer.mesh.points;
+    const indices = props.layer.mesh.triangles;
+    const positionAttr = new THREE.Float32BufferAttribute(positions, 3);
+    // initial dig
+    if (props.layer.dig?.depth) {
+      digMesh(
+        positions,
+        positionAttr,
+        props.layer.polygon,
+        props.layer.holes,
+        props.layer.dig
+      );
+    }
+    geometry.setAttribute('position', positionAttr);
     geometry.setIndex(indices);
 
     // geometry.setIndex(new Uint32Array(indices));
     geometry.computeVertexNormals();
-    if (meshData.colors) {
+    if (props.layer.mesh.colors) {
       geometry.setAttribute(
         'color',
-        new THREE.Float32BufferAttribute(meshData.colors, 3)
+        new THREE.Float32BufferAttribute(props.layer.mesh.colors, 3)
       );    
     }
     
@@ -82,7 +171,7 @@ export default function MeshLayer(props) {
     // geometry.computeBoundingSphere();
     
     return geometry;
-  }, [meshData?.points, meshData?.triangles, meshData?.colors]);
+  }, [props.layer.mesh]);
 
 
   const toggleColors = useCallback(() => {
@@ -94,6 +183,7 @@ export default function MeshLayer(props) {
     setMaterial(material);
   }, [material, settings.vertexColors, settings.wireframe]);
 
+
   // Update the geometry colors if needed (e.g., on interaction)
   // For this example, we're just toggling the material, but you'd update `colors.needsUpdate = true` here.
   useFrame(() => {
@@ -101,6 +191,91 @@ export default function MeshLayer(props) {
       geometry.colorsNeedUpdate = false; // Reset flag
     }
   });
+
+  const debounceTimer = useRef();
+
+  // const reConformMesh = useCallback(() => {
+  //   console.log('Reconforming mesh', props.layer, settings);
+  //   conformMesh(props.layer).then(response => {
+  //     // updateLayerById(props.layer.id, { mesh: response.mesh, conformed: true });
+  //   }).catch(error => {
+  //     console.warn(error);
+  //   });
+  // }, [settings, props.layer]);
+
+  // useEffect(() => {
+  //   if (props.layer.mesh && finalHeightMap) {
+  //     clearTimeout(debounceTimer.current);
+  //     debounceTimer.current = setTimeout(reConformMesh, 600);
+  //   }
+  // }, [
+  //   // settings.rawFilePath,
+  //   finalHeightMap,
+  //   settings.heightScale
+  // ]);
+
+  // useEffect(() => {
+  //   if (props.layer.mesh && !props.layer.conformed) {
+  //     console.log('Reconforming mesh', props.layer);
+  //     conformMesh(props.layer).then(response => {
+  //       updateLayerById(props.layer.id, { mesh: response.mesh, conformed: true });
+  //     });
+  //   }
+  // }, [props.layer.mesh, props.layer.conformed]);
+  const customDig = useCallback(() => {
+    const positionAttr = geometry.getAttribute('position');
+    // const cloned = positionAttr.clone();
+    digMesh(
+      props.layer.mesh.points,
+      positionAttr,
+      props.layer.polygon,
+      props.layer.holes,
+      props.layer.dig
+    );
+    positionAttr.needsUpdate = true;
+
+    // console.log('dig geometry', positionAttr.array);
+  }, [props.layer, geometry]);
+
+  useEffect(() => {
+    if (!props.layer.conformed) {
+      return;
+    }
+    if (props.layer?.dig?.depth) {
+      console.log('Dig mesh', props.layer);
+      customDig();
+    }
+    // conformMesh(props.layer).then(() => {
+    //   console.log('Done');
+    // });
+  }, [
+    props.layer.dig?.depth,
+    props.layer.dig?.distance,
+    props.layer.dig?.curve,
+    props.layer.dig?.curvePoints
+  ]);
+
+  useEffect(() => {
+    if (!props.layer) {
+      return;
+    }
+    console.log('layer created');
+    generateMesh(props.layer).then(_response => {
+      console.log('init-generateMesh', props.layer.id, _response.mesh);
+      conformMesh({ ...props.layer, mesh: _response.mesh });
+      // updateLayerById(props.layer.id, { mesh: response.mesh, conformed: false });
+    });
+  }, [props.layer.spacing]);
+
+  useEffect(() => {
+    // if (props.layer) {
+      console.log('update mat');
+      material.opacity = props.layer.pending || !props.layer.conformed ? 0.3 : 1;
+      // material.color = new THREE.Color('pink');
+      material.needsUpdate = true;
+      setMaterial(material);
+    // }
+  }, [props.layer?.pending, props.layer?.conformed]);
 
   useEffect(() => {
     if (geometry) {
@@ -138,23 +313,18 @@ export default function MeshLayer(props) {
     }
   }, [props.layer.zoom]);
 
-  if (!meshData || !props.layer.mesh) {
+  if (!props.layer.mesh) {
     return null;
   }
   return (
     <mesh
       ref={ref}
+      visible={props.layer.visible}
       name={props.layer.id}
       geometry={geometry}
-      position={[-(settings.svgSize[0]/2), 0, -(settings.svgSize[0]/2)]}
-      onClick={handleMeshClick}
+      position={meshPosition}
+      // onContextMenu={handleMeshClick}
       material={material}
-    >
-      {/* <meshStandardMaterial
-        wireframe={settings.wireframe}
-        // color={!settings.vertexColors ? `#${props.layer.color}` : undefined}
-        vertexColors={settings.vertexColors}
-      /> */}
-    </mesh>
+    ></mesh>
   )
 }

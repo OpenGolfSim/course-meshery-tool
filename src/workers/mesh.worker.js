@@ -1,41 +1,15 @@
-const PoissonDiskSampling = require('poisson-disk-sampling');
-const PolygonOffset = require("polygon-offset");
+import Delaunator from 'delaunator';
+import PoissonDiskSampling from 'poisson-disk-sampling';
+// const PolygonOffset = require("polygon-offset");
 const { Delaunay } = require('d3-delaunay');
-const logger = require('electron-log/renderer');
+import logger from 'electron-log/renderer';
+import { smoothTerrainData } from '../lib/terrain';
+import { distanceToPolygonEdge, isPointInPolygon } from '../lib/mesh';
 
 const EPSILON = 1e-8; // or whatever small threshold
 
 const log = logger.scope('WORKER');
 
-function smoothHeightMap(heights, terrainSize, radius = 1, passes = 1) {
-  if (!heights || terrainSize < 2 || radius < 1) return heights;
-  let input = heights.slice();
-  let output = new Float32Array(heights.length);
-
-  for (let pass = 0; pass < passes; pass++) {
-    for (let z = 0; z < terrainSize; z++) {
-      for (let x = 0; x < terrainSize; x++) {
-        let sum = 0, count = 0;
-        for (let dz = -radius; dz <= radius; dz++) {
-          for (let dx = -radius; dx <= radius; dx++) {
-            const nx = x + dx, nz = z + dz;
-            if (nx >= 0 && nx < terrainSize && nz >= 0 && nz < terrainSize) {
-              sum += input[nz * terrainSize + nx];
-              count++;
-            }
-          }
-        }
-        output[z * terrainSize + x] = sum / count;
-      }
-    }
-    // Swap buffers for next pass if more
-    [input, output] = [output, input];
-  }
-  // If odd number of passes, result is in input, else in output
-  return (passes % 2 === 1)
-    ? Float32Array.from(input)
-    : Float32Array.from(output);
-}
 
 function preserveBoundaryAndDedupe(boundaryPts, holePts, extraPts, minDist = 0.02) {
   if (!minDist) minDist = 1e-6;
@@ -116,6 +90,9 @@ function computeVertexColors(allPoints, polygon, holes, blendDist = 2) {
   // const blendDist = 10; // Or your chosen X value
   for (let i = 0; i < allPoints.length; i++) {
     const [x, z] = allPoints[i];
+    // for (let i = 0; i < allPoints.length; i += 2) {
+    //   const x = allPoints[i];
+    //   const z = allPoints[i + 1];
     const pt = [x, z];
     const distToOuter = distanceToPolygonEdge(pt, polygon);
 
@@ -198,25 +175,6 @@ function digMesh(positions, polygon, holes, depth = 2, curve = 'smooth', curvePo
   }
 }
 
-function distanceToPolygonEdge(pt, ring) {
-  let min = Infinity, n = ring.length;
-  for (let i = 0; i < n; ++i) {
-    const [x1, y1] = ring[i], [x2, y2] = ring[(i + 1) % n];
-    const d = pointToSegmentDist(pt[0], pt[1], x1, y1, x2, y2);
-    if (d < min) min = d;
-  }
-  return min;
-}
-
-function pointToSegmentDist(px, py, x1, y1, x2, y2) {
-  const dx = x2 - x1, dy = y2 - y1;
-  if (dx === 0 && dy === 0) return Math.hypot(px - x1, py - y1);
-  let t = ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy);
-  t = Math.max(0, Math.min(1, t));
-  const xx = x1 + t * dx, yy = y1 + t * dy;
-  return Math.hypot(px - xx, py - yy);
-}
-
 function svgToTerrain(x, z, svgSize, terrainSize = 4097) {
   // Clamp/limit to prevent overflow on edges
   const tx = Math.max(0, Math.min(terrainSize - 1, (x / svgSize) * (terrainSize - 1)));
@@ -246,27 +204,6 @@ function interpHeight(heights, tx, tz, terrainSize = 4097) {
   return h0 * (1 - fz) + h1 * fz;
 }
 
-function isPointInPolygon(point, ring, holes) {
-  if (!pointInRing(point, ring)) return false;
-  for (const hole of holes) {
-    if (pointInRing(point, hole)) return false;
-  }
-  return true;
-}
-
-function pointInRing(point, ring) {
-  const [x, y] = point;
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const xi = ring[i][0], yi = ring[i][1];
-    const xj = ring[j][0], yj = ring[j][1];
-    const intersect =
-      ((yi > y) !== (yj > y)) &&
-      x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-12) + xi;
-    if (intersect) inside = !inside;
-  }
-  return inside;
-}
 
 
 function getBoundingBox(rings) {
@@ -301,18 +238,21 @@ function distanceWeight(dist, maxDist) {
   return dist >= maxDist ? 0 : dist <= 0 ? 1 : 1 - dist / maxDist;
 }
 
-function generateMesh({ layer, settings: { heightMap, svgSize, terrainSize, heightScale } }) {
+function generateMesh({
+  layer,
+  settings
+  // heightMap,
+  // settings: { svgSize, terrainSize, heightScale }
+}) {
   // console.time('diskSample');
   const boundaryPts = layer.polygon;
   const holePts = layer.holes.flat();
   // const { pts, triangles } = triangulateWithConstraints(layer.polygon, layer.holes || [], spacing);
   const { width, height, minY, minX } = getBoundingBox([layer.polygon, ...layer.holes]);
 
-  // TODO: move to setting on layer
-  const edgeInfluenceRange = 5;
-
   // Sample points with Poisson-disk
   const pds = new PoissonDiskSampling({
+    // shape: [width, height], // use polygon bbox
     shape: [width, height], // use polygon bbox
     minDistance: layer.spacing,   // controls "edge length" of triangles
     // minDistance: adaptiveMinDistanceFactory(layer, minX, minY),
@@ -322,8 +262,8 @@ function generateMesh({ layer, settings: { heightMap, svgSize, terrainSize, heig
   });
 
   // Optionally seed with boundary/holes points to preserve contour
-  layer.polygon.forEach(point => pds.addPoint(point));
-  layer.holes.forEach(h => h.forEach(p => pds.addPoint(p)));
+  layer.polygon.forEach(point => pds.addPoint([point[0] - minX, point[1] - minY]));
+  // layer.holes.forEach(h => h.forEach(p => pds.addPoint([p[0] - minX, p[1] - minY])));
 
   // const pts = pds.fill();
   const samples = pds.fill().map(([x, y]) => [x + minX, y + minY]);
@@ -365,11 +305,21 @@ function generateMesh({ layer, settings: { heightMap, svgSize, terrainSize, heig
   // }
 
   const allPoints = preserveBoundaryAndDedupe(boundaryPts, holePts, interiorSamples);
+  // const allPoints = [...boundaryPts, ...holePts, ...interiorSamples];
 
-  // console.time('triangulation');
-  // Delaunay triangulation
+  // // Delaunay triangulation
   const delaunay = Delaunay.from(allPoints);
-  const triangles = Array.from(delaunay.triangles); // grouped as [i0, i1, i2,...]
+  // const triangles = Array.from(delaunay.triangles); // grouped as [i0, i1, i2,...]
+
+  // console.log('allPoints', allPoints);
+  // const delaunay = new Delaunator([...boundaryPts, ...holePts].flat());
+  console.log('triangles', delaunay);
+  const triangles = Array.from(delaunay.triangles);
+  // console.log('boundaryPts', JSON.stringify(boundaryPts.slice(0, 6)));
+  // console.log('allPoints', JSON.stringify(allPoints.slice(0, 6)));
+  // console.log('holePts', JSON.stringify(holePts.slice(0, 6)));
+  // let triangles = cdt2d(allPoints, layer.holes, { exterior: false });
+  // console.log('triangles', triangles.slice(0, 6));
 
   // Filter triangles that fall outside of polygon
   const finalTriangles = [];
@@ -377,7 +327,7 @@ function generateMesh({ layer, settings: { heightMap, svgSize, terrainSize, heig
     const [a, b, c] = [triangles[i], triangles[i + 1], triangles[i + 2]];
 
     if (a === b || b === c || a === c) continue;
-    // if (triangleArea2D(allPoints[a], allPoints[b], allPoints[c]) < EPSILON) continue;
+    if (triangleArea2D(allPoints[a], allPoints[b], allPoints[c]) < EPSILON) continue;
 
     const centroid = triCentroid(allPoints[a], allPoints[b], allPoints[c]);
     if (isPointInPolygon(centroid, layer.polygon, layer.holes)) {
@@ -386,16 +336,87 @@ function generateMesh({ layer, settings: { heightMap, svgSize, terrainSize, heig
   }
 
 
-  const positions = [];
-  let finalHeightMap = heightMap;
-  finalHeightMap = smoothHeightMap(heightMap, terrainSize, 2);
+  // const positions = [];
+  // // const heightMap = getTerrain();
+  // if (!heightMap) {
+  //   log.warn('No heightmap data');
+  // }
 
+  // for (const [x, z] of allPoints) {
+  //   let y = 0;
+
+  //   if (heightMap) {
+  //     const [tx, tz] = svgToTerrain(x, z, svgSize[0], terrainSize);
+  //     // Get/interpolate terrain height
+  //     y = interpHeight(heightMap, tx, tz, terrainSize);
+
+  //     // If Unity height range is [0, 65535], you might want to scale to meters
+  //     // For example, if your terrain in Unity is 600m tall, scale = 600/65535
+  //     // If not, just use the raw value.
+
+  //     // Example: scale height (adjust as needed)
+  //     y = (y / 65535) * heightScale;
+  //   }
+  //   positions.push(x, y, z);
+  // }
+
+  // if (layer.dig?.depth) {
+  //   digMesh(positions, layer.polygon, layer.holes, layer.dig.depth, layer.dig.curve, layer.dig.curvePower);
+  // }
+
+  // generate flat 3D array of points
+  const positions3D = [];
+  // for (let i = 0; i < allPoints.length; i += 2) {
+  //   const x = allPoints[i];
+  //   const z = allPoints[i + 1];
   for (const [x, z] of allPoints) {
-    let y = 0;
+    positions3D.push(x, 0, z);
+  }
+
+  // fill with white color
+  let colors = new Array(allPoints.length * 3).fill(1);
+  if (layer.blend && layer.blend > 0) {
+    colors = computeVertexColors(allPoints, layer.polygon, layer.holes, layer.blend);
+  }
+
+  return {
+    triangles: finalTriangles,
+    points: new Float32Array(positions3D),
+    // points: allPoints,
+    colors: new Float32Array(colors)
+  };
+}
+
+
+function conformTerrain({
+  layer,
+  heightMap,
+  settings
+}) {
+  const {
+    // heightMap,
+    heightScale,
+    svgSize,
+    terrainSize,
+    terrainSmoothingRadius
+  } = settings;
+  const positions = [];
+  if (!heightMap) {
+    log.warn('No heightmap data');
+  }
+  console.log('mesh', layer);
+  const mesh = layer.mesh;
+  for (let index = 0; index < mesh.points.length; index += 3) {
+    // for (const [x, z] of points) {
+    // let y = 0;
+    const x = mesh.points[index];
+    let y = mesh.points[index + 1];
+    const z = mesh.points[index + 2];
+
     if (heightMap) {
       const [tx, tz] = svgToTerrain(x, z, svgSize[0], terrainSize);
       // Get/interpolate terrain height
-      y = interpHeight(finalHeightMap, tx, tz, terrainSize);
+      y = interpHeight(heightMap, tx, tz, terrainSize);
 
       // If Unity height range is [0, 65535], you might want to scale to meters
       // For example, if your terrain in Unity is 600m tall, scale = 600/65535
@@ -407,29 +428,41 @@ function generateMesh({ layer, settings: { heightMap, svgSize, terrainSize, heig
     positions.push(x, y, z);
   }
 
-  if (layer.dig?.depth) {
-    digMesh(positions, layer.polygon, layer.holes, layer.dig.depth, layer.dig.curve, layer.dig.curvePower);
-  }
+  // if (layer.dig?.depth) {
+  //   digMesh(positions, layer.polygon, layer.holes, layer.dig.depth, layer.dig.curve, layer.dig.curvePower);
+  // }
 
-  // fill with white
-  let colors = new Array(allPoints.length * 3).fill(1);
-  if (layer.blend && layer.blend > 0) {
-    colors = computeVertexColors(allPoints, layer.polygon, layer.holes, layer.blend);
-  }
 
   return {
-    triangles: finalTriangles,
-    points: positions,
-    colors
-  };
-
+    ...mesh,
+    points: new Float32Array(positions)
+  }
 }
 
+function smoothTerrain({ heightMap, settings }) {
+  const { terrainSize, terrainSmoothingRadius } = settings;
+  return smoothTerrainData(heightMap, terrainSize, terrainSmoothingRadius);
+}
 
 self.onmessage = (event) => {
-  if (event.data) {
-    log.info(`Starting mesh worker job: ${event.data.layer.id}`);
+  if (!event.data) {
+    return;
+  }
+  const { jobId, type } = event.data;
+  if (type === 'mesh') {
+    log.info(`Starting mesh worker job: ${jobId}`);
     const result = generateMesh(event.data);
-    postMessage({ ...event.data, mesh: result });
+    log.info(`Finished mesh worker job: ${jobId}`);
+    postMessage({ jobId, mesh: result });
+  } else if (type === 'conform') {
+    log.info(`Starting conform worker job: ${jobId}`);
+    const result = conformTerrain(event.data);
+    log.info(`Finished conform worker job: ${jobId}`);
+    postMessage({ jobId, mesh: result });
+  } else if (type === 'terrain') {
+    log.info(`Starting terrain worker job`);
+    const result = smoothTerrain(event.data);
+    log.info(`Finished terrain worker job`);
+    postMessage({ jobId, type: 'terrain', heightMap: result });
   }
 };

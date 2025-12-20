@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { Box, Typography, List, Chip } from '@mui/material';
 import LayerListItem from './LayerListItem.jsx';
 
-export default function LayerList({ svgFile, layers, onZoom, onDelete, selectedLayer, onExpanded, onSettingChanged, ...props }) {
+export default function LayerList({ svgFile, layers, onZoom, onDelete, selectedLayer, onExpanded, onSettingChanged }) {
   // const [expanded, setExpanded] = React.useState(false);
 
   
@@ -15,7 +15,7 @@ export default function LayerList({ svgFile, layers, onZoom, onDelete, selectedL
   };
   
   return (
-    <Box {...props}>
+    <Box>
       {/* <Typography sx={{ p: 1 }} variant="subtitle2" color="textSecondary">Layers</Typography> */}
       <Box>
         {layers.map(layer => (

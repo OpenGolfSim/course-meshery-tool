@@ -14,6 +14,9 @@ const palette = {
   secondary: {
     main: '#303030'
   },
+  background: {
+    paper: '#0a0a0a'
+  }
 };
 
 const darkTheme = createTheme({

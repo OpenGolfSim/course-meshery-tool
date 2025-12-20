@@ -1,4 +1,4 @@
-const fs = require('node:fs');
+import fs from 'node:fs';
 
 export async function parseRaw(filePath, terrainSize = 4097) {
   const raw = await fs.promises.readFile(filePath);

@@ -8,6 +8,85 @@ const martinez = require('martinez-polygon-clipping');
 const COLOR_MATCH = /fill:\s*#([a-z0-9]+)/i;
 const MAX_FILESIZE = 1e6; // Anything over 1 MB probably has images in it
 
+function snapRingToGrid(ring, gridSize = 1e-3) {
+  return ring.map(([x, y]) => [
+    Math.round(x / gridSize) * gridSize,
+    Math.round(y / gridSize) * gridSize
+  ]);
+}
+function forceClosedRing(points) {
+  if (!points.length) return [];
+  points = snapRingToGrid(points);
+  const [x0, y0] = points[0];
+  const [xn, yn] = points[points.length - 1];
+  // Use fixed decimal for float compare
+  if (Number(x0).toFixed(5) !== Number(xn).toFixed(5) ||
+    Number(y0).toFixed(5) !== Number(yn).toFixed(5)) {
+    return [...points, [x0, y0]];
+  }
+  return points;
+}
+
+function closeAllRings(multiPoly) {
+  if (!Array.isArray(multiPoly)) return [];
+  return multiPoly.map(forceClosedRing);
+}
+function ringArea(ring) {
+  // Shoelace formula, for absolute area comparison
+  let area = 0;
+  for (let i = 0, n = ring.length; i < n - 1; i++) {
+    const [x0, y0] = ring[i];
+    const [x1, y1] = ring[i + 1];
+    area += (x0 * y1 - x1 * y0);
+  }
+  return Math.abs(area / 2);
+}
+
+function ensureClosed(points, tolerance = 1e-6) {
+  if (!points.length) return points;
+  const [x0, y0] = points[0];
+  const [xn, yn] = points[points.length - 1];
+  if (Math.abs(x0 - xn) > tolerance || Math.abs(y0 - yn) > tolerance)
+    return [...points, [x0, y0]];
+  return points;
+}
+
+function cutHolesFromPolygon(polygon, polygonsToCut) {
+  let base;
+  try {
+    base = [ensureClosed(polygon)];
+  } catch (error) {
+    console.error("ENSURE ERRROR");
+    throw error;
+  }
+  for (const clip of polygonsToCut) {
+    base = martinez.diff(base, [ensureClosed(clip)]) || [];
+  }
+  // Result may be: null | [ [exterior], ...holes ] | [ [ [exterior], ...holes ], ... ]
+  if (!base) return { polygon: [], holes: [] };
+  // If result is MultiPolygon, pick the largest by area (or accumulate all? your call)
+  if (base.length && Array.isArray(base[0][0])) {
+    // MultiPolygon: find largest
+    let biggest = base[0];
+    let maxA = ringArea(base[0][0]);
+    for (const poly of base) {
+      const a = ringArea(poly[0]);
+      if (a > maxA) {
+        biggest = poly;
+        maxA = a;
+      }
+    }
+    return {
+      polygon: biggest[0],
+      holes: biggest.slice(1)
+    };
+  }
+  // Single polygon with holes
+  return {
+    polygon: base[0],
+    holes: base.slice(1)
+  };
+}
 
 function hasDuplicatePoints(points, tolerance = 1) {
   const n = points.length - 1; // last points are the same
@@ -149,14 +228,16 @@ export async function parseSVG(svgPath, palette) {
       }
 
       // default dig settings
-      let dig = null;
+      let dig = { enabled: false, depth: 0, distance: 1, curve: 'linear', curvePower: 1, curvePoints: [[0, 1], [0.25, 1], [0.25, 0], [1, 0]] };
       if (surface === 'sand') {
-        dig = { depth: 1.25, curve: 'pow', curvePower: 3 };
+        dig = { enabled: true, depth: 1, distance: 0.5, curve: 'bezier', digDistance: 1, curvePoints: [[0, 1], [0.25, 1], [0.25, 0], [1, 0]] };
       } else if (surface === 'water') {
-        dig = { depth: 4, curve: 'sine' };
+        dig = { enabled: true, depth: 4, distance: 1, curve: 'bezier', curvePoints: [[0, 1], [0.05, 1], [0.5, 0], [1, 0]] };
       }
+
       return {
         id: `${surface}_${i}`,
+        visible: true,
         data,
         edge,
         color: hexColor,
@@ -164,6 +245,7 @@ export async function parseSVG(svgPath, palette) {
         spacing,
         dig,
         polygon,
+        holes: [],
         blend
       }
     }
@@ -173,25 +255,44 @@ export async function parseSVG(svgPath, palette) {
     throw new Error('No valid paths found in course layer');
   }
   // const layersToCut = layers[0].polygon.map(points => [points[0], points[2]]);
-  const layersToCut = layers.map(layer => layer.polygon);
+  // const layersToCut = layers.map(layer => layer.polygon);
 
   // cut holes from above layers
+  // layers = layers.map((layer, index) => {
+  //   // const layersAbove = layers.slice(index + 1).map(l => l.polygon);
+  //   const layersAbove = (layers.slice(index + 1) || []);
+  //   // console.log('layersAbove', layersAbove);
+  //   if (!layersAbove.length) {
+  //     return { ...layer, holes: [] };
+  //   }
+  //   const { polygon, holes } = cutHolesFromPolygon(layer.polygon, layersAbove.map(l => l.polygon));
+  //   console.log(`${layer.id} polygon: ${polygon.length}, holes: ${holes.length}`);
+  //   return {
+  //     ...layer,
+  //     polygon,
+  //     holes
+  //   };
+  // });
+
   layers = layers.map((layer, index) => {
-    const layersAbove = (layersToCut.slice(index + 1) || []);
-    // const points = layer.polygon; // .map(points => [points[0], points[1]]);
+    const layersAbove = (layers.slice(index + 1) || []);
+    console.log(layer.id, layersAbove.map(l => l.id))
+    const layersToCut = layersAbove.map(layer => layer.polygon);
     let polygon = [...layer.polygon];
     let holes = [];
-    if (layersAbove.length > 0) {
-      for (const cl of layersAbove) {
-        // console.log('points:', JSON.stringify([[points.slice(0, 3)]]));
-        // console.log('cl:', JSON.stringify([[cl.slice(0, 3)]]));
+    if (layersToCut.length > 0) {
+      for (const cl of layersToCut) {
         const result = martinez.diff([[layer.polygon]], [[cl]]);
         // console.log('result', result?.[0]?.[0]);
-        polygon = result?.[0]?.[0]; // .map(points => [points[0], points[1]]);
-        holes = [...holes, ...result?.[0]?.slice(1)];
+        // polygon = result?.[0]?.[0]; // .map(points => [points[0], points[1]]);
+        // holes = [...holes, ...result?.[0]?.slice(1)];
+        const rings = result[0]; // exterior and possible holes
+        const closedRings = closeAllRings(rings);
+        polygon = closedRings[0];
+        holes = [...holes, ...closedRings.slice(1)];
+        console.log(`${layer.id} - ${polygon.length}, ${holes.length}`);
       }
     }
-    // console.log('polygon', polygon);
     return {
       ...layer,
       polygon,

@@ -16,7 +16,6 @@
     "name": "Brian Robinson",
     "email": "brian@opengolfsim.com"
   },
-  "license": "MIT",
   "devDependencies": {
     "@babel/core": "^7.28.5",
     "@babel/preset-react": "^7.28.5",
@@ -46,7 +45,9 @@
     "@react-three/fiber": "^9.4.2",
     "cdt2d": "^1.0.0",
     "cheerio": "^1.1.2",
+    "clean-pslg": "^1.1.2",
     "d3-delaunay": "^6.0.4",
+    "delaunator": "^5.0.1",
     "earcut": "^3.0.2",
     "electron-log": "^5.4.3",
     "electron-squirrel-startup": "^1.0.1",
@@ -55,7 +56,10 @@
     "poisson-disk-sampling": "^2.3.1",
     "polygon-offset": "^0.3.2",
     "react": "^19.2.3",
+    "react-bezier-curve-editor": "^2.1.0",
+    "react-bezier-spline-editor": "^0.1.1",
     "react-dom": "^19.2.3",
+    "stackblur-canvas": "^2.7.0",
     "svg-path-properties": "^1.3.0",
     "three": "^0.182.0",
     "triangle-wasm": "^1.0.0"

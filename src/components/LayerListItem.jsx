@@ -1,151 +1,158 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Box, ListItemText, IconButton, ListItem, ListItemAvatar, Avatar, ListItemButton, Link, Button, ButtonBase, Typography, CircularProgress, Accordion, AccordionDetails, AccordionSummary, Slider, Stack, Tooltip, TextField, MenuItem } from '@mui/material';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Box, ListItemText, IconButton, ListItem, ListItemAvatar, Avatar, ListItemButton, Link, Button, ButtonBase, Typography, CircularProgress, Accordion, AccordionDetails, AccordionSummary, Slider, Stack, Tooltip, TextField, MenuItem, Collapse } from '@mui/material';
+import RouteIcon from '@mui/icons-material/Route';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import ExpandMoreIcon from '@mui/icons-material/ChevronRight';
+import ExpandLessIcon from '@mui/icons-material/ExpandMore';
 import { styled } from '@mui/material/styles';
-
-const CustomAccordion = styled(Accordion)(({ theme }) => ({
-  border: 0,
-  boxShadow: 'none',
-  '&:not(:last-child)': {
-    borderBottom: 0,
-  },
-  '&:before': { // Styles the line before the first accordion
-    display: 'none',
-  },
-  '.MuiAccordionSummary-content': {
-    '&.Mui-expanded': {
-      margin: 0
-    }
-  },
-  '.MuiAccordionSummary-root': {
-    minHeight: 40,
-    '&.Mui-expanded': {
-      minHeight: 40
-    }
-  },
-  '.MuiAccordionDetails-root': {
-    backgroundColor: theme.palette.grey[800],
-    paddingTop: 0,
-    paddingBottom: 0,
-    paddingLeft: 8,
-    paddingRight: 8
-  },
-  '.MuiAccordion-heading': {
-    fontSize: 11,
-  },
-  '.MuiAccordionSummary-expandIconWrapper': { // Styles the expand icon
-    color: theme.palette.secondary.main,
-  },
-  '&.Mui-expanded': {
-    margin: 0,
-    backgroundColor: theme.palette.grey[800],
-    // minHeight: 'auto'
-  }
-}));
+import { useMeshery } from '../contexts/Meshery.jsx';
+import CurveEditDialog from '../dialogs/CurveEditDialog.jsx';
 
 
-export default function LayerListItem({ layer, expanded, onExpand, onZoom, onSettingChanged }) {
-
+export default function LayerListItem({
+  layer,
+  selectedLayer,
+  onExpand,
+  onZoom,
+  onCurveEdit,
+  onSettingChanged,
+}) {
+  const { updateLayerById } = useMeshery();
   const [spacing, setSpacing] = useState(layer.spacing);
   const [digDepth, setDigDepth] = useState(layer.dig?.depth || 0);
+  const [digDistance, setDigDistance] = useState(layer.dig?.distance || 0);
+  const [digCurve, setDigCurve] = useState(layer.dig?.curve || 0);
+  const [curveEditorOpen, setCurveEditorOpen] = useState(false);
+  
+  const expanded = useMemo(() => {
+    return selectedLayer === layer.id;
+  }, [selectedLayer, layer.id]);
+  // const { updateLayerById } = useMeshery();
 
   const timer = useRef();
-  // const handleMenuClick = (e) => {
-  //   e.preventDefault();
-  //   e.stopPropagation();
-  //   console.log('menu-click');
-  // }
-
+  
   const handleTriggerUpdate = React.useCallback((e) => {
-    if (onSettingChanged) {
-      console.log('digDepth', digDepth);
-      console.log('spacing', spacing);
-      onSettingChanged({
-        id: layer.id,
+      updateLayerById(layer.id, {
         spacing,
-        dig: { ...layer.dig, depth: digDepth },
-        mesh: false,
+        dig: {
+          ...layer.dig,
+          depth: digDepth,
+          curve: digCurve,
+          distance: digDistance
+        }
       });
-    }
-  }, [layer, spacing, digDepth]);
+  }, [layer, spacing, digDepth, digDistance, digCurve]);
 
   const handleSpacingChange = React.useCallback((e) => {
     const value = e.target.value;
-    console.log('set spacing', value);
-    // if (onSettingChanged) {
-    //   onSettingChanged({ id: layer.id, spacing: value, mesh: false });
-    // }
     setSpacing(value);
-
   }, [spacing]);
   
+  
+  const handleDigDistanceChange = React.useCallback((e) => {
+    const value = e.target.value;
+    setDigDistance(value);
+  }, []);
+
   const handleDigDepthChange = React.useCallback((e) => {
     const value = e.target.value;
-    console.log('change', value);
     setDigDepth(value);
-    
-    // if (onSettingChanged) {
-    //   onSettingChanged({ id: layer.id, dig: { ...layer.dig, depth: value }, mesh: false });
-    // }
-  }, [layer]);
+  }, []);
   
-  const handleDigSmoothChange = React.useCallback((e) => {
+  const handleDigCurveChange = React.useCallback((e) => {
     const value = e.target.value;
-    console.log('change', value);
-    if (onSettingChanged) {
-      onSettingChanged({ id: layer.id, dig: { ...layer.dig, curve: value }, mesh: false });
+    setDigCurve(value);
+  }, []);
+
+  const handleClick = useCallback(() => {
+    onExpand(layer.id, !expanded);
+  }, [expanded]);
+
+
+  const handleCurvePointsSaved = useCallback((points) => {
+    if (points) {
+      updateLayerById(layer.id, {
+        spacing,
+        dig: { ...layer.dig, curvePoints: points }
+      });
     }
+    setCurveEditorOpen(false);
   }, [layer]);
   
-  const handleDigSmoothExpoChange = React.useCallback((e) => {
-    const value = e.target.value;
-    console.log('change', value);
-    if (onSettingChanged) {
-      onSettingChanged({ id: layer.id, dig: { ...layer.dig, curvePower: value }, mesh: false });
-    }
+  const handleVisibilityToggle = useCallback(() => {
+    updateLayerById(layer.id, {
+      visible: !layer.visible
+    });
   }, [layer]);
-  
+
+
   useEffect(() => {
     if (
       spacing !== layer.spacing || 
-      layer.dig?.depth && digDepth !== layer.dig?.depth
+      layer.dig?.depth && digDepth !== layer.dig?.depth ||
+      layer.dig?.distance && digDistance !== layer.dig?.distance ||
+      layer.dig?.curve && digDepth !== layer.dig?.curve
     ) {
       clearTimeout(timer.current);
       timer.current = setTimeout(handleTriggerUpdate, 500);
     }
-  }, [spacing, digDepth]);
+  }, [spacing, digDepth, digDistance, digCurve]);
+
+  const isDisabled = useMemo(() => {
+    return !layer.mesh || layer.pending || !layer.conformed;
+  }, [layer]);
 
   return (
-      <CustomAccordion
-        disabled={!layer.mesh}
-        elevation={0}
-        expanded={expanded}
-        onChange={(event, isExpanded) => onExpand(layer.id, isExpanded)}
-      >
-        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-          {layer.mesh ? (
-            <Avatar sx={{ backgroundColor: `#${layer.color}`, width: 15, height: 15, mr: 1 }}>{' '}</Avatar>
-          ) : (
-            <CircularProgress sx={{ mr: 1 }} size={15} />
-          )}
-          <span>{layer.id}</span>
-        </AccordionSummary>
-        <AccordionDetails>
-          <Box>
+    <>
+      <Box>
+        <Box sx={{ p: 2, opacity: layer.visible ? 1 : 0.6 }}>
+          <ButtonBase
+            sx={{
+              width: '100%',
+              display: 'flex',
+              flexDirection: 'row',
+              gap: 3,
+              textAlign: 'left'
+            }}
+            onClick={handleClick}
+          >
+            {isDisabled ? (
+              <CircularProgress size={15} />
+            ) : (
+              <Avatar sx={{ backgroundColor: `#${layer.color}`, width: 15, height: 15 }}>{' '}</Avatar>
+            )}
+            <Box sx={{ flex: 1 }}>{layer.id}</Box>
+            <Box>
+              {expanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+            </Box>
+          </ButtonBase>
+        </Box>
+        <Collapse in={expanded} sx={theme => ({ backgroundColor: theme.palette.background.paper })}>
+          <Box sx={{ p: 1 }}>
             <Tooltip title="Zoom to Layer">
               <IconButton size="small" onClick={() => onZoom(layer)}><ZoomInIcon /></IconButton>
             </Tooltip>
+            <Tooltip title="Set Layer Visibility">
+              <IconButton size="small" onClick={handleVisibilityToggle}>
+                {layer.visible ? (
+                  <VisibilityIcon />
+                ) : (
+                  <VisibilityOffIcon />
+                )}
+              </IconButton>
+            </Tooltip>
           </Box>
-          
-          <Stack direction="column" spacing={1}>
-            {/* <Typography sx={{ m: 0 }} variant="h6">{layer.zoom ? 'ZOOM' : 'NO'}</Typography> */}
+
+          <Stack direction="column" spacing={1} sx={{ px: 2, pb: 2 }}>
             <Typography sx={{ m: 0 }} variant="h6">Triangle Spacing</Typography>
             <Stack direction="row" alignItems="center" spacing={1}>
               <Typography variant="body2">{spacing.toFixed(2)}</Typography>
               <Slider
                 size="small"
-                disabled={!layer.mesh}
+                disabled={isDisabled}
                 value={spacing}
                 min={0.2}
                 max={5}
@@ -161,23 +168,47 @@ export default function LayerListItem({ layer, expanded, onExpand, onZoom, onSet
                   <Slider
                     size="small"
                     value={digDepth}
-                    disabled={!layer.mesh}
-                    min={0.25}
-                    max={20}
-                    step={0.25}
+                    disabled={isDisabled}
+                    min={0.01}
+                    max={10}
+                    step={0.01}
                     onChange={handleDigDepthChange}
+                  />
+                </Stack>
+                <Typography sx={{ m: 0 }} variant="h6">Dig Distance</Typography>
+                <Stack direction="row" alignItems="center" spacing={1}>
+                  <Typography variant="body2">{digDistance}</Typography>
+                  <Slider
+                    size="small"
+                    value={digDistance}
+                    disabled={isDisabled}
+                    min={0.05}
+                    max={1}
+                    step={0.01}
+                    onChange={handleDigDistanceChange}
                   />
                 </Stack>
                 
                 <Typography sx={{ m: 0 }} variant="h6">Dig Curve</Typography>
-                <TextField select={true} value={layer.dig.curve} onChange={handleDigSmoothChange} fullWidth={true} size="small">
-                  <MenuItem value="smooth">Smoothstep</MenuItem>
-                  <MenuItem value="linear">Linear</MenuItem>
-                  <MenuItem value="sine">Sine</MenuItem>
-                  <MenuItem value="pow">Expo</MenuItem>
-                </TextField>
+                <Stack direction="row">
+                  <TextField select={true} value={layer.dig.curve} onChange={handleDigCurveChange} fullWidth={true} size="small">
+                    <MenuItem value="smooth">Smoothstep</MenuItem>
+                    <MenuItem value="linear">Linear</MenuItem>
+                    <MenuItem value="sine">Sine</MenuItem>
+                    {/* <MenuItem value="pow">Expo</MenuItem> */}
+                    <MenuItem value="bezier">Bezier</MenuItem>
+                  </TextField>
+
+
+                  <IconButton
+                    disabled={layer.dig.curve !== 'bezier'}
+                    onClick={() => setCurveEditorOpen(true)}
+                  >
+                    <RouteIcon />
+                  </IconButton>
+                </Stack>
                 
-                <Typography sx={{ m: 0 }} variant="h6">Expo Power</Typography>
+                {/* <Typography sx={{ m: 0 }} variant="h6">Expo Power</Typography>
                 <Slider
                   size="small"
                   value={layer.dig.curvePower}
@@ -185,12 +216,15 @@ export default function LayerListItem({ layer, expanded, onExpand, onZoom, onSet
                   max={20}
                   step={1}
                   onChange={handleDigSmoothExpoChange}
-                />
+                /> */}
 
               </>
             ) : null}
-          </Stack> 
-        </AccordionDetails>
-      </CustomAccordion>
+          </Stack>
+
+        </Collapse>
+      </Box>
+      <CurveEditDialog layer={layer} open={curveEditorOpen} onClose={handleCurvePointsSaved} />
+    </>
   )
 }

@@ -21,6 +21,8 @@ import { useMeshery } from '../contexts/Meshery.jsx';
 import { addVertexColorsToOBJ } from '../utils/obj.js';
 import ErrorDialog from '../dialogs/ErrorDialog.jsx';
 import LayerSettings from './LayerSettings.jsx';
+import LayerListItem from './LayerListItem.jsx';
+import CurveEditDialog from '../dialogs/CurveEditDialog.jsx';
 
 
 // Helper inside Canvas
@@ -36,7 +38,9 @@ export default function Workarea() {
   const {
     settings,
     setSettings,
+    setInputHeightMap,
     systemError,
+    setSystemError,
     clearSystemError,
     layers,
     setLayers,
@@ -46,6 +50,7 @@ export default function Workarea() {
   const canvasEle = React.useRef();
   const [visibilityMenu, setVisibilityMenu] = useState();
   const [selectedLayer, setSelectedLayer] = React.useState();
+  const [curveEditorOpen, setCurveEditorOpen] = useState(false);
   const controlsRef = React.useRef();
   const [openSVGFile, setOpenSVGFile] = React.useState();
   const [openTerrainFile, setOpenTerrainFile] = React.useState();
@@ -67,22 +72,22 @@ export default function Workarea() {
   //   });
   // }, [layers]);
 
-  const handleContextUpdate = async (updatedContext) => {
-    console.log('parsed SVG', updatedContext);
-    setOpenSVGFile(updatedContext.svg);
-    setPalette(updatedContext.palette);
-    setOpenTerrainFile(updatedContext.raw);
-    setLayers(updatedContext.layers || []);
-    // setSize([updatedContext.width, updatedContext.height]);
+  // const handleContextUpdate = async (updatedContext) => {
+  //   console.log('parsed SVG', updatedContext);
+  //   setOpenSVGFile(updatedContext.svg);
+  //   setPalette(updatedContext.palette);
+  //   setOpenTerrainFile(updatedContext.raw);
+  //   setLayers(updatedContext.layers || []);
+  //   // setSize([updatedContext.width, updatedContext.height]);
     
-    setSettings(settings => ({
-      ...settings,
-      palette: updatedContext.palette,
-      heightMap: updatedContext.heightMap,
-      svgWidth: updatedContext.width,
-      svgHeight: updatedContext.height
-    }));
-  }
+  //   setSettings(settings => ({
+  //     ...settings,
+  //     palette: updatedContext.palette,
+  //     // heightMap: updatedContext.heightMap,
+  //     svgWidth: updatedContext.width,
+  //     svgHeight: updatedContext.height
+  //   }));
+  // }
 
   const handleZoomComplete = useCallback((layer) => {
     // setLayers(layers.map(l => (l.id === layer.id ? { ...l, zoom: false } : l)));
@@ -102,7 +107,7 @@ export default function Workarea() {
   }
 
   const handleMeshLoaded = (layer) => {
-    updateLayerById(layer.id, { mesh: true });
+    // updateLayerById(layer.id, { mesh: true });
     // setLayers(old => {
     //   const matched = old.find(l => l.id === layer.id);
     //   matched.mesh = true;
@@ -115,10 +120,13 @@ export default function Workarea() {
     // if (result?.raw) {
     //   setOpenTerrainFile(result.raw);
     // }
+    if (result?.heightMap) {
+      setInputHeightMap(result.heightMap);
+    }
     setSettings(settings => ({
       ...settings,
       rawFilePath: result?.raw,
-      heightMap: result?.heightMap
+      terrainSize: result?.terrainSize,
     }));
   }
 
@@ -194,6 +202,14 @@ export default function Workarea() {
     // setLayers(updated);
   }, [layers]);
 
+  const handleEditCurve = useCallback((layer) => {
+    setCurveEditorOpen(true);
+  }, []);
+  const handleEditCurveDone = useCallback((layer, result) => {
+    setCurveEditorOpen(false);
+    // updateLayerById(layer.id, { zoom: true });
+  }, [layers]);
+
   const handleLayerZoom = useCallback((layer) => {
     console.log('layer click', layer.id);
     updateLayerById(layer.id, { zoom: true });
@@ -210,9 +226,10 @@ export default function Workarea() {
     // boundsApi.current.refresh(objectToFit).fit(); 
   }, [layers]);
 
-  const handleLayerExpand = useCallback((layerId) => {
-    setSelectedLayer(layerId);
-  }, [settings]);
+  const handleLayerExpand = useCallback((panel, isExpanded) => {
+    console.log('panel, isExpanded', panel, isExpanded);
+    setSelectedLayer(isExpanded ? panel : false);
+  }, []);
 
   const handleExportStart = useCallback(async () => {
 
@@ -378,20 +395,31 @@ export default function Workarea() {
               <Typography sx={{ px: 2, mb: 1 }} variant="h5" color="textSecondary">Layers</Typography>
                 {layers.length ? (
                   <Box sx={{ maxHeight: '100%', overflow: 'auto' }}>
-                    <LayerList
+                    {layers.map(layer => (
+                      <LayerListItem
+                        key={layer.id}
+                        layer={layer}
+                        selectedLayer={selectedLayer}
+                        onCurveEdit={handleEditCurve}
+                        onZoom={handleLayerZoom}
+                        onSettingChanged={handleLayerSettingChanged}
+                        onExpand={handleLayerExpand}
+                      />
+                    ))}
+                    {/* <LayerList
                       layers={layers}
                       svgFile={openSVGFile}
                       selectedLayer={selectedLayer}
                       onExpanded={handleLayerExpand}
                       onZoom={handleLayerZoom}
                       onSettingChanged={handleLayerSettingChanged}
-                    />
-                  </Box>                
+                    /> */}
+                  </Box>
                 ) : null}
             </Box>
           </Box>
           <div className="canvas-div">
-            <Canvas camera={{ fov: 100, near: 1, far: 3000, position: [0, 200, 0] }}>
+            <Canvas camera={{ fov: 50, near: 1, far: 3000, position: [0, 300, 0] }}>
               {/* <Bounds ref={boundsApi} observe={false} fit={false} clip={false}> */}
                 {/* <OrbitControls /> */}
                 <CameraControls ref={controlsRef} />
@@ -402,25 +430,18 @@ export default function Workarea() {
                 <CourseOutline viewBox={settings.svgSize} color={0xdddd77} />
                 {layers.map(layer => {
                   return [
-                    <ShapeLayer
-                      key={`shape_${layer.id}`}
-                      layer={layer}
-                      viewBox={settings.svgSize}
-                      // terrainData={terrainData}
-                      heightScale={settings.heightScale}
-                      terrainSize={settings.terrainSize}
-                    />,
+                    <ShapeLayer opacity={0.5} key={`shape_${layer.id}`} polygon={layer.polygon} layer={layer} />,
+                    // ...layer.holes.map((hole, index) => {
+                    //   return <ShapeLayer
+                    //      opacity={0.8}
+                    //     key={`hole_${layer.id}_${index}`} layerId={`h${index}`} polygon={hole} layer={layer} />;
+                    // }),
                     <MeshLayer
-                      onLoaded={handleMeshLoaded}
                       onZoomComplete={handleZoomComplete}
                       onClick={handleMeshClick}
                       key={layer.id}
                       layer={layer}
-                      // viewBox={settings.svgSize}
                       controlsRef={controlsRef}
-                      // terrainData={terrainData}
-                      // heightScale={settings.heightScale}
-                      // terrainSize={settings.terrainSize}
                     />
                   ]
                 })}
@@ -440,6 +461,7 @@ export default function Workarea() {
         </Box>
       </Box>
       <ErrorDialog open={!!systemError} onClose={clearSystemError} systemError={systemError} />
+      {/* <CurveEditDialog open={curveEditorOpen} onClose={handleEditCurveDone} /> */}
     </>
   )
 }
