@@ -133,6 +133,4 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            
-          # files: release-assets/**/*.zip
+          files: release-assets/**/*.zip
