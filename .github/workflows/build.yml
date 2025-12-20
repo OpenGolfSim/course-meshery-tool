@@ -66,7 +66,7 @@ jobs:
       - name: Locate and rename zip file
         id: find_zip
         env:
-          ZIP_NAME=meshery-${{ matrix.os }}.zip
+          ZIP_NAME: meshery-${{ matrix.os }}.zip
         run: |
           ZIP_PATH=$(find out/make -name '*.zip' | head -n 1)
           mv $ZIP_PATH out/$ZIP_NAME
