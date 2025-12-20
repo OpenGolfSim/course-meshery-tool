@@ -1,12 +1,58 @@
-const fs = require('node:fs');
-const cheerio = require('cheerio');
-const { svgPathProperties } = require('svg-path-properties');
-const martinez = require('martinez-polygon-clipping');
+import fs from 'node:fs';
+import * as cheerio from 'cheerio';
+import { svgPathProperties } from 'svg-path-properties';
+import * as martinez from 'martinez-polygon-clipping';
+import log from 'electron-log';
+import { parse as parseTransform } from 'svg-transform-parser';
+import {
+  compose,
+  fromObject,
+  translate as tmTranslate,
+  scale as tmScale,
+  rotateDEG as tmRotate, // for rotate in degrees
+  skewDEG as tmSkew,
+  fromDefinition,
+  applyToPoint,
+  matrix as tmMatrix
+} from 'transformation-matrix';
 
 // const earcut = require('earcut');
 
 const COLOR_MATCH = /fill:\s*#([a-z0-9]+)/i;
 const MAX_FILESIZE = 1e6; // Anything over 1 MB probably has images in it
+
+
+function toMatrix(t) {
+  if (t.translate) {
+    return tmTranslate(t.translate.tx, t.translate.ty || 0);
+  }
+  if (t.scale) {
+    return tmScale(t.scale.sx, t.scale.sy !== undefined ? t.scale.sy : t.scale.sx);
+  }
+  if (t.rotate) {
+    // Center point (cx, cy) may be specified
+    if (t.rotate.cx != null && t.rotate.cy != null) {
+      // Translate to origin -> rotate -> translate back
+      return compose(
+        tmTranslate(t.rotate.cx, t.rotate.cy),
+        tmRotate(t.rotate.angle),
+        tmTranslate(-t.rotate.cx, -t.rotate.cy)
+      );
+    }
+    return tmRotate(t.rotate.angle); // about origin
+  }
+  if (t.skewX) {
+    return tmSkew(t.skewX.angle, 0);
+  }
+  if (t.skewY) {
+    return tmSkew(0, t.skewY.angle);
+  }
+  if (t.matrix) {
+    // SVG matrix(a, b, c, d, e, f)
+    return tmMatrix(t.matrix.a, t.matrix.b, t.matrix.c, t.matrix.d, t.matrix.e, t.matrix.f);
+  }
+  throw new Error("Unknown transform: " + JSON.stringify(t));
+}
 
 function snapRingToGrid(ring, gridSize = 1e-3) {
   return ring.map(([x, y]) => [
@@ -169,8 +215,25 @@ export async function parseSVG(svgPath, palette) {
     (i, el) => {
 
       const data = $(el).attr('d');
-      const properties = new svgPathProperties(data);
+      const name = $(el).attr('id');
 
+      const transformString = $(el).attr('transform');
+      // Default: Identity matrix (no transform)
+      let finalMatrix = fromObject({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 });
+      log.info(`Parsing layer ${i} (${name})`, JSON.stringify(transformString));
+
+      if (transformString) {
+        // Parse into a list of transforms
+        const transforms = parseTransform(transformString);
+        if (transforms) {
+          const matrices = Array.isArray(transforms) ? transforms.map(toMatrix) : [toMatrix(transforms)];
+          if (matrices.length > 0) {
+            finalMatrix = compose(...matrices);
+          }
+        }
+      }
+
+      const properties = new svgPathProperties(data);
       const length = properties.getTotalLength();
       // at least 100 points
       // then based on line length (every 2 units)
@@ -178,14 +241,18 @@ export async function parseSVG(svgPath, palette) {
       const maxPoints = 15000;
       const numPoints = Math.min(Math.max(Math.round(length) * 2, minPoints), maxPoints);
       let polygon = [];
+      // log.info(`Parsing layer ${i} points: ${numPoints}`);
       for (let i = 0; i <= numPoints; i++) {
         const length = properties.getTotalLength();
         const pct = i / numPoints;
         const pos = properties.getPointAtLength(length * pct);
-        polygon.push([pos.x, pos.y]);
+        const transformed = applyToPoint(finalMatrix, { x: pos.x, y: pos.y });
+        // console.log('transformed', transformed);
+        polygon.push([transformed.x, transformed.y]);
       }
-      const name = $(el).attr('id');
-      if (!isClosedRing(polygon)) {
+      // log.info(`Parsing layer ${name}`);
+      if (!isClosedRing(polygon, 0.1)) {
+        log.error('Unclosed path error', polygon);
         throw new Error(`Detected an unclosed path (${name})`);
       }
       // const duplicatePoints = hasDuplicatePoints(polygon);
@@ -195,9 +262,16 @@ export async function parseSVG(svgPath, palette) {
       // polygon = closeRing(polygon);
 
       const style = $(el).attr('style').toLowerCase();
-      const [, hexColor] = style.match(COLOR_MATCH);
-      const surface = palette?.[hexColor];
-
+      // log.info(`Parsing layer ${name}`, style);
+      const matched = style.match(COLOR_MATCH);
+      if (!matched) {
+        throw new Error(`Unable to match layer (${name}) to a valid surface!`);
+      }
+      const [, hexColor] = matched;
+      const surface = matched ? palette?.[hexColor] : null;
+      if (!surface) {
+        throw new Error(`Unable to match layer color (${name}, ${hexColor}) to a valid surface!`);
+      }
       // console.log(`surface: ${surface}, length: ${length}, numPoints: ${numPoints}`);
 
       let spacing = 3;
@@ -276,7 +350,6 @@ export async function parseSVG(svgPath, palette) {
 
   layers = layers.map((layer, index) => {
     const layersAbove = (layers.slice(index + 1) || []);
-    console.log(layer.id, layersAbove.map(l => l.id))
     const layersToCut = layersAbove.map(layer => layer.polygon);
     let polygon = [...layer.polygon];
     let holes = [];
@@ -290,7 +363,6 @@ export async function parseSVG(svgPath, palette) {
         const closedRings = closeAllRings(rings);
         polygon = closedRings[0];
         holes = [...holes, ...closedRings.slice(1)];
-        console.log(`${layer.id} - ${polygon.length}, ${holes.length}`);
       }
     }
     return {
