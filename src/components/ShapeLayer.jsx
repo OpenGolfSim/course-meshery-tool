@@ -10,6 +10,9 @@ export default function ShapeLayer({ layer, polygon, layerId, ...props }) {
 
   let height = 0;
   const points = useMemo(() => {
+    if (!polygon?.length) {
+      return [];
+    }
     return [
       ...polygon.map(point => {
         const [x, y] = point;
@@ -18,7 +21,7 @@ export default function ShapeLayer({ layer, polygon, layerId, ...props }) {
     ];
   }, [polygon]);
 
-  if (layer.mesh) {
+  if (layer.mesh || !polygon) {
     return null;
   }
 

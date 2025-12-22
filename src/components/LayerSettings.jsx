@@ -32,14 +32,14 @@ export default function LayerSettings() {
         heightScale: parseInt(tempHeight, 10),
         terrainSmoothingRadius: parseInt(tempSmooth, 10)
       }));
-    }, 100);
+    }, 800);
   }, [tempHeight, tempSmooth]);
 
   return (
     <Box sx={{ px: 2, flexGrow: 0, flexShrink: 0 }}>
       <Typography sx={{ mb: 3 }} variant="h5" color="textSecondary">Settings</Typography>
       <Stack spacing={4}>
-        <Tooltip title="The height scale of your terrain data. This can be found in your Course Terrain Tool stats file or from your Unity terrain settings">
+        {/* <Tooltip title="The height scale of your terrain data. This can be found in your Course Terrain Tool stats file or from your Unity terrain settings"> */}
           <TextField
             fullWidth={true}
             label="Terrain Height (m)"
@@ -50,21 +50,12 @@ export default function LayerSettings() {
             size="small"
             onChange={handleScaleUpdate}
           />
-        </Tooltip>
-        {/* <TextField
-          fullWidth={true}
-          label="Smoothing Strength"
-          type="number"
-          disabled={!settings.rawFilePath}
-          value={settings.terrainSmoothingStrength}
-          size="small"
-          onChange={(e) => handleSmoothingUpdate(e, 'terrainSmoothingStrength')}
-        /> */}
+        {/* </Tooltip> */}
+        
         <TextField
           fullWidth={true}
           label="Terrain Smoothing"
           type="number"
-          // disabled={!settings.rawFilePath}
           value={tempSmooth}
           size="small"
           onChange={handleSmoothingUpdate}

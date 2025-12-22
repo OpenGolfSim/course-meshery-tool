@@ -23,6 +23,7 @@ import ErrorDialog from '../dialogs/ErrorDialog.jsx';
 import LayerSettings from './LayerSettings.jsx';
 import LayerListItem from './LayerListItem.jsx';
 import CurveEditDialog from '../dialogs/CurveEditDialog.jsx';
+import LoadingDialog from '../dialogs/LoadingDialog.jsx';
 
 
 // Helper inside Canvas
@@ -39,12 +40,17 @@ export default function Workarea() {
     settings,
     setSettings,
     setInputHeightMap,
+    setSvgData,
     systemError,
     setSystemError,
     clearSystemError,
+    clearSVG,
     layers,
     setLayers,
-    updateLayerById
+    updateLayerById,
+    systemLoading,
+    clearSystemLoading,
+    setSystemLoading
   } = useMeshery();
   const [scene, setScene] = useState();
   const canvasEle = React.useRef();
@@ -59,6 +65,11 @@ export default function Workarea() {
   const [terrainSize, setTerrainSize] = React.useState(4097);
   // const [terrainData, setTerrainData] = React.useState();
   const [heightScale, setHeightScale] = React.useState(10);
+  
+  const isExportDisabled = useMemo(() => {
+    return !settings.svgFilePath || !settings.rawFilePath || !layers?.length || layers?.some(layer => layer.error || !layer.conformed);
+  }, [settings.svgFilePath, settings.rawFilePath, layers]);
+
   // const [size, setSize] = React.useState([0, 0]);
   // const boundsApi = useBounds();
 
@@ -120,14 +131,19 @@ export default function Workarea() {
     // if (result?.raw) {
     //   setOpenTerrainFile(result.raw);
     // }
-    if (result?.heightMap) {
+    if (result?.raw) {
+      setSystemLoading('Reading RAW file...');
+      setSettings(settings => ({
+        ...settings,
+        rawFilePath: result?.raw,
+        terrainSize: result?.terrainSize,
+      }));
+      if (!result?.heightMap) {
+        setSystemError('Raw file seems to be missing height-map data');
+        return;
+      }
       setInputHeightMap(result.heightMap);
     }
-    setSettings(settings => ({
-      ...settings,
-      rawFilePath: result?.raw,
-      terrainSize: result?.terrainSize,
-    }));
   }
 
   const handleImportSVG = async () => {
@@ -138,18 +154,30 @@ export default function Workarea() {
     // if (result?.palette) {
     //   setPalette(result.palette);    
     // }
-    console.log(result);
-    
-    if (result?.layers) {
-      setLayers(result.layers);
+    // console.log('HANDLE IMPORT', result);
+    if (result?.path) {
+      setSystemLoading('Reading SVG file...');
+      setSettings(settings => ({
+        ...settings,
+        palette: result.palette,
+        svgFilePath: result.path
+      }));
+      // await handleSVGImported(result);
     }
+    if (result?.svg) {
+      setSvgData(result.svg);
+    }
+    
+    // if (result?.layers) {
+    //   setLayers(result.layers);
+    // }
 
-    setSettings(settings => ({
-      ...settings,
-      palette: result?.palette,
-      svgFilePath: result?.svg,
-      svgSize: [result?.width, result?.height]
-    }));
+    // setSettings(settings => ({
+    //   ...settings,
+    //   palette: result?.palette,
+    //   svgFilePath: result?.svg,
+    //   svgSize: [result?.width, result?.height]
+    // }));
   }
 
   const handleTerrainReset = useCallback(async () => {
@@ -163,77 +191,21 @@ export default function Workarea() {
   }, []);
 
   const handleSVGReset = useCallback(async () => {
-    setSettings(settings => ({
-      ...settings,
-      palette: undefined,
-      svgFilePath: undefined,
-      svgSize: [0, 0]
-    }));
-    setLayers([]);
+    clearSVG();
+  
     // const res = await window.meshery.clearSVG();
     // handleContextUpdate(res);
   }, []);
-  
-
-  const handleLayerSettingChanged = useCallback((layerUpdate) => {
-    const { id, ...update } = layerUpdate;
-    console.log('layerUpdate', layerUpdate);
-    updateLayerById(id, update);
-    // setLayers(layers.map(l => {
-    //   const { id, ...update } = layerUpdate;
-    //   if (l.id === id) {
-    //     const copy = { ...l };
-    //     for (const [key, val] of Object.entries(update)) {
-    //       copy[key] = val;
-    //     }
-    //     return copy;
-    //   } else {
-    //     return l;
-    //   }
-    // }));
-
-
-    // const updated = [...layers];
-    // const { id, ...update } = layerUpdate;
-    // const match = updated.find(l => l.id === id);
-    // for (const [key, val] of Object.entries(update)) {
-    //   match[key] = val;
-    // }
-    // setLayers(updated);
-  }, [layers]);
-
-  const handleEditCurve = useCallback((layer) => {
-    setCurveEditorOpen(true);
-  }, []);
-  const handleEditCurveDone = useCallback((layer, result) => {
-    setCurveEditorOpen(false);
-    // updateLayerById(layer.id, { zoom: true });
-  }, [layers]);
 
   const handleLayerZoom = useCallback((layer) => {
-    console.log('layer click', layer.id);
     updateLayerById(layer.id, { zoom: true });
-    // setLayers(layers.map(l => {
-    //   if (l.id === layer.id) {
-    //     return { ...l, zoom: true };
-    //   } else {
-    //     return l;
-    //   }
-    // }));
-    // const objectToFit = document.getElementById(layer.id); // Or use a ref system
-    // console.log('boundsApi', boundsApi);
-    // console.log('objectToFit', objectToFit);
-    // boundsApi.current.refresh(objectToFit).fit(); 
   }, [layers]);
 
   const handleLayerExpand = useCallback((panel, isExpanded) => {
-    console.log('panel, isExpanded', panel, isExpanded);
     setSelectedLayer(isExpanded ? panel : false);
   }, []);
 
   const handleExportStart = useCallback(async () => {
-
-    // const exporter = new GLTFExporter();
     const exporter = new OBJExporter();
     const group = new THREE.Group();
     const vertexColorMap = {};
@@ -251,7 +223,6 @@ export default function Workarea() {
     let result = exporter.parse(group);
     result = addVertexColorsToOBJ(result, vertexColorMap);
 
-
     window.meshery.exportMeshes(result).then(exportResult => {
       console.log(exportResult);
     }).catch(error => {
@@ -259,18 +230,7 @@ export default function Workarea() {
     });    
   }, [scene]);
   
-  // Function to zoom to a specific object
-  // const zoomToMesh = (e) => {
-  //   // Stop the event from propagating to other handlers (like the Canvas's own click)
-  //   e.stopPropagation(); 
-  //   // Use the refresh and fit methods from the bounds API, targeting the clicked object
-  //   // Margin can be used to add some padding around the object
-  //   boundsApi.current.refresh(e.object).fit(); 
-  // }
 
-  // useEffect(() => {
-  //   window.meshery.getCurrentState().then(handleContextUpdate);
-  // }, []);
   return (
     <>
       <Box sx={{ display: 'flex', height: '100%', flexDirection: 'column' }}>
@@ -292,10 +252,9 @@ export default function Workarea() {
               <>
                 <Chip
                   icon={<MountainIcon />}
-                  label={settings.rawFilePath.split('/').pop()}
+                  label={`${settings.rawFilePath.split('/').pop()} (${settings.terrainSize}x${settings.terrainSize})`}
                   sx={{ display: 'flex' }}
                   slotProps={{ label: { sx: { flexGrow: 1 } }}}
-                  // deleteIcon={<DeleteIcon />}
                   onDelete={handleTerrainReset}
                 />
               </>
@@ -316,7 +275,7 @@ export default function Workarea() {
                 icon={<SVGIcon />}
                 sx={{ display: 'flex' }}
                 slotProps={{ label: { sx: { flexGrow: 1 } }}}
-                label={settings.svgFilePath.split('/').pop()}
+                label={`${settings.svgFilePath.split('/').pop()} (${settings.svgSize.join('x')})`}
                 onDelete={handleSVGReset}
               />
             ) : (
@@ -332,9 +291,6 @@ export default function Workarea() {
           </Box>
           
           <Box sx={{ ml: 'auto', mr: 1 }}>
-            {/* <IconButton ref={anchorEl} endIcon={<MoreHorizIcon />} onClick={() => setVisibilityMenuOpen(true)}>
-              <VisibilityIcon />
-            </IconButton> */}
             <Button color="inherit" endIcon={<MoreHorizIcon />} onClick={(e) => setVisibilityMenu(e.currentTarget)}>
               <VisibilityIcon />
             </Button>
@@ -371,7 +327,7 @@ export default function Workarea() {
           <Button
             // sx={{ ml: 'auto' }}
             variant="contained"
-            disabled={!settings.svgFilePath || !settings.rawFilePath}
+            disabled={isExportDisabled}
             color="primary"
             onClick={handleExportStart}
           >
@@ -400,9 +356,7 @@ export default function Workarea() {
                         key={layer.id}
                         layer={layer}
                         selectedLayer={selectedLayer}
-                        onCurveEdit={handleEditCurve}
                         onZoom={handleLayerZoom}
-                        onSettingChanged={handleLayerSettingChanged}
                         onExpand={handleLayerExpand}
                       />
                     ))}
@@ -461,7 +415,7 @@ export default function Workarea() {
         </Box>
       </Box>
       <ErrorDialog open={!!systemError} onClose={clearSystemError} systemError={systemError} />
-      {/* <CurveEditDialog open={curveEditorOpen} onClose={handleEditCurveDone} /> */}
+      <LoadingDialog open={!!systemLoading} label={systemLoading} onClose={clearSystemLoading} />
     </>
   )
 }

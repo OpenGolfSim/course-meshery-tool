@@ -247,7 +247,7 @@ function BezierSplineEditor({
 export default function CurveEditDialog(props) {
   const { onClose, open } = props;
   const [curveValue, setCurveValue] = useState(
-    props.layer.dig.curvePoints ||
+    props.layer.dig?.curvePoints ||
     [[0,1],[0.5,1],[0.5,0],[1,0]]
   );
   // const [value, setValue] = useState<BezierEditorValue>([0.8, 0.2, 0.2, 0.8])

@@ -5,6 +5,7 @@ import { Delaunay } from 'd3-delaunay';
 import logger from 'electron-log/renderer';
 import { smoothTerrainData } from '../lib/terrain';
 import { distanceToPolygonEdge, isPointInPolygon } from '../lib/mesh';
+import { parseSVG } from '../lib/svg';
 
 const EPSILON = 1e-8; // or whatever small threshold
 
@@ -59,28 +60,40 @@ function sampleAlongRing(ring, edgeDensity) {
 
 function adaptiveMinDistanceFactory(layer, minX, minY) {
   // Edge settings, fallback to spacing
-  const edgeMin = layer.edge?.edgeDensity ?? layer.spacing;
-  const edgeThreshold = layer.edge?.threshold ?? 0;
-  const baseSpacing = layer.spacing;
+  // const edgeMin = layer.edge?.edgeDensity ?? layer.spacing;
+  // const edgeThreshold = layer.edge?.threshold ?? 0;
+  // const baseSpacing = layer.spacing;
 
-  return function adaptiveMinDistance({ x, y }) {
+  return function adaptiveMinDistance([x, y]) {
     // x, y are in bbox; transform to mesh coords
     const px = x + minX, py = y + minY;
 
     const distToOuter = distanceToPolygonEdge([px, py], layer.polygon);
+    if (distToOuter <= layer.blend) {
+      // return min grid size
+      return 0;
+    }
     let distToInner = Infinity;
     for (const hole of layer.holes) {
       const d = distanceToPolygonEdge([px, py], hole);
-      if (d < distToInner) distToInner = d;
-    }
-    const minDistToEdge = Math.min(distToOuter, distToInner);
+      if (d < distToInner) {
+        distToInner = d;
+      }
+      if (distToInner <= layer.blend) {
+        return 0;
+      }
 
-    if (layer.edge && edgeThreshold > 0 && minDistToEdge <= edgeThreshold) {
-      // Linear interpolation: closest to edge = edgeMin, fades up to baseSpacing
-      return edgeMin + (baseSpacing - edgeMin) * (minDistToEdge / edgeThreshold);
-    } else {
-      return baseSpacing;
     }
+    // return max grid size
+    return 1;
+    // const minDistToEdge = Math.min(distToOuter, distToInner);
+
+    // if (layer.edge && edgeThreshold > 0 && minDistToEdge <= edgeThreshold) {
+    //   // Linear interpolation: closest to edge = edgeMin, fades up to baseSpacing
+    //   return edgeMin + (baseSpacing - edgeMin) * (minDistToEdge / edgeThreshold);
+    // } else {
+    //   return baseSpacing;
+    // }
   };
 }
 
@@ -244,21 +257,43 @@ function generateMesh({
   // heightMap,
   // settings: { svgSize, terrainSize, heightScale }
 }) {
+  if (layer.error) {
+    return;
+  }
   // console.time('diskSample');
   const boundaryPts = layer.polygon;
-  const holePts = layer.holes.flat();
+  const holePts = layer.holes?.flat() || [];
   // const { pts, triangles } = triangulateWithConstraints(layer.polygon, layer.holes || [], spacing);
   const { width, height, minY, minX } = getBoundingBox([layer.polygon, ...layer.holes]);
 
+  let opts = {
+    minDistance: layer.spacing
+  };
+  if (layer.spacingEdge > 0) {
+    opts = {
+      minDistance: layer.spacingEdge,
+      maxDistance: layer.spacing,
+      distanceFunction: adaptiveMinDistanceFactory(layer, minX, minY),
+    }
+  }
   // Sample points with Poisson-disk
   const pds = new PoissonDiskSampling({
     // shape: [width, height], // use polygon bbox
     shape: [width, height], // use polygon bbox
-    minDistance: layer.spacing,   // controls "edge length" of triangles
-    // minDistance: adaptiveMinDistanceFactory(layer, minX, minY),
-    // minDistance: ({ x, y }) => adaptiveMinDistance(layer, [x + minX, y + minY]),
-    // minDistance: ({ x, y }) => getAdaptiveMinDistance([x + minX, y + minY], layer.polygon, layer.holes, layer.spacing),
-    tries: 30
+    tries: 30,
+    ...opts
+    // minDistance: layer.spacingEdge || 0.5,   // controls "edge length" of triangles
+    // maxDistance: layer.spacing || 2,   // controls "edge length" of triangles
+    // // distanceFunction: ([x, y]) => {
+    // //   // const distToOuter = distanceToPolygonEdge([x, y], layer.polygon);
+    // //   log.debug('distToOuter', x, y);
+    // //   return 1;
+    // //   // return layer.spacing;
+    // // },
+    // distanceFunction: adaptiveMinDistanceFactory(layer, minX, minY),
+    // // minDistance: ({ x, y }) => adaptiveMinDistance(layer, [x + minX, y + minY]),
+    // // minDistance: ({ x, y }) => getAdaptiveMinDistance([x + minX, y + minY], layer.polygon, layer.holes, layer.spacing),
+
   });
 
   // Optionally seed with boundary/holes points to preserve contour
@@ -313,7 +348,6 @@ function generateMesh({
 
   // console.log('allPoints', allPoints);
   // const delaunay = new Delaunator([...boundaryPts, ...holePts].flat());
-  console.log('triangles', delaunay);
   const triangles = Array.from(delaunay.triangles);
   // console.log('boundaryPts', JSON.stringify(boundaryPts.slice(0, 6)));
   // console.log('allPoints', JSON.stringify(allPoints.slice(0, 6)));
@@ -397,14 +431,19 @@ function conformTerrain({
     // heightMap,
     heightScale,
     svgSize,
-    terrainSize,
-    terrainSmoothingRadius
+    terrainSize
   } = settings;
+  if (!(svgSize?.[0] > 0)) {
+    throw new Error('SVG size is invalid');
+  }
+
   const positions = [];
   if (!heightMap) {
     log.warn('No heightmap data');
   }
-  console.log('mesh', layer);
+  if (!terrainSize) {
+    throw new Error('Terrain Size is invalid');
+  }
   const mesh = layer.mesh;
   for (let index = 0; index < mesh.points.length; index += 3) {
     // for (const [x, z] of points) {
@@ -444,25 +483,46 @@ function smoothTerrain({ heightMap, settings }) {
   return smoothTerrainData(heightMap, terrainSize, terrainSmoothingRadius);
 }
 
+self.onerror = function (event) {
+  log.error('worker-error:', event);
+  true;
+}
+
 self.onmessage = (event) => {
   if (!event.data) {
     return;
   }
   const { jobId, type } = event.data;
-  if (type === 'mesh') {
-    log.info(`Starting mesh worker job: ${jobId}`);
-    const result = generateMesh(event.data);
-    log.info(`Finished mesh worker job: ${jobId}`);
-    postMessage({ jobId, mesh: result });
-  } else if (type === 'conform') {
-    log.info(`Starting conform worker job: ${jobId}`);
-    const result = conformTerrain(event.data);
-    log.info(`Finished conform worker job: ${jobId}`);
-    postMessage({ jobId, mesh: result });
-  } else if (type === 'terrain') {
-    log.info(`Starting terrain worker job`);
-    const result = smoothTerrain(event.data);
-    log.info(`Finished terrain worker job`);
-    postMessage({ jobId, type: 'terrain', heightMap: result });
+  try {
+    if (type === 'mesh') {
+      log.info(`Starting mesh worker job: ${jobId}`);
+      const result = generateMesh(event.data);
+      log.info(`Finished mesh worker job: ${jobId}`);
+      postMessage({ jobId, mesh: result });
+    } else if (type === 'conform') {
+      log.info(`Starting conform worker job: ${jobId}`);
+      const result = conformTerrain(event.data);
+      log.info(`Finished conform worker job: ${jobId}`);
+      postMessage({ jobId, mesh: result });
+    } else if (type === 'terrain') {
+      log.info(`Starting terrain worker job`);
+      const result = smoothTerrain(event.data);
+      log.info(`Finished terrain worker job`);
+      postMessage({ jobId, type: 'terrain', heightMap: result });
+    } else if (type === 'svg') {
+      log.info(`Starting svg worker job`);
+      const result = parseSVG(event.data);
+      postMessage({ jobId, type: 'svg', ...result });
+      log.info(`Finished svg worker job`);
+      // parseSVG(event.data).then(result => {
+      //   log.info(`Finished svg worker job`);
+      //   postMessage({ jobId, type: 'svg', ...result });
+      // }).catch(error => {
+      //   throw error;
+      // });
+    }
+  } catch (error) {
+    log.error('ERROR', error);
+    postMessage({ jobId, type: 'error', error: error.message, ...event.data });
   }
 };

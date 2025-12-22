@@ -7,8 +7,6 @@ import log from 'electron-log/renderer';
 import { isPointInPolygon, distanceToPolygonEdge } from '../lib/mesh';
 
 function cubicBezierY(points, t) {
-  // points: [[x0,y0], [x1,y1], [x2,y2], [x3,y3]]
-  // t: [0,1]
   const y0 = 1 - points[0][1];
   const y1 = 1 - points[1][1];
   const y2 = 1 - points[2][1];
@@ -39,7 +37,6 @@ function digMesh(original, positions, polygon, holes, digOptions) {
       insideList.push({ idx: i / 3, dist, point: [x, y, z] });
     }
   }
-  console.log('maxDist', maxDist);
   const digDistance = distance * maxDist;
 
   for (const obj of insideList) {
@@ -64,8 +61,6 @@ function digMesh(original, positions, polygon, holes, digOptions) {
       default:
         f = t * t * (3 - 2 * t);
     }
-    // Lower the y (height) value
-    // positions[obj.idx] -= f * depth;
     const [x, y, z] = obj.point;
     const reduce = (f * depth);
     positions.setXYZ(obj.idx, x, y - reduce, z);
@@ -86,7 +81,8 @@ function digMesh(original, positions, polygon, holes, digOptions) {
 
 export default function MeshLayer(props) {
   const ref = useRef();
-
+  
+  const [firstLoad, setFirstLoad] = useState(false);
   const { generateMesh, conformMesh, finalHeightMap, settings, updateLayerById } = useMeshery();
   const [material, setMaterial] = useState(new THREE.MeshBasicMaterial({ 
     wireframe: settings.wireframe,
@@ -233,21 +229,16 @@ export default function MeshLayer(props) {
       props.layer.dig
     );
     positionAttr.needsUpdate = true;
-
-    // console.log('dig geometry', positionAttr.array);
   }, [props.layer, geometry]);
 
   useEffect(() => {
     if (!props.layer.conformed) {
       return;
     }
-    if (props.layer?.dig?.depth) {
-      console.log('Dig mesh', props.layer);
-      customDig();
+    if (!props.layer?.dig?.depth) {
+      return;
     }
-    // conformMesh(props.layer).then(() => {
-    //   console.log('Done');
-    // });
+    customDig();
   }, [
     props.layer.dig?.depth,
     props.layer.dig?.distance,
@@ -255,26 +246,27 @@ export default function MeshLayer(props) {
     props.layer.dig?.curvePoints
   ]);
 
+  
+
   useEffect(() => {
     if (!props.layer) {
       return;
     }
-    console.log('layer created');
+    if (!firstLoad) {
+      // initial mesh generation is handled in the provider
+      setFirstLoad(true);
+      return;
+    }
+    log.info(`Regenerating mesh (${props.layer.id})`);
     generateMesh(props.layer).then(_response => {
-      console.log('init-generateMesh', props.layer.id, _response.mesh);
       conformMesh({ ...props.layer, mesh: _response.mesh });
-      // updateLayerById(props.layer.id, { mesh: response.mesh, conformed: false });
     });
   }, [props.layer.spacing]);
 
   useEffect(() => {
-    // if (props.layer) {
-      console.log('update mat');
-      material.opacity = props.layer.pending || !props.layer.conformed ? 0.3 : 1;
-      // material.color = new THREE.Color('pink');
-      material.needsUpdate = true;
-      setMaterial(material);
-    // }
+    material.opacity = props.layer.pending || !props.layer.conformed ? 0.3 : 1;
+    material.needsUpdate = true;
+    setMaterial(material);
   }, [props.layer?.pending, props.layer?.conformed]);
 
   useEffect(() => {

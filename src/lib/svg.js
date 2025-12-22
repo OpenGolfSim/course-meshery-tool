@@ -1,8 +1,9 @@
-import fs from 'node:fs';
+// import fs from 'node:fs';
 import * as cheerio from 'cheerio';
 import { svgPathProperties } from 'svg-path-properties';
 import * as martinez from 'martinez-polygon-clipping';
-import log from 'electron-log';
+import polygonClipping from 'polygon-clipping';
+import log from 'electron-log/renderer';
 import { parse as parseTransform } from 'svg-transform-parser';
 import {
   compose,
@@ -16,10 +17,11 @@ import {
   matrix as tmMatrix
 } from 'transformation-matrix';
 
+import { defaultSettings } from './settings';
+
 // const earcut = require('earcut');
 
 const COLOR_MATCH = /fill:\s*#([a-z0-9]+)/i;
-const MAX_FILESIZE = 1e6; // Anything over 1 MB probably has images in it
 
 
 function toMatrix(t) {
@@ -61,7 +63,7 @@ function snapRingToGrid(ring, gridSize = 1e-3) {
   ]);
 }
 function forceClosedRing(points) {
-  if (!points.length) return [];
+  if (!points?.length) return [];
   points = snapRingToGrid(points);
   const [x0, y0] = points[0];
   const [xn, yn] = points[points.length - 1];
@@ -80,7 +82,7 @@ function closeAllRings(multiPoly) {
 function ringArea(ring) {
   // Shoelace formula, for absolute area comparison
   let area = 0;
-  for (let i = 0, n = ring.length; i < n - 1; i++) {
+  for (let i = 0, n = ring?.length; i < n - 1; i++) {
     const [x0, y0] = ring[i];
     const [x1, y1] = ring[i + 1];
     area += (x0 * y1 - x1 * y0);
@@ -89,7 +91,7 @@ function ringArea(ring) {
 }
 
 function ensureClosed(points, tolerance = 1e-6) {
-  if (!points.length) return points;
+  if (!points?.length) return points;
   const [x0, y0] = points[0];
   const [xn, yn] = points[points.length - 1];
   if (Math.abs(x0 - xn) > tolerance || Math.abs(y0 - yn) > tolerance)
@@ -111,7 +113,7 @@ function cutHolesFromPolygon(polygon, polygonsToCut) {
   // Result may be: null | [ [exterior], ...holes ] | [ [ [exterior], ...holes ], ... ]
   if (!base) return { polygon: [], holes: [] };
   // If result is MultiPolygon, pick the largest by area (or accumulate all? your call)
-  if (base.length && Array.isArray(base[0][0])) {
+  if (base?.length && Array.isArray(base[0][0])) {
     // MultiPolygon: find largest
     let biggest = base[0];
     let maxA = ringArea(base[0][0]);
@@ -181,15 +183,17 @@ function closeRing(points) {
   return points.concat([points[0]]);
 }
 
-export async function parseSVG(svgPath, palette) {
+export function parseSVG(payload) {
+  const { svgData, settings: { palette } } = payload;
+  // const palette = await parsePalette();
 
-  const stats = await fs.promises.stat(svgPath);
-  if (stats.size > MAX_FILESIZE) {
-    throw new Error(`SVG file should not be larger than 1MB. Make sure you link any image layers rather than embedding them.`);
-  }
+  // const stats = await fs.promises.stat(svgPath);
+  // if (stats.size > MAX_FILESIZE) {
+  //   throw new Error(`SVG file should not be larger than 1MB. Make sure you link any image layers rather than embedding them.`);
+  // }
 
-  const svg = await fs.promises.readFile(svgPath, 'utf-8');
-  const $ = cheerio.load(svg, { xmlMode: true });
+  // const svg = await fs.promises.readFile(svgPath, 'utf-8');
+  const $ = cheerio.load(svgData, { xmlMode: true });
 
   // Find a layer by id
   const root = $('svg');
@@ -211,15 +215,42 @@ export async function parseSVG(svgPath, palette) {
   }
 
   // Get all <path> in the layer
-  let layers = layer.find('path').map(
-    (i, el) => {
+  let layers = layer.find('path').map((i, el) => {
+    const data = $(el).attr('d');
+    const name = $(el).attr('id');
+    const style = $(el).attr('style').toLowerCase();
+    log.info(`Parsing layer ${name}`, style);
 
-      const data = $(el).attr('d');
-      const name = $(el).attr('id');
+    const matched = style.match(COLOR_MATCH);
+    if (!matched) {
+      throw new Error(`Unable to match layer (${name}) to a valid surface!`);
+    }
+    const [, hexColor] = matched;
+    const surface = matched ? palette?.[hexColor] : null;
+    if (!surface) {
+      throw new Error(`Unable to match layer color (${name}, ${hexColor}) to a valid surface!`);
+    }
 
+    let settings = { ...defaultSettings.rough };
+    if (defaultSettings?.[surface]) {
+      settings = defaultSettings?.[surface];
+    }
+
+    const layer = {
+      id: `${surface}_${i}`,
+      name,
+      visible: true,
+      surface,
+      color: hexColor,
+      data,
+      ...settings
+    };
+
+    let finalMatrix = fromObject({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 });
+
+    try {
       const transformString = $(el).attr('transform');
       // Default: Identity matrix (no transform)
-      let finalMatrix = fromObject({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 });
       log.info(`Parsing layer ${i} (${name})`, JSON.stringify(transformString));
 
       if (transformString) {
@@ -227,105 +258,69 @@ export async function parseSVG(svgPath, palette) {
         const transforms = parseTransform(transformString);
         if (transforms) {
           const matrices = Array.isArray(transforms) ? transforms.map(toMatrix) : [toMatrix(transforms)];
-          if (matrices.length > 0) {
+          if (matrices?.length > 0) {
             finalMatrix = compose(...matrices);
           }
         }
       }
-
-      const properties = new svgPathProperties(data);
-      const length = properties.getTotalLength();
-      // at least 100 points
-      // then based on line length (every 2 units)
-      const minPoints = 500;
-      const maxPoints = 15000;
-      const numPoints = Math.min(Math.max(Math.round(length) * 2, minPoints), maxPoints);
-      let polygon = [];
-      // log.info(`Parsing layer ${i} points: ${numPoints}`);
-      for (let i = 0; i <= numPoints; i++) {
-        const length = properties.getTotalLength();
-        const pct = i / numPoints;
-        const pos = properties.getPointAtLength(length * pct);
-        const transformed = applyToPoint(finalMatrix, { x: pos.x, y: pos.y });
-        // console.log('transformed', transformed);
-        polygon.push([transformed.x, transformed.y]);
-      }
-      // log.info(`Parsing layer ${name}`);
-      if (!isClosedRing(polygon, 0.1)) {
-        log.error('Unclosed path error', polygon);
-        throw new Error(`Detected an unclosed path (${name})`);
-      }
-      // const duplicatePoints = hasDuplicatePoints(polygon);
-      // if (duplicatePoints) {
-      //   throw new Error(`Detected duplicate points in the same spot (${name}, ${duplicatePoints})`);
-      // }
-      // polygon = closeRing(polygon);
-
-      const style = $(el).attr('style').toLowerCase();
-      // log.info(`Parsing layer ${name}`, style);
-      const matched = style.match(COLOR_MATCH);
-      if (!matched) {
-        throw new Error(`Unable to match layer (${name}) to a valid surface!`);
-      }
-      const [, hexColor] = matched;
-      const surface = matched ? palette?.[hexColor] : null;
-      if (!surface) {
-        throw new Error(`Unable to match layer color (${name}, ${hexColor}) to a valid surface!`);
-      }
-      // console.log(`surface: ${surface}, length: ${length}, numPoints: ${numPoints}`);
-
-      let spacing = 3;
-      let blend = 0;
-
-      const edge = {
-        edgeBlend: 0,
-        // Lower means denser near edges (minimum allowed sample distance)
-        edgeDensity: 2,
-        // How far from edge to add extra points (same units as your blendDist)
-        threshold: 10
-      }
-      if (['fringe', 'first_cut'].includes(surface)) {
-        spacing = 0.4;
-        blend = 0.5;
-      } else if (['green', 'sand'].includes(surface)) {
-        spacing = 0.5;
-        blend = 0.5;
-        edge.edgeBlend = 0.5;
-        edge.edgeDensity = 0.25;
-        edge.threshold = 1;
-      } else if (['fairway', 'tee', 'water'].includes(surface)) {
-        spacing = 1;
-        blend = 1;
-        edge.edgeBlend = 0.5;
-        edge.edgeDensity = 0.5;
-        edge.threshold = 4;
-      }
-
-      // default dig settings
-      let dig = { enabled: false, depth: 0, distance: 1, curve: 'linear', curvePower: 1, curvePoints: [[0, 1], [0.25, 1], [0.25, 0], [1, 0]] };
-      if (surface === 'sand') {
-        dig = { enabled: true, depth: 1, distance: 0.5, curve: 'bezier', digDistance: 1, curvePoints: [[0, 1], [0.25, 1], [0.25, 0], [1, 0]] };
-      } else if (surface === 'water') {
-        dig = { enabled: true, depth: 4, distance: 1, curve: 'bezier', curvePoints: [[0, 1], [0.05, 1], [0.5, 0], [1, 0]] };
-      }
-
       return {
-        id: `${surface}_${i}`,
-        visible: true,
-        data,
-        edge,
-        color: hexColor,
-        surface,
-        spacing,
-        dig,
-        polygon,
-        holes: [],
-        blend
+        matrix: finalMatrix,
+        ...layer
+      }
+    } catch (error) {
+      log.error(`SVG transform error (${name})`, error);
+      throw new Error(`SVG transform error (layer: ${name})`)
+    }
+  }).get();
+
+
+  layers = layers.map((layer) => {
+    const properties = new svgPathProperties(layer.data);
+    const length = properties.getTotalLength();
+    // at least 100 points
+    // then based on line length (every 2 units)
+    const minPoints = 500;
+    const maxPoints = 12000;
+    const numPoints = Math.min(Math.max(Math.round(length) * 2, minPoints), maxPoints);
+    let polygon = [];
+    // log.info(`Parsing layer ${i} points: ${numPoints}`);
+    for (let i = 0; i <= numPoints; i++) {
+      const length = properties.getTotalLength();
+      const pct = i / numPoints;
+      const pos = properties.getPointAtLength(length * pct);
+      if (layer.matrix) {
+        const transformed = applyToPoint(layer.matrix, { x: pos.x, y: pos.y });
+        polygon.push([transformed.x, transformed.y]);
+      } else {
+        polygon.push([pos.x, pos.y]);
       }
     }
-  ).get();
+    // log.info(`Parsing layer ${name}`);
+    if (!isClosedRing(polygon, 0.1)) {
+      log.error('Unclosed path error', polygon);
+      throw new Error(`Detected an unclosed path (${name})`);
+    }
+    // const duplicatePoints = hasDuplicatePoints(polygon);
+    // if (duplicatePoints) {
+    //   throw new Error(`Detected duplicate points in the same spot (${name}, ${duplicatePoints})`);
+    // }
+    // polygon = closeRing(polygon);
 
-  if (!layers.length) {
+
+    return {
+      ...layer,
+      // ...settings,
+      // data,
+      // edge,
+      // spacing,
+      // dig,
+      // blend
+      polygon,
+      holes: [],
+    }
+  })
+
+  if (!layers?.length) {
     throw new Error('No valid paths found in course layer');
   }
   // const layersToCut = layers[0].polygon.map(points => [points[0], points[2]]);
@@ -349,30 +344,47 @@ export async function parseSVG(svgPath, palette) {
   // });
 
   layers = layers.map((layer, index) => {
-    const layersAbove = (layers.slice(index + 1) || []);
-    const layersToCut = layersAbove.map(layer => layer.polygon);
-    let polygon = [...layer.polygon];
-    let holes = [];
-    if (layersToCut.length > 0) {
-      for (const cl of layersToCut) {
-        const result = martinez.diff([[layer.polygon]], [[cl]]);
-        // console.log('result', result?.[0]?.[0]);
-        // polygon = result?.[0]?.[0]; // .map(points => [points[0], points[1]]);
-        // holes = [...holes, ...result?.[0]?.slice(1)];
-        const rings = result[0]; // exterior and possible holes
-        const closedRings = closeAllRings(rings);
-        polygon = closedRings[0];
-        holes = [...holes, ...closedRings.slice(1)];
+    try {
+      const layersAbove = (layers.slice(index + 1) || []);
+      const layersToCut = layersAbove.map(layer => [layer.polygon]);
+      let polygon = [...layer.polygon];
+      let holes = [];
+      if (layersToCut?.length > 0) {
+        for (const cl of layersToCut) {
+          const result = polygonClipping.difference([layer.polygon], [cl]);
+          const rings = result[0];
+          polygon = rings[0];
+          holes = [...holes, ...rings.slice(1)];
+          // log.debug('polygon', polygon);
+          // log.debug('holes', holes);
+
+          // const m_result = martinez.diff([[layer.polygon]], [[cl]]);
+          // console.log('m_result', result);
+          // // polygon = result?.[0]?.[0]; // .map(points => [points[0], points[1]]);
+          // // holes = [...holes, ...result?.[0]?.slice(1)];
+          // const rings = result[0]; // exterior and possible holes
+          // // const closedRings = closeAllRings(rings);
+          // polygon = rings[0];
+          // holes = [...holes, ...rings.slice(1)];
+        }
       }
-    }
-    return {
-      ...layer,
-      polygon,
-      holes
+      return {
+        ...layer,
+        polygon,
+        holes
+      }
+    } catch (error) {
+      log.error('Cut error', error);
+      // throw new Error(`Error cutting shape: ${layer.name}`);
+      return {
+        ...layer,
+        error: 'Cut Error: Unable to cut holes in shape'
+      }
     }
   });
 
   return {
+    palette,
     width,
     height,
     layers

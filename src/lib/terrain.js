@@ -205,14 +205,14 @@ export function smoothTerrainData(heightMap, terrainSize = 4097, terrainSmoothin
   // }
   // log.info('Smoothing terrain data', { terrainSmoothingStrength, terrainSmoothingRadius });
   if (terrainSmoothingRadius) {
-    log.info('Smoothing terrain data');
+    log.info(`Smoothing terrain data (radius: ${terrainSmoothingRadius})`);
     // return blurTerrainGaussian(heightMap, terrainSize, terrainSmoothingStrength, terrainSmoothingRadius);
     // console.time('FastGaussianBlur');
     // const blurred = blurTerrainFast(heightMap, terrainSize, terrainSmoothingStrength, terrainSmoothingRadius);
     // console.timeEnd('FastGaussianBlur');
-    console.time('BoxBlur');
+    // console.time('BoxBlur');
     const blurred = applyBoxBlur(heightMap, terrainSize, terrainSmoothingRadius);
-    console.timeEnd('BoxBlur');
+    // console.timeEnd('BoxBlur');
     return blurred;
   }
   log.info('Skipping smoothing');

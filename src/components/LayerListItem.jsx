@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Box, ListItemText, IconButton, ListItem, ListItemAvatar, Avatar, ListItemButton, Link, Button, ButtonBase, Typography, CircularProgress, Accordion, AccordionDetails, AccordionSummary, Slider, Stack, Tooltip, TextField, MenuItem, Collapse } from '@mui/material';
+import { Box, ListItemText, IconButton, ListItem, ListItemAvatar, Avatar, ListItemButton, Link, Button, ButtonBase, Typography, CircularProgress, Accordion, AccordionDetails, AccordionSummary, Slider, Stack, Tooltip, TextField, MenuItem, Collapse, Chip } from '@mui/material';
 import RouteIcon from '@mui/icons-material/Route';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
+import ErrorIcon from '@mui/icons-material/Error';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -18,7 +19,6 @@ export default function LayerListItem({
   onExpand,
   onZoom,
   onCurveEdit,
-  onSettingChanged,
 }) {
   const { updateLayerById } = useMeshery();
   const [spacing, setSpacing] = useState(layer.spacing);
@@ -102,7 +102,7 @@ export default function LayerListItem({
   }, [spacing, digDepth, digDistance, digCurve]);
 
   const isDisabled = useMemo(() => {
-    return !layer.mesh || layer.pending || !layer.conformed;
+    return layer.error || !layer.mesh || layer.pending || !layer.conformed;
   }, [layer]);
 
   return (
@@ -119,12 +119,22 @@ export default function LayerListItem({
             }}
             onClick={handleClick}
           >
-            {isDisabled ? (
-              <CircularProgress size={15} />
+            {layer.error ? (
+              <Tooltip title={layer.error}>
+                <ErrorIcon color="error" />
+              </Tooltip>
             ) : (
-              <Avatar sx={{ backgroundColor: `#${layer.color}`, width: 15, height: 15 }}>{' '}</Avatar>
+                isDisabled ? (
+                <CircularProgress size={15} />
+              ) : (
+                <Avatar sx={{ backgroundColor: `#${layer.color}`, width: 15, height: 15 }}>{' '}</Avatar>
+              )
             )}
-            <Box sx={{ flex: 1 }}>{layer.id}</Box>
+            <Box sx={{ flex: 1 }}>
+              <Typography component="span">{layer.surface}</Typography>{' '}
+              <Typography color="textSecondary" component="span">{layer.name}</Typography>
+              
+            </Box>
             <Box>
               {expanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
             </Box>
@@ -145,82 +155,86 @@ export default function LayerListItem({
               </IconButton>
             </Tooltip>
           </Box>
+          {layer.error ? (
+            <Box>{layer.error}</Box>
+          ) : (
 
-          <Stack direction="column" spacing={1} sx={{ px: 2, pb: 2 }}>
-            <Typography sx={{ m: 0 }} variant="h6">Triangle Spacing</Typography>
-            <Stack direction="row" alignItems="center" spacing={1}>
-              <Typography variant="body2">{spacing.toFixed(2)}</Typography>
-              <Slider
-                size="small"
-                disabled={isDisabled}
-                value={spacing}
-                min={0.2}
-                max={5}
-                step={0.05}
-                onChange={handleSpacingChange}
-              />
-            </Stack>
-            {layer.dig?.depth ? (
-              <>
-                <Typography sx={{ m: 0 }} variant="h6">Dig Depth</Typography>
-                <Stack direction="row" alignItems="center" spacing={1}>
-                  <Typography variant="body2">{digDepth}</Typography>
-                  <Slider
-                    size="small"
-                    value={digDepth}
-                    disabled={isDisabled}
-                    min={0.01}
-                    max={10}
-                    step={0.01}
-                    onChange={handleDigDepthChange}
-                  />
-                </Stack>
-                <Typography sx={{ m: 0 }} variant="h6">Dig Distance</Typography>
-                <Stack direction="row" alignItems="center" spacing={1}>
-                  <Typography variant="body2">{digDistance}</Typography>
-                  <Slider
-                    size="small"
-                    value={digDistance}
-                    disabled={isDisabled}
-                    min={0.05}
-                    max={1}
-                    step={0.01}
-                    onChange={handleDigDistanceChange}
-                  />
-                </Stack>
-                
-                <Typography sx={{ m: 0 }} variant="h6">Dig Curve</Typography>
-                <Stack direction="row">
-                  <TextField select={true} value={layer.dig.curve} onChange={handleDigCurveChange} fullWidth={true} size="small">
-                    <MenuItem value="smooth">Smoothstep</MenuItem>
-                    <MenuItem value="linear">Linear</MenuItem>
-                    <MenuItem value="sine">Sine</MenuItem>
-                    {/* <MenuItem value="pow">Expo</MenuItem> */}
-                    <MenuItem value="bezier">Bezier</MenuItem>
-                  </TextField>
-
-
-                  <IconButton
-                    disabled={layer.dig.curve !== 'bezier'}
-                    onClick={() => setCurveEditorOpen(true)}
-                  >
-                    <RouteIcon />
-                  </IconButton>
-                </Stack>
-                
-                {/* <Typography sx={{ m: 0 }} variant="h6">Expo Power</Typography>
+            <Stack direction="column" spacing={1} sx={{ px: 2, pb: 2 }}>
+              <Typography sx={{ m: 0 }} variant="h6">Triangle Spacing</Typography>
+              <Stack direction="row" alignItems="center" spacing={1}>
+                <Typography variant="body2">{(spacing || 0).toFixed(2)}</Typography>
                 <Slider
                   size="small"
-                  value={layer.dig.curvePower}
-                  min={1}
-                  max={20}
-                  step={1}
-                  onChange={handleDigSmoothExpoChange}
-                /> */}
+                  disabled={isDisabled}
+                  value={spacing}
+                  min={0.2}
+                  max={5}
+                  step={0.05}
+                  onChange={handleSpacingChange}
+                />
+              </Stack>
+              {layer.dig?.depth ? (
+                <>
+                  <Typography sx={{ m: 0 }} variant="h6">Dig Depth</Typography>
+                  <Stack direction="row" alignItems="center" spacing={1}>
+                    <Typography variant="body2">{digDepth}</Typography>
+                    <Slider
+                      size="small"
+                      value={digDepth}
+                      disabled={isDisabled}
+                      min={0.01}
+                      max={10}
+                      step={0.01}
+                      onChange={handleDigDepthChange}
+                    />
+                  </Stack>
+                  <Typography sx={{ m: 0 }} variant="h6">Dig Distance</Typography>
+                  <Stack direction="row" alignItems="center" spacing={1}>
+                    <Typography variant="body2">{digDistance}</Typography>
+                    <Slider
+                      size="small"
+                      value={digDistance}
+                      disabled={isDisabled}
+                      min={0.05}
+                      max={1}
+                      step={0.01}
+                      onChange={handleDigDistanceChange}
+                    />
+                  </Stack>
+                  
+                  <Typography sx={{ m: 0 }} variant="h6">Dig Curve</Typography>
+                  <Stack direction="row">
+                    <TextField select={true} value={layer.dig.curve} onChange={handleDigCurveChange} fullWidth={true} size="small">
+                      <MenuItem value="smooth">Smoothstep</MenuItem>
+                      <MenuItem value="linear">Linear</MenuItem>
+                      <MenuItem value="sine">Sine</MenuItem>
+                      {/* <MenuItem value="pow">Expo</MenuItem> */}
+                      <MenuItem value="bezier">Bezier</MenuItem>
+                    </TextField>
 
-              </>
-            ) : null}
-          </Stack>
+
+                    <IconButton
+                      disabled={layer.dig.curve !== 'bezier'}
+                      onClick={() => setCurveEditorOpen(true)}
+                    >
+                      <RouteIcon />
+                    </IconButton>
+                  </Stack>
+                  
+                  {/* <Typography sx={{ m: 0 }} variant="h6">Expo Power</Typography>
+                  <Slider
+                    size="small"
+                    value={layer.dig.curvePower}
+                    min={1}
+                    max={20}
+                    step={1}
+                    onChange={handleDigSmoothExpoChange}
+                  /> */}
+
+                </>
+              ) : null}
+            </Stack>
+          )}
 
         </Collapse>
       </Box>

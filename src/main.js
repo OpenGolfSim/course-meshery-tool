@@ -9,6 +9,9 @@ import { parseRaw } from './lib/heightmap';
 import { resourceRoot } from './lib/app';
 import { dataCache, smoothTerrainData } from './lib/terrain';
 
+const MAX_FILESIZE = 1e6; // Anything over 1 MB probably has images in it
+
+let mainWindow;
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (require('electron-squirrel-startup')) {
   app.quit();
@@ -16,12 +19,12 @@ if (require('electron-squirrel-startup')) {
 
 const createWindow = async () => {
   // Create the browser window.
-  const mainWindow = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 800,
     height: 600,
     webPreferences: {
       preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
-      // nodeIntegrationInWorker: true
+      nodeIntegrationInWorker: true
       // nodeIntegration: false, // Recommended practice is to keep false in renderer
       // contextIsolation: true, // Recommended practice is to keep true
       // nodeIntegrationInWorker: true, // This enables Node.js APIs in the worker
@@ -37,9 +40,10 @@ const createWindow = async () => {
   // and load the index.html of the app.
   mainWindow.loadURL(MAIN_WINDOW_WEBPACK_ENTRY);
 
-
-  // Open the DevTools.
-  // mainWindow.webContents.openDevTools();
+  if (!app.isPackaged) {
+    // Open the DevTools.
+    mainWindow.webContents.openDevTools();
+  }
 };
 
 app.whenReady().then(async () => {
@@ -93,18 +97,27 @@ ipcMain.handle('svg.select', async (event) => {
   }
 
   try {
-    const palette = await parsePalette();
 
     log.info(`Parsing SVG (${svgPath})`);
-    const { layers, width, height } = await parseSVG(svgPath, palette);
+    const palette = await parsePalette();
 
-    return {
-      palette,
-      layers,
-      width,
-      height,
-      svg: svgPath
-    };
+    const stats = await fs.promises.stat(svgPath);
+    if (stats.size > MAX_FILESIZE) {
+      throw new Error(`SVG file should not be larger than 1MB. Make sure you link any image layers rather than embedding them.`);
+    }
+    const svg = await fs.promises.readFile(svgPath, 'utf-8');
+
+    // const { layers, width, height } = await parseSVG(svgPath, palette);
+
+    // const result = {
+    //   palette,
+    //   layers,
+    //   width,
+    //   height,
+    //   svg: svgPath
+    // };
+    // mainWindow.webContents.send('svg.imported', result);
+    return { path: svgPath, svg, palette };
   } catch (error) {
     log.error('SVG error', error);
     event.sender.send('error', error.message);
