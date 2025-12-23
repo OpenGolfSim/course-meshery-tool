@@ -31,12 +31,15 @@ export const MesheryProvider = ({ children }) => {
   const [systemError, setSystemError] = useState(null);
   const [systemLoading, setSystemLoading] = useState('');
   
+  const [isImportReady, setIsImportReady] = useState(false);
+  const [isSVGReady, setIsSVGReady] = useState(false);
   const [isPending, setIsPending] = useState(false);
   const [inputHeightMap, setInputHeightMap] = useState(null);
   const [finalHeightMap, setFinalHeightMap] = useState(null);
   const [svgData, setSvgData] = useState(null);
   const [jobQueue, setJobQueue] = useState([]);
   const [isJobQueueRunning, setIsJobQueueRunning] = useState(false);
+  const [layerSettings, setLayerSettings] = useState(null);
   const [settings, setSettings] = useState({
     svgFilePath: undefined,
     rawFilePath: undefined,
@@ -162,66 +165,41 @@ export const MesheryProvider = ({ children }) => {
 
 
   useEffect(() => {
-    if (layers?.length && settings.svgSize?.[0] > 0 && !firstLoad.current) {
-      firstLoad.current = true;
-      setSystemLoading('');
-      generateFirstMeshes();
-    }
-  }, [layers, settings.svgSize]);
-
-  useEffect(() => {
-    if (!svgData) {
+    if (!layers?.length || firstLoad.current || !isSVGReady) {
       return;
     }
-    // log.debug('handleSVGImported!');
-    startWorkerJob('svg', { type: 'svg', settings, svgData }).then(result => {
-      if (result?.width && result?.height) {
-        setSettings(old => ({
-          ...old,
-          svgSize: [result.width, result.height]
-        }));
-      }
+    firstLoad.current = true;
+    setSystemLoading('');
+    generateFirstMeshes();
+  }, [layers, isSVGReady]);
+
+  useEffect(() => {
+    if (!isImportReady) {
+      return;
+    }
+    log.debug('handleSVGImported!');
+    startWorkerJob('svg', { type: 'svg', settings, layers, layerSettings }).then(result => {
+      // if (result?.width && result?.height) {
+      //   setSettings(old => ({
+      //     ...old,
+      //     svgSize: [result.width, result.height]
+      //   }));
+      // }
+      console.log('svg result', result);
       if (result.layers) {
         setLayers(result.layers);
       }
+      setIsSVGReady(true);
     }).catch(error => {
       setSystemError(error.message);
     });
-
-    // setSettings(settings => ({
-    //   ...settings,
-    //   palette: result?.palette,
-    //   svgFilePath: result?.svg,
-    //   svgSize: [result?.width, result?.height]
-    // }));
-    
-    // if (result?.layers) {
-    //   log.debug('result?.layers', result.layers);
-    //   setLayers(result.layers);
-    //   if (result.layers.some(layer => layer.error)) {
-    //     return;
-    //   }
-    //   pMap(result.layers, async (layer) => {
-    //     log.debug('generating initial mesh', layer.id);
-    //     const result = await generateMesh(layer);
-    //     await conformMesh({ ...layer, mesh: result.mesh });
-    //     log.debug('conforming initial mesh', layer.id, finalHeightMap);
-    //   }, { concurrency: 10 }).then(() => {
-    //   // pMap(layers, runWorkerWob, { concurrency: 1 }).then(() => {
-    //     log.info('all done');
-    //     // setIsJobQueueRunning(false);
-    //   });
-    // }
-
-    
-  }, [svgData]);
+  }, [isImportReady]);
 
   const handleError = (event, errorMessage) => {
     setSystemError(errorMessage);
   };
 
   const clearSVG = () => {
-    setSvgData('');
     setSettings(settings => ({
       ...settings,
       palette: undefined,
@@ -229,6 +207,8 @@ export const MesheryProvider = ({ children }) => {
       svgSize: [0, 0]
     }));
     setLayers([]);
+    setLayerSettings(null);
+    setIsImportReady(false);
     firstLoad.current = false;
     
   };
@@ -242,7 +222,11 @@ export const MesheryProvider = ({ children }) => {
     setLayers(existing => existing.map(l => ({ ...l, mesh: false })));
   }
   const updateLayerById = (layerId, update) => {
-    setLayers(existing => existing.map(l => (l.id === layerId ? { ...l, ...update } : l)));
+    if (typeof update === 'function') {
+      setLayers(existing => existing.map(l => (l.id === layerId ? update(l) : l)));
+    } else {
+      setLayers(existing => existing.map(l => (l.id === layerId ? { ...l, ...update } : l)));
+    }
     // setLayers(old => {
     //   const matched = old.find(l => l.id === layerId);
     //   matched = { ...matched, ...update };
@@ -328,10 +312,8 @@ export const MesheryProvider = ({ children }) => {
   
   useEffect(() => {
     window.meshery.on('error', handleError);
-    // window.meshery.on('svg.imported', handleSVGImported);
     return () => {
       window.meshery.off('error', handleError);
-      // window.meshery.off('svg.imported', handleSVGImported);
     }
   }, []);
 
@@ -355,7 +337,11 @@ export const MesheryProvider = ({ children }) => {
       clearSVG,
       clearSystemLoading,
       systemLoading,
-      setSystemLoading
+      setSystemLoading,
+      setIsImportReady,
+      isImportReady,
+      layerSettings,
+      setLayerSettings
     }}>
       {children}
     </MesheryContext.Provider>

@@ -183,39 +183,35 @@ function closeRing(points) {
   return points.concat([points[0]]);
 }
 
-export function parseSVG(payload) {
-  const { svgData, settings: { palette } } = payload;
-  // const palette = await parsePalette();
-
-  // const stats = await fs.promises.stat(svgPath);
-  // if (stats.size > MAX_FILESIZE) {
-  //   throw new Error(`SVG file should not be larger than 1MB. Make sure you link any image layers rather than embedding them.`);
-  // }
-
-  // const svg = await fs.promises.readFile(svgPath, 'utf-8');
-  const $ = cheerio.load(svgData, { xmlMode: true });
-
-  // Find a layer by id
-  const root = $('svg');
-  const viewBox = root.attr('viewBox');
-  // const widthRaw = root.attr('width');
-  // const heightRaw = root.attr('height');
-
-  if (!viewBox) {
-    throw new Error('Unable to parse viewBox of SVG file');
-  }
-  const [xpos, ypos, width, height] = viewBox.split(' ').map(v => parseInt(v, 10));
-  if (!width || !height) {
-    throw new Error('Unable to parse dimensions of SVG file');
-  }
-
-  const layer = $('g#course');
-  if (!layer.get(0)) {
-    throw new Error('Unable to find layer with ID of course');
-  }
+function parseTreeLayers($, treeLayer, palette) {
 
   // Get all <path> in the layer
-  let layers = layer.find('path').map((i, el) => {
+  return treeLayer.find('path').map((i, el) => {
+    const name = $(el).attr('id');
+    const style = $(el).attr('style').toLowerCase();
+    log.info(`Parsing layer ${name}...`);
+
+    const matched = style.match(COLOR_MATCH);
+    if (!matched) {
+      throw new Error(`Unable to match layer (${name}) to a valid surface!`);
+    }
+    const [, hexColor] = matched;
+    const surface = matched ? palette?.[hexColor] : null;
+    if (!surface) {
+      throw new Error(`Unable to match layer color (${name}, ${hexColor}) to a valid surface!`);
+    }
+
+    return {
+      name,
+      surface,
+      hexColor,
+    };
+  }).get();
+}
+
+function parseCourseLayers($, courseLayer, palette) {
+  // Get all <path> in the layer
+  return courseLayer.find('path').map((i, el) => {
     const data = $(el).attr('d');
     const name = $(el).attr('id');
     const style = $(el).attr('style').toLowerCase();
@@ -231,10 +227,10 @@ export function parseSVG(payload) {
       throw new Error(`Unable to match layer color (${name}, ${hexColor}) to a valid surface!`);
     }
 
-    let settings = { ...defaultSettings.rough };
-    if (defaultSettings?.[surface]) {
-      settings = defaultSettings?.[surface];
-    }
+    // let settings = { ...defaultSettings.rough };
+    // if (defaultSettings?.[surface]) {
+    //   settings = defaultSettings?.[surface];
+    // }
 
     const layer = {
       id: `${surface}_${i}`,
@@ -242,8 +238,8 @@ export function parseSVG(payload) {
       visible: true,
       surface,
       color: hexColor,
-      data,
-      ...settings
+      data
+      // ...settings
     };
 
     let finalMatrix = fromObject({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 });
@@ -272,9 +268,12 @@ export function parseSVG(payload) {
       throw new Error(`SVG transform error (layer: ${name})`)
     }
   }).get();
+}
 
-
-  layers = layers.map((layer) => {
+export function generateCoursePolygons(data) {
+  log.info('generateCoursePolygons', data);
+  const { layers: courseLayers, layerSettings } = data;
+  let layers = courseLayers.map((layer) => {
     const properties = new svgPathProperties(layer.data);
     const length = properties.getTotalLength();
     // at least 100 points
@@ -306,10 +305,13 @@ export function parseSVG(payload) {
     // }
     // polygon = closeRing(polygon);
 
-
+    let settings = { ...defaultSettings.rough };
+    if (layerSettings?.[layer.surface]) {
+      settings = layerSettings?.[layer.surface];
+    }
     return {
       ...layer,
-      // ...settings,
+      ...settings,
       // data,
       // edge,
       // spacing,
@@ -321,6 +323,7 @@ export function parseSVG(payload) {
   })
 
   if (!layers?.length) {
+    log.error('No valid paths found in course layer');
     throw new Error('No valid paths found in course layer');
   }
   // const layersToCut = layers[0].polygon.map(points => [points[0], points[2]]);
@@ -384,9 +387,57 @@ export function parseSVG(payload) {
   });
 
   return {
+    layers
+  }
+}
+
+// export function parseSVG(payload) {
+export function parseSVG(svgData, palette) {
+  // const { svgData, settings: { palette } } = payload;
+  // const palette = await parsePalette();
+
+  // const stats = await fs.promises.stat(svgPath);
+  // if (stats.size > MAX_FILESIZE) {
+  //   throw new Error(`SVG file should not be larger than 1MB. Make sure you link any image layers rather than embedding them.`);
+  // }
+
+  // const svg = await fs.promises.readFile(svgPath, 'utf-8');
+  const $ = cheerio.load(svgData, { xmlMode: true });
+
+  // Find a layer by id
+  const root = $('svg');
+  const viewBox = root.attr('viewBox');
+  // const widthRaw = root.attr('width');
+  // const heightRaw = root.attr('height');
+
+  if (!viewBox) {
+    throw new Error('Unable to parse viewBox of SVG file');
+  }
+  const [xpos, ypos, width, height] = viewBox.split(' ').map(v => parseInt(v, 10));
+  if (!width || !height) {
+    throw new Error('Unable to parse dimensions of SVG file');
+  }
+
+  const courseLayer = $('g#course');
+  if (!courseLayer.get(0)) {
+    throw new Error('Unable to find layer with ID of course');
+  }
+  let courseLayers = parseCourseLayers($, courseLayer, palette);
+
+  const treeLayer = $('g#trees');
+  let treeLayers = [];
+  if (treeLayer.get(0)) {
+    treeLayers = parseTreeLayers($, treeLayer, palette);
+  }
+
+  if (!courseLayers?.length) {
+    throw new Error('No course shapes found in course layer');
+  }
+  return {
+    treeLayers,
     palette,
     width,
     height,
-    layers
+    layers: courseLayers
   };
 }

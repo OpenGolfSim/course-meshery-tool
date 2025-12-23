@@ -20,10 +20,12 @@ import CourseOutline from './CourseOutline.jsx';
 import { useMeshery } from '../contexts/Meshery.jsx';
 import { addVertexColorsToOBJ } from '../utils/obj.js';
 import ErrorDialog from '../dialogs/ErrorDialog.jsx';
-import LayerSettings from './LayerSettings.jsx';
+import TerrainSettings from './TerrainSettings.jsx';
 import LayerListItem from './LayerListItem.jsx';
 import CurveEditDialog from '../dialogs/CurveEditDialog.jsx';
 import LoadingDialog from '../dialogs/LoadingDialog.jsx';
+import ImportSettingsDialog from '../dialogs/ImportSettingsDialog.jsx';
+import LayerSettings from './LayerSettings.jsx';
 
 
 // Helper inside Canvas
@@ -50,7 +52,10 @@ export default function Workarea() {
     updateLayerById,
     systemLoading,
     clearSystemLoading,
-    setSystemLoading
+    setSystemLoading,
+    setIsImportReady,
+    isImportReady,
+    setLayerSettings
   } = useMeshery();
   const [scene, setScene] = useState();
   const canvasEle = React.useRef();
@@ -65,48 +70,28 @@ export default function Workarea() {
   const [terrainSize, setTerrainSize] = React.useState(4097);
   // const [terrainData, setTerrainData] = React.useState();
   const [heightScale, setHeightScale] = React.useState(10);
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState();
   
+  const handleImportDialogClose = useCallback((startImport) => {
+    setIsImportDialogOpen(false);
+    console.log('startImport', startImport);
+    if (startImport) {
+      setIsImportReady(true);
+    } else {
+      clearSVG();
+    }
+  }, []);
+
+
   const isExportDisabled = useMemo(() => {
     return !settings.svgFilePath || !settings.rawFilePath || !layers?.length || layers?.some(layer => layer.error || !layer.conformed);
   }, [settings.svgFilePath, settings.rawFilePath, layers]);
 
-  // const [size, setSize] = React.useState([0, 0]);
-  // const boundsApi = useBounds();
-
-
-  // const handleUpdateMesh = useCallback(async (layer) => {
-  //   const meshResult = await window.meshery.generateMesh(layer);
-  //   setLayers(old => {
-  //     const matched = old.find(l => l.id === layer.id);
-  //     matched.mesh = meshResult;
-  //     return [...old];
-  //   });
-  // }, [layers]);
-
-  // const handleContextUpdate = async (updatedContext) => {
-  //   console.log('parsed SVG', updatedContext);
-  //   setOpenSVGFile(updatedContext.svg);
-  //   setPalette(updatedContext.palette);
-  //   setOpenTerrainFile(updatedContext.raw);
-  //   setLayers(updatedContext.layers || []);
-  //   // setSize([updatedContext.width, updatedContext.height]);
-    
-  //   setSettings(settings => ({
-  //     ...settings,
-  //     palette: updatedContext.palette,
-  //     // heightMap: updatedContext.heightMap,
-  //     svgWidth: updatedContext.width,
-  //     svgHeight: updatedContext.height
-  //   }));
-  // }
-
   const handleZoomComplete = useCallback((layer) => {
-    // setLayers(layers.map(l => (l.id === layer.id ? { ...l, zoom: false } : l)));
     updateLayerById(layer.id, { zoom: false });
   }, [layers]);
   
   const handleMeshClick = (layer) => {
-    console.log('CLICKED MESH', layer.id);
     setSelectedLayer(layer.id);
   }
 
@@ -115,15 +100,6 @@ export default function Workarea() {
   }
   const handleVertexColorToggle = (event) => {
     setSettings(old => ({ ...old, vertexColors: !old.vertexColors }))
-  }
-
-  const handleMeshLoaded = (layer) => {
-    // updateLayerById(layer.id, { mesh: true });
-    // setLayers(old => {
-    //   const matched = old.find(l => l.id === layer.id);
-    //   matched.mesh = true;
-    //   return [...old];
-    // });
   }
 
   const handleImportTerrain = async () => {
@@ -154,19 +130,27 @@ export default function Workarea() {
     // if (result?.palette) {
     //   setPalette(result.palette);    
     // }
-    // console.log('HANDLE IMPORT', result);
+    console.log('HANDLE IMPORT', result);
+    if(result?.layerSettings) {
+      setLayerSettings(result.layerSettings);
+    }
     if (result?.path) {
-      setSystemLoading('Reading SVG file...');
+      // setSystemLoading('Reading SVG file...');
       setSettings(settings => ({
         ...settings,
         palette: result.palette,
-        svgFilePath: result.path
+        svgFilePath: result.path,
+        svgSize: result.svgSize
       }));
       // await handleSVGImported(result);
     }
-    if (result?.svg) {
-      setSvgData(result.svg);
+    if (result?.layers?.length) {
+      setLayers(result?.layers);
+      setIsImportDialogOpen(true);
     }
+    // if (result?.svg) {
+    //   setSvgData(result.svg);
+    // }
     
     // if (result?.layers) {
     //   setLayers(result.layers);
@@ -276,7 +260,7 @@ export default function Workarea() {
                 sx={{ display: 'flex' }}
                 slotProps={{ label: { sx: { flexGrow: 1 } }}}
                 label={`${settings.svgFilePath.split('/').pop()} (${settings.svgSize.join('x')})`}
-                onDelete={handleSVGReset}
+                onDelete={clearSVG}
               />
             ) : (
               <Button
@@ -345,14 +329,14 @@ export default function Workarea() {
           })}
         >
           <Box sx={{ width: 220, flexShrink: 0, display: 'flex', flexDirection: 'column' }}>
-            <LayerSettings />
+            <TerrainSettings />
 
             <Box sx={{ mt: 3, flexGrow: 1, overflow: 'hidden', maxHeight: '100%', display: 'flex', flexDirection: 'column' }}>
               <Typography sx={{ px: 2, mb: 1 }} variant="h5" color="textSecondary">Layers</Typography>
-                {layers.length ? (
+                {isImportReady && layers.length ? (
                   <Box sx={{ maxHeight: '100%', overflow: 'auto' }}>
                     {layers.map(layer => (
-                      <LayerListItem
+                      <LayerSettings
                         key={layer.id}
                         layer={layer}
                         selectedLayer={selectedLayer}
@@ -416,6 +400,7 @@ export default function Workarea() {
       </Box>
       <ErrorDialog open={!!systemError} onClose={clearSystemError} systemError={systemError} />
       <LoadingDialog open={!!systemLoading} label={systemLoading} onClose={clearSystemLoading} />
+      <ImportSettingsDialog open={isImportDialogOpen} onClose={handleImportDialogClose} />
     </>
   )
 }

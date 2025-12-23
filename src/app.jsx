@@ -23,6 +23,22 @@ const darkTheme = createTheme({
   palette,
   typography: {
     fontSize: 11,
+    h1: {
+      fontSize: 32,
+    },
+    h2: {
+      fontSize: 24,
+    },
+    h3: {
+      fontSize: 14,
+      fontWeight: 800,
+    },
+    h4: {
+      fontSize: 16,
+    },
+    h5: {
+      fontSize: 14,
+    },
     h5: {
       fontSize: 10,
       fontWeight: 800,

@@ -220,16 +220,6 @@ export default function LayerListItem({
                       <RouteIcon />
                     </IconButton>
                   </Stack>
-                  
-                  {/* <Typography sx={{ m: 0 }} variant="h6">Expo Power</Typography>
-                  <Slider
-                    size="small"
-                    value={layer.dig.curvePower}
-                    min={1}
-                    max={20}
-                    step={1}
-                    onChange={handleDigSmoothExpoChange}
-                  /> */}
 
                 </>
               ) : null}
