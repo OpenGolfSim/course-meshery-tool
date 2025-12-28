@@ -433,6 +433,16 @@ export function parseSVG(svgData, palette) {
   if (!courseLayers?.length) {
     throw new Error('No course shapes found in course layer');
   }
+
+  courseLayers.unshift({
+    id: 'base',
+    name: 'base',
+    visible: true,
+    surface: 'base',
+    color: 'green',
+    data: `M 0,0 H ${width} V ${height} H 0 Z`
+  });
+
   return {
     treeLayers,
     palette,

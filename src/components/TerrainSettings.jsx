@@ -36,12 +36,13 @@ export default function TerrainSettings() {
   }, [tempHeight, tempSmooth]);
 
   return (
-    <Box sx={{ px: 2, flexGrow: 0, flexShrink: 0 }}>
-      <Typography sx={{ mb: 3 }} variant="h5" color="textSecondary">Settings</Typography>
-      <Stack spacing={4}>
+    <>
+      {/* <Typography sx={{ mb: 3 }} variant="h5" color="textSecondary">Settings</Typography> */}
+      {/* <Stack spacing={4} direction="row"> */}
         {/* <Tooltip title="The height scale of your terrain data. This can be found in your Course Terrain Tool stats file or from your Unity terrain settings"> */}
           <TextField
-            fullWidth={true}
+            // fullWidth={true}
+            sx={{ width: 100 }}
             label="Terrain Height (m)"
             type="number"
             // disabled={!settings.rawFilePath}
@@ -53,15 +54,16 @@ export default function TerrainSettings() {
         {/* </Tooltip> */}
         
         <TextField
-          fullWidth={true}
+          // fullWidth={true}
+          sx={{ width: 100 }}
           label="Terrain Smoothing"
           type="number"
           value={tempSmooth}
           size="small"
           onChange={handleSmoothingUpdate}
         />
-      </Stack>
+      {/* </Stack> */}
 
-    </Box>    
+    </>    
   )
 }

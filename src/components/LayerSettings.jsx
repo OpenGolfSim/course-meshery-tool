@@ -23,30 +23,11 @@ export default function LayerSettings({
 }) {
   const { updateLayerById } = useMeshery();
   const [spacing, setSpacing] = useState(layer.spacing);
-  const [dig, setDig] = useState(layer.dig);
-  const [blending, setBlending] = useState(layer.blending);
-
   const [curveEditorOpen, setCurveEditorOpen] = useState(false);
   
   const expanded = useMemo(() => {
     return selectedLayer === layer.id;
   }, [selectedLayer, layer.id]);
-
-  const timer = useRef();
-  
-  const handleTriggerUpdate = React.useCallback((e) => {
-    console.log('trigger update', layer, spacing);
-      // updateLayerById(layer.id, {
-      //   spacing,
-      //   dig: {
-      //     ...layer.dig,
-      //     depth: digDepth,
-      //     curve: digCurve,
-      //     distance: digDistance
-      //   },
-
-      // });
-  }, [layer, spacing, dig]);
 
   const handleSpacingChange = React.useCallback((value) => {
     console.log('handleSpacingChange', value);
@@ -76,22 +57,6 @@ export default function LayerSettings({
     }));
   }, [layer]);
   
-  
-  const handleDigDistanceChange = React.useCallback((e) => {
-    const value = e.target.value;
-    setDigDistance(value);
-  }, []);
-
-  const handleDigDepthChange = React.useCallback((e) => {
-    const value = e.target.value;
-    setDigDepth(value);
-  }, []);
-  
-  const handleDigCurveChange = React.useCallback((e) => {
-    const value = e.target.value;
-    setDigCurve(value);
-  }, []);
-
   const handleClick = useCallback(() => {
     onExpand(layer.id, !expanded);
   }, [expanded]);
@@ -113,15 +78,6 @@ export default function LayerSettings({
     });
   }, [layer]);
 
-
-  // useEffect(() => {
-  //   // if (
-  //     // spacing !== layer.spacing
-  //   // ) {
-  //     clearTimeout(timer.current);
-  //     timer.current = setTimeout(handleTriggerUpdate, 500);
-  //   // }
-  // }, [spacing]);
 
   const isDisabled = useMemo(() => {
     return layer.error || !layer.mesh || layer.pending || !layer.conformed;

@@ -14,6 +14,7 @@ const MesheryContext = createContext({
   settings: {},
   layers: [],
   clearSVG: () => {},
+  clearTerrain: () => {},
   clearSystemError: () => {},
   setSettings: () => {},
   updateLayerById: () => {},
@@ -31,6 +32,7 @@ export const MesheryProvider = ({ children }) => {
   const [systemError, setSystemError] = useState(null);
   const [systemLoading, setSystemLoading] = useState('');
   
+  const [isTerrainReady, setIsTerrainReady] = useState(false);
   const [isImportReady, setIsImportReady] = useState(false);
   const [isSVGReady, setIsSVGReady] = useState(false);
   const [isPending, setIsPending] = useState(false);
@@ -47,7 +49,7 @@ export const MesheryProvider = ({ children }) => {
     svgSize: [0, 0],
     terrainSize: 4097,
     terrainSmoothingStrength: 0,
-    terrainSmoothingRadius: 0,
+    terrainSmoothingRadius: 5,
     wireframe: true,
     vertexColors: false,
     selectedLayer: null
@@ -199,6 +201,16 @@ export const MesheryProvider = ({ children }) => {
     setSystemError(errorMessage);
   };
 
+  const clearTerrain = () => {
+    setSettings(settings => ({
+      ...settings,
+      rawFilePath: undefined,
+      terrainSize: null,
+    }));
+    setIsTerrainReady(false);
+    setFinalHeightMap(null);
+  }
+
   const clearSVG = () => {
     setSettings(settings => ({
       ...settings,
@@ -209,9 +221,10 @@ export const MesheryProvider = ({ children }) => {
     setLayers([]);
     setLayerSettings(null);
     setIsImportReady(false);
+    setIsSVGReady(false);
     firstLoad.current = false;
-    
   };
+
   const clearSystemError = () => {
     setSystemError(null);
   };
@@ -269,14 +282,17 @@ export const MesheryProvider = ({ children }) => {
   
   // const debounceTimer = useRef();
   useEffect(() => {
-    if (!settings.rawFilePath) {
+    // if (!settings.rawFilePath) {
+    //   return;
+    // }
+    if (!isTerrainReady) {
       return;
     }
     console.log('regenerate terrain data');
   //   clearTimeout(debounceTimer.current);
   //   debounceTimer.current = setTimeout(generateTerrainData, 600);
     generateTerrainData();
-  }, [settings.rawFilePath, settings.terrainSmoothingRadius]);
+  }, [settings.rawFilePath, isTerrainReady, settings.terrainSmoothingRadius]);
   
   useEffect(() => {
     if (!layers?.length) {
@@ -335,11 +351,14 @@ export const MesheryProvider = ({ children }) => {
       setLayers,
       updateLayerById,
       clearSVG,
+      clearTerrain,
       clearSystemLoading,
       systemLoading,
       setSystemLoading,
       setIsImportReady,
       isImportReady,
+      setIsTerrainReady,
+      isTerrainReady,
       layerSettings,
       setLayerSettings
     }}>

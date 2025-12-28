@@ -1,7 +1,8 @@
 import React from 'react';
-import { Box, Stack, Typography, Slider, InputBase, Switch, FormControlLabel, Checkbox } from '@mui/material';
+import { Box, Stack, Typography, Slider, InputBase, Switch, FormControlLabel, Checkbox, TextField, MenuItem, IconButton } from '@mui/material';
 import CurveEditDialog from '../dialogs/CurveEditDialog.jsx';
 import NumericInput from './NumericInput.jsx';
+import RouteIcon from '@mui/icons-material/Route';
 
 export default function SurfaceSettings(props) {
   const {
@@ -15,25 +16,19 @@ export default function SurfaceSettings(props) {
     onBlendChange,
     onBlendToggle,
     onDigChanged,
-    onDigDepthChange,
-    onDigToggle,
-    onDigDistanceChange
+    onDigToggle
   } = props;
+  const [curveEditorOpen, setCurveEditorOpen] = React.useState(false);
 
   const showDig = React.useMemo(() => {
     return ['water','sand','river'].includes(surface);
   }, [surface]);
 
-  const handleInputChange = (callback) => {
-    return (event) => {
-      callback(event.target.value);
-    }
+  const handleCurveEditClose = (points) => {
+    onDigChanged('curvePoints', points);
+    setCurveEditorOpen(false);
   }
-  // const handleInputToggle = (callback) => {
-  //   return (event) => {
-  //     callback(event.target.checked);
-  //   }
-  // }
+
   return (
     <Box>
       <Stack direction="column" spacing={1} sx={{ px: 2, pb: 2 }}>
@@ -79,7 +74,7 @@ export default function SurfaceSettings(props) {
               disabled={isDisabled || !dig?.enabled}
               value={dig?.depth}
               min={0.05}
-              max={3}
+              max={8}
               step={0.05}
               onToggled={onDigToggle}
               onChange={(value) => onDigChanged('depth', value)}
@@ -94,59 +89,39 @@ export default function SurfaceSettings(props) {
               step={0.05}
               onChange={(value) => onDigChanged('distance', value)}
             />
-          </>
-        ) : null}
 
-        {/* {dig ? (
-          <>
-            <Typography sx={{ m: 0 }} variant="h6">Dig Depth</Typography>
-            <Stack direction="row" alignItems="center" spacing={1}>
-              <InputBase value={digDepth} sx={{ width: 70 }} type="number" />
-              <Slider
-                size="small"
-                value={digDepth}
-                disabled={isDisabled}
-                min={0.01}
-                max={10}
-                step={0.01}
-                onChange={onDigDepthChange}
-              />
-            </Stack>
-            <Typography sx={{ m: 0 }} variant="h6">Dig Distance</Typography>
-            <Stack direction="row" alignItems="center" spacing={1}>
-              <InputBase value={digDistance} sx={{ width: 70 }} type="number" />
-              <Slider
-                size="small"
-                value={digDistance}
-                disabled={isDisabled}
-                min={0.05}
-                max={1}
-                step={0.01}
-                onChange={onDigDistanceChange}
-              />
-            </Stack>
-            
             <Typography sx={{ m: 0 }} variant="h6">Dig Curve</Typography>
             <Stack direction="row">
-              <TextField select={true} value={layer.dig.curve} onChange={handleDigCurveChange} fullWidth={true} size="small">
+              <TextField
+                select={true}
+                value={dig.curve}
+                onChange={(e) => onDigChanged('curve', e.target.value)}
+                fullWidth={true}
+                size="small"
+              >
                 <MenuItem value="smooth">Smoothstep</MenuItem>
                 <MenuItem value="linear">Linear</MenuItem>
                 <MenuItem value="sine">Sine</MenuItem>
                 <MenuItem value="bezier">Bezier</MenuItem>
               </TextField>
-              <CurveEditDialog layer={layer} open={curveEditorOpen} onClose={handleCurvePointsSaved} />
 
 
               <IconButton
-                disabled={layer.dig.curve !== 'bezier'}
+                disabled={dig.curve !== 'bezier'}
                 onClick={() => setCurveEditorOpen(true)}
               >
                 <RouteIcon />
               </IconButton>
             </Stack>
+            <CurveEditDialog
+              dig={dig}
+              open={curveEditorOpen}
+              onClose={handleCurveEditClose}
+            />
 
           </>
-        ) : null} */}
+        ) : null}
+
       </Stack>      
     </Box>
   )

@@ -455,8 +455,7 @@ function conformTerrain({
   const positions = [];
   if (!heightMap) {
     log.warn('No heightmap data');
-  }
-  if (!terrainSize) {
+  } else if (!terrainSize) {
     throw new Error('Terrain Size is invalid');
   }
   const mesh = layer.mesh;
@@ -464,7 +463,7 @@ function conformTerrain({
     // for (const [x, z] of points) {
     // let y = 0;
     const x = mesh.points[index];
-    let y = mesh.points[index + 1];
+    let y = 0; // mesh.points[index + 1];
     const z = mesh.points[index + 2];
 
     if (heightMap) {

@@ -14,6 +14,13 @@ const defaultDig = {
 };
 
 export const defaultSettings = {
+  base: {
+    spacing: 20,
+    spacingEdge: 0,
+    blend: 0,
+    blending: { ...defaultBlend },
+    dig: { ...defaultDig }
+  },
   rough: {
     spacing: 4,
     spacingEdge: 0,

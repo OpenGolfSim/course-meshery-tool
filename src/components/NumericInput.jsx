@@ -54,7 +54,7 @@ export default function NumericInput(props) {
 
   return (
     <Box>
-      <Typography sx={{ m: 0 }} variant="h6">{label}</Typography>
+      <Typography color="textSecondary" sx={{ m: 0, mb: 2 }} variant="h6">{label}</Typography>
 
       <Stack direction="row" alignItems="center" spacing={2}>
         <Box sx={{ width: 70 }}>

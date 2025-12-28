@@ -26,6 +26,9 @@ import CurveEditDialog from '../dialogs/CurveEditDialog.jsx';
 import LoadingDialog from '../dialogs/LoadingDialog.jsx';
 import ImportSettingsDialog from '../dialogs/ImportSettingsDialog.jsx';
 import LayerSettings from './LayerSettings.jsx';
+import TerrainImportButton from './TerrainImportButton.jsx';
+import SvgImportButton from './SvgImportButton.jsx';
+import TerrainSettingsDialog from '../dialogs/TerrainSettingsDialog.jsx';
 
 
 // Helper inside Canvas
@@ -55,7 +58,8 @@ export default function Workarea() {
     setSystemLoading,
     setIsImportReady,
     isImportReady,
-    setLayerSettings
+    setLayerSettings,
+    setIsTerrainReady
   } = useMeshery();
   const [scene, setScene] = useState();
   const canvasEle = React.useRef();
@@ -71,7 +75,21 @@ export default function Workarea() {
   // const [terrainData, setTerrainData] = React.useState();
   const [heightScale, setHeightScale] = React.useState(10);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState();
+  const [isTerrainSettingsDialogOpen, setIsTerrainSettingsDialogOpen] = React.useState(false);
   
+  
+  const handleTerrainSettingsDialogClose = useCallback((newSettings) => {
+    console.log('result', newSettings);
+    setIsTerrainSettingsDialogOpen(false);
+    if (newSettings) {
+      setSettings(old => ({
+        ...old,
+        ...newSettings
+      }));
+      setIsTerrainReady(true);
+    }
+  }, []);
+
   const handleImportDialogClose = useCallback((startImport) => {
     setIsImportDialogOpen(false);
     console.log('startImport', startImport);
@@ -102,25 +120,25 @@ export default function Workarea() {
     setSettings(old => ({ ...old, vertexColors: !old.vertexColors }))
   }
 
-  const handleImportTerrain = async () => {
-    const result = await window.meshery.selectTerrainFile();
-    // if (result?.raw) {
-    //   setOpenTerrainFile(result.raw);
-    // }
-    if (result?.raw) {
-      setSystemLoading('Reading RAW file...');
-      setSettings(settings => ({
-        ...settings,
-        rawFilePath: result?.raw,
-        terrainSize: result?.terrainSize,
-      }));
-      if (!result?.heightMap) {
-        setSystemError('Raw file seems to be missing height-map data');
-        return;
-      }
-      setInputHeightMap(result.heightMap);
-    }
-  }
+  // const handleImportTerrain = async () => {
+  //   const result = await window.meshery.selectTerrainFile();
+  //   // if (result?.raw) {
+  //   //   setOpenTerrainFile(result.raw);
+  //   // }
+  //   if (result?.raw) {
+  //     setSystemLoading('Reading RAW file...');
+  //     setSettings(settings => ({
+  //       ...settings,
+  //       rawFilePath: result?.raw,
+  //       terrainSize: result?.terrainSize,
+  //     }));
+  //     if (!result?.heightMap) {
+  //       setSystemError('Raw file seems to be missing height-map data');
+  //       return;
+  //     }
+  //     setInputHeightMap(result.heightMap);
+  //   }
+  // }
 
   const handleImportSVG = async () => {
     const result = await window.meshery.selectSVGFile();
@@ -231,8 +249,12 @@ export default function Workarea() {
           })}
         >
           
+          {/* <TerrainSettings /> */}
           <Box>
-            {settings.rawFilePath ? (
+            <TerrainImportButton
+              onSettingsOpen={() => setIsTerrainSettingsDialogOpen(true)}
+            />
+            {/* {settings.rawFilePath ? (
               <>
                 <Chip
                   icon={<MountainIcon />}
@@ -251,10 +273,11 @@ export default function Workarea() {
               >
                   Import RAW Terrain
               </Button>
-            )}          
+            )}*/}
           </Box>
           <Box>
-            {settings.svgFilePath ? (
+            <SvgImportButton onImportDialogOpen={() => setIsImportDialogOpen(true)} />
+            {/* {settings.svgFilePath ? (
               <Chip
                 icon={<SVGIcon />}
                 sx={{ display: 'flex' }}
@@ -271,7 +294,7 @@ export default function Workarea() {
               >
                 Import SVG
               </Button>
-            )}
+            )} */}
           </Box>
           
           <Box sx={{ ml: 'auto', mr: 1 }}>
@@ -329,7 +352,6 @@ export default function Workarea() {
           })}
         >
           <Box sx={{ width: 220, flexShrink: 0, display: 'flex', flexDirection: 'column' }}>
-            <TerrainSettings />
 
             <Box sx={{ mt: 3, flexGrow: 1, overflow: 'hidden', maxHeight: '100%', display: 'flex', flexDirection: 'column' }}>
               <Typography sx={{ px: 2, mb: 1 }} variant="h5" color="textSecondary">Layers</Typography>
@@ -401,6 +423,7 @@ export default function Workarea() {
       <ErrorDialog open={!!systemError} onClose={clearSystemError} systemError={systemError} />
       <LoadingDialog open={!!systemLoading} label={systemLoading} onClose={clearSystemLoading} />
       <ImportSettingsDialog open={isImportDialogOpen} onClose={handleImportDialogClose} />
+      <TerrainSettingsDialog open={isTerrainSettingsDialogOpen} onClose={handleTerrainSettingsDialogClose} />
     </>
   )
 }
