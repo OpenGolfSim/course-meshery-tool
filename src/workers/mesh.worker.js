@@ -5,7 +5,7 @@ import { Delaunay } from 'd3-delaunay';
 import logger from 'electron-log/renderer';
 import { smoothTerrainData } from '../lib/terrain';
 import { distanceToPolygonEdge, isPointInPolygon } from '../lib/mesh';
-import { parseSVG } from '../lib/svg';
+import { generateCoursePolygons } from '../lib/svg';
 
 const EPSILON = 1e-8; // or whatever small threshold
 
@@ -69,7 +69,7 @@ function adaptiveMinDistanceFactory(layer, minX, minY) {
     const px = x + minX, py = y + minY;
 
     const distToOuter = distanceToPolygonEdge([px, py], layer.polygon);
-    if (distToOuter <= layer.blend) {
+    if (distToOuter <= layer.blending.distance) {
       // return min grid size
       return 0;
     }
@@ -79,7 +79,7 @@ function adaptiveMinDistanceFactory(layer, minX, minY) {
       if (d < distToInner) {
         distToInner = d;
       }
-      if (distToInner <= layer.blend) {
+      if (distToInner <= layer.blending.distance) {
         return 0;
       }
 
@@ -217,25 +217,40 @@ function interpHeight(heights, tx, tz, terrainSize = 4097) {
   return h0 * (1 - fz) + h1 * fz;
 }
 
-
-
 function getBoundingBox(rings) {
-  let xs = [], ys = [];
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
   for (const ring of rings) {
     for (const [x, y] of ring) {
-      xs.push(x); ys.push(y);
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
     }
   }
-  const minX = Math.min(...xs);
-  const minY = Math.min(...ys);
-  const maxX = Math.max(...xs);
-  const maxY = Math.max(...ys);
 
   const width = maxX - minX;
   const height = maxY - minY;
-
   return { minX, minY, maxX, maxY, width, height };
 }
+
+// function getBoundingBox(rings) {
+//   let xs = [], ys = [];
+//   for (const ring of rings) {
+//     for (const [x, y] of ring) {
+//       xs.push(x); ys.push(y);
+//     }
+//   }
+//   const minX = Math.min(...xs);
+//   const minY = Math.min(...ys);
+//   const maxX = Math.max(...xs);
+//   const maxY = Math.max(...ys);
+
+//   const width = maxX - minX;
+//   const height = maxY - minY;
+
+//   return { minX, minY, maxX, maxY, width, height };
+// }
 
 function triCentroid(p1, p2, p3) { return [(p1[0] + p2[0] + p3[0]) / 3, (p1[1] + p2[1] + p3[1]) / 3]; }
 
@@ -269,9 +284,9 @@ function generateMesh({
   let opts = {
     minDistance: layer.spacing
   };
-  if (layer.spacingEdge > 0) {
+  if (layer.blending.enabled && layer.blending.spacing > 0 && layer.blending.spacing !== layer.spacing) {
     opts = {
-      minDistance: layer.spacingEdge,
+      minDistance: layer.blending.spacing,
       maxDistance: layer.spacing,
       distanceFunction: adaptiveMinDistanceFactory(layer, minX, minY),
     }
@@ -409,8 +424,8 @@ function generateMesh({
 
   // fill with white color
   let colors = new Array(allPoints.length * 3).fill(1);
-  if (layer.blend && layer.blend > 0) {
-    colors = computeVertexColors(allPoints, layer.polygon, layer.holes, layer.blend);
+  if (layer.blending.enabled && layer.blending.distance > 0) {
+    colors = computeVertexColors(allPoints, layer.polygon, layer.holes, layer.blending.distance);
   }
 
   return {
@@ -440,8 +455,7 @@ function conformTerrain({
   const positions = [];
   if (!heightMap) {
     log.warn('No heightmap data');
-  }
-  if (!terrainSize) {
+  } else if (!terrainSize) {
     throw new Error('Terrain Size is invalid');
   }
   const mesh = layer.mesh;
@@ -449,7 +463,7 @@ function conformTerrain({
     // for (const [x, z] of points) {
     // let y = 0;
     const x = mesh.points[index];
-    let y = mesh.points[index + 1];
+    let y = 0; // mesh.points[index + 1];
     const z = mesh.points[index + 2];
 
     if (heightMap) {
@@ -511,7 +525,7 @@ self.onmessage = (event) => {
       postMessage({ jobId, type: 'terrain', heightMap: result });
     } else if (type === 'svg') {
       log.info(`Starting svg worker job`);
-      const result = parseSVG(event.data);
+      const result = generateCoursePolygons(event.data);
       postMessage({ jobId, type: 'svg', ...result });
       log.info(`Finished svg worker job`);
       // parseSVG(event.data).then(result => {

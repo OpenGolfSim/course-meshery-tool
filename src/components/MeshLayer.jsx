@@ -24,7 +24,7 @@ function digMesh(original, positions, polygon, holes, digOptions) {
   const { curvePower, curve, curvePoints, depth, distance } = digOptions;
   let maxDist = 0;
   const insideList = [];
-
+  
   for (let i = 0; i < original.length; i += 3) {
     const x = original[i];
     const y = original[i + 1];
@@ -37,8 +37,8 @@ function digMesh(original, positions, polygon, holes, digOptions) {
       insideList.push({ idx: i / 3, dist, point: [x, y, z] });
     }
   }
-  const digDistance = distance * maxDist;
 
+  const digDistance = distance * maxDist;
   for (const obj of insideList) {
     let t = Math.min(obj.dist / digDistance, 1);
     // let t = maxDist ? obj.dist / maxDist : 0;
@@ -142,7 +142,7 @@ export default function MeshLayer(props) {
     const indices = props.layer.mesh.triangles;
     const positionAttr = new THREE.Float32BufferAttribute(positions, 3);
     // initial dig
-    if (props.layer.dig?.depth) {
+    if (props.layer.dig?.enabled) {
       digMesh(
         positions,
         positionAttr,
@@ -220,14 +220,21 @@ export default function MeshLayer(props) {
   // }, [props.layer.mesh, props.layer.conformed]);
   const customDig = useCallback(() => {
     const positionAttr = geometry.getAttribute('position');
-    // const cloned = positionAttr.clone();
-    digMesh(
-      props.layer.mesh.points,
-      positionAttr,
-      props.layer.polygon,
-      props.layer.holes,
-      props.layer.dig
-    );
+    if (props.layer.dig.enabled) {
+      console.log('CustomDig-DIG');
+      // const cloned = positionAttr.clone();
+      digMesh(
+        props.layer.mesh.points,
+        positionAttr,
+        props.layer.polygon,
+        props.layer.holes,
+        props.layer.dig
+      );
+    } else {
+      console.log('CustomDig-RESET');
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(props.layer.mesh.points, 3));
+    }
+
     positionAttr.needsUpdate = true;
   }, [props.layer, geometry]);
 
@@ -235,11 +242,12 @@ export default function MeshLayer(props) {
     if (!props.layer.conformed) {
       return;
     }
-    if (!props.layer?.dig?.depth) {
-      return;
-    }
+    // if (!props.layer?.dig?.depth) {
+    //   return;
+    // }
     customDig();
   }, [
+    props.layer.dig?.enabled,
     props.layer.dig?.depth,
     props.layer.dig?.distance,
     props.layer.dig?.curve,
@@ -252,16 +260,21 @@ export default function MeshLayer(props) {
     if (!props.layer) {
       return;
     }
-    if (!firstLoad) {
-      // initial mesh generation is handled in the provider
-      setFirstLoad(true);
-      return;
+    // if (!firstLoad) {
+    //   // initial mesh generation is handled in the provider
+    //   log.info(`Skip generate mesh`);
+    //   setFirstLoad(true);
+    //   return;
+    // }
+    if (props.layer.mesh && props.layer.conformed) {
+      log.info(`Regenerate mesh (${props.layer.id})`);
+      generateMesh(props.layer).then(_response => {
+        conformMesh({ ...props.layer, mesh: _response.mesh });
+      }).catch(error => {
+        log.warn(error);
+      });
     }
-    log.info(`Regenerating mesh (${props.layer.id})`);
-    generateMesh(props.layer).then(_response => {
-      conformMesh({ ...props.layer, mesh: _response.mesh });
-    });
-  }, [props.layer.spacing]);
+  }, [props.layer.spacing, props.layer.blending]);
 
   useEffect(() => {
     material.opacity = props.layer.pending || !props.layer.conformed ? 0.3 : 1;

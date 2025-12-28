@@ -7,7 +7,9 @@ import { parseSVG } from './lib/svg';
 import { parsePalette } from './lib/colors';
 import { parseRaw } from './lib/heightmap';
 import { resourceRoot } from './lib/app';
+import { buildAppMenu } from './lib/menu';
 import { dataCache, smoothTerrainData } from './lib/terrain';
+import { defaultSettings } from './lib/settings';
 
 const MAX_FILESIZE = 1e6; // Anything over 1 MB probably has images in it
 
@@ -16,6 +18,8 @@ let mainWindow;
 if (require('electron-squirrel-startup')) {
   app.quit();
 }
+
+buildAppMenu();
 
 const createWindow = async () => {
   // Create the browser window.
@@ -105,10 +109,10 @@ ipcMain.handle('svg.select', async (event) => {
     if (stats.size > MAX_FILESIZE) {
       throw new Error(`SVG file should not be larger than 1MB. Make sure you link any image layers rather than embedding them.`);
     }
-    const svg = await fs.promises.readFile(svgPath, 'utf-8');
+    const svgData = await fs.promises.readFile(svgPath, 'utf-8');
 
-    // const { layers, width, height } = await parseSVG(svgPath, palette);
-
+    const { layers, width, height } = await parseSVG(svgData, palette);
+    log.info('got svg info', { width, height });
     // const result = {
     //   palette,
     //   layers,
@@ -117,7 +121,13 @@ ipcMain.handle('svg.select', async (event) => {
     //   svg: svgPath
     // };
     // mainWindow.webContents.send('svg.imported', result);
-    return { path: svgPath, svg, palette };
+    return {
+      path: svgPath,
+      palette,
+      layers,
+      svgSize: [width, height],
+      layerSettings: { ...defaultSettings }
+    };
   } catch (error) {
     log.error('SVG error', error);
     event.sender.send('error', error.message);

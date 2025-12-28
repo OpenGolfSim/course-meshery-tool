@@ -1,67 +1,159 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Box, Typography, TextField, List, Chip, Stack, Tooltip } from '@mui/material';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Box, ListItemText, IconButton, ListItem, ListItemAvatar, Avatar, ListItemButton, Link, Button, ButtonBase, Typography, CircularProgress, Accordion, AccordionDetails, AccordionSummary, Slider, Stack, Tooltip, TextField, MenuItem, Collapse, Chip } from '@mui/material';
+import RouteIcon from '@mui/icons-material/Route';
+import ZoomInIcon from '@mui/icons-material/ZoomIn';
+import ErrorIcon from '@mui/icons-material/Error';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import ExpandMoreIcon from '@mui/icons-material/ChevronRight';
+import ExpandLessIcon from '@mui/icons-material/ExpandMore';
+import { styled } from '@mui/material/styles';
 import { useMeshery } from '../contexts/Meshery.jsx';
+import CurveEditDialog from '../dialogs/CurveEditDialog.jsx';
+import SurfaceSettings from './SurfaceSettings.jsx';
 
-export default function LayerSettings() {
-  const { settings, setSettings } = useMeshery();
-  const debounceRef = useRef();
-  const [tempHeight, setTempHeight] = useState(settings.heightScale);
-  const [tempSmooth, setTempSmoothing] = useState(settings.terrainSmoothingRadius);
 
-  const handleScaleUpdate = useCallback((e) => {
-    // const heightScaleValue = e.target.value;
-    // console.log(heightScaleValue);
-    const val = e.target.value;
-    setTempHeight(val);
-    // setSettings(({ ...settings, heightScale: parseInt(val, 10)}));
-  }, [settings]);
+export default function LayerSettings({
+  layer,
+  selectedLayer,
+  onExpand,
+  onZoom,
+  onCurveEdit,
+}) {
+  const { updateLayerById } = useMeshery();
+  const [spacing, setSpacing] = useState(layer.spacing);
+  const [curveEditorOpen, setCurveEditorOpen] = useState(false);
+  
+  const expanded = useMemo(() => {
+    return selectedLayer === layer.id;
+  }, [selectedLayer, layer.id]);
 
-  const handleSmoothingUpdate = useCallback((e, key) => {
-    // const smoothingValue = parseInt(e.target.value, 10);
-    const val = e.target.value;
-    setTempSmoothing(val);
-      // setSettings(({ ...settings, terrainSmoothingRadius: parseInt(val, 10)}));
-  }, [settings]);
+  const handleSpacingChange = React.useCallback((value) => {
+    console.log('handleSpacingChange', value);
+    updateLayerById(layer.id, { spacing: value });
+    // setSpacing(value);
+  }, [layer, spacing]);
+  
+  const handleBlendChange = React.useCallback((key, value) => {
+    console.log('handleBlendChange', key, value);
+    updateLayerById(layer.id, (oldLayer) => ({
+      ...oldLayer,
+      blending: {
+        ...oldLayer.blending,
+        [key]: value,
+      }
+    }));
+  }, [layer]);
+  
+  const handleDigChange = React.useCallback((key, value) => {
+    console.log('handleDigChange', key, value);
+    updateLayerById(layer.id, (oldLayer) => ({
+      ...oldLayer,
+      dig: {
+        ...oldLayer.dig,
+        [key]: value,
+      }
+    }));
+  }, [layer]);
+  
+  const handleClick = useCallback(() => {
+    onExpand(layer.id, !expanded);
+  }, [expanded]);
 
-  useEffect(() => {
-    clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      console.log('changed');
-      setSettings(old => ({
-        ...old,
-        heightScale: parseInt(tempHeight, 10),
-        terrainSmoothingRadius: parseInt(tempSmooth, 10)
-      }));
-    }, 800);
-  }, [tempHeight, tempSmooth]);
+
+  const handleCurvePointsSaved = useCallback((points) => {
+    if (points) {
+      updateLayerById(layer.id, {
+        spacing,
+        dig: { ...layer.dig, curvePoints: points }
+      });
+    }
+    setCurveEditorOpen(false);
+  }, [layer]);
+  
+  const handleVisibilityToggle = useCallback(() => {
+    updateLayerById(layer.id, {
+      visible: !layer.visible
+    });
+  }, [layer]);
+
+
+  const isDisabled = useMemo(() => {
+    return layer.error || !layer.mesh || layer.pending || !layer.conformed;
+  }, [layer]);
 
   return (
-    <Box sx={{ px: 2, flexGrow: 0, flexShrink: 0 }}>
-      <Typography sx={{ mb: 3 }} variant="h5" color="textSecondary">Settings</Typography>
-      <Stack spacing={4}>
-        {/* <Tooltip title="The height scale of your terrain data. This can be found in your Course Terrain Tool stats file or from your Unity terrain settings"> */}
-          <TextField
-            fullWidth={true}
-            label="Terrain Height (m)"
-            type="number"
-            // disabled={!settings.rawFilePath}
-            // helperText="This can be found in your Course Terrain Tool stats file or from your Unity terrain settings"
-            value={tempHeight}
-            size="small"
-            onChange={handleScaleUpdate}
-          />
-        {/* </Tooltip> */}
-        
-        <TextField
-          fullWidth={true}
-          label="Terrain Smoothing"
-          type="number"
-          value={tempSmooth}
-          size="small"
-          onChange={handleSmoothingUpdate}
-        />
-      </Stack>
+    <>
+      <Box>
+        <Box sx={{ p: 2, opacity: layer.visible ? 1 : 0.6 }}>
+          <ButtonBase
+            sx={{
+              width: '100%',
+              display: 'flex',
+              flexDirection: 'row',
+              gap: 3,
+              textAlign: 'left'
+            }}
+            onClick={handleClick}
+          >
+            {layer.error ? (
+              <Tooltip title={layer.error}>
+                <ErrorIcon color="error" />
+              </Tooltip>
+            ) : (
+                isDisabled ? (
+                <CircularProgress size={15} />
+              ) : (
+                <Avatar sx={{ backgroundColor: `#${layer.color}`, width: 15, height: 15 }}>{' '}</Avatar>
+              )
+            )}
+            <Box sx={{ flex: 1 }}>
+              <Typography component="span">{layer.surface}</Typography>{' '}
+              <Typography color="textSecondary" component="span">{layer.name}</Typography>
+              
+            </Box>
+            <Box>
+              {expanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+            </Box>
+          </ButtonBase>
+        </Box>
+        <Collapse in={expanded} sx={theme => ({ backgroundColor: theme.palette.background.paper })}>
+          <Box sx={{ p: 1 }}>
+            <Tooltip title="Zoom to Layer">
+              <IconButton size="small" onClick={() => onZoom(layer)}><ZoomInIcon /></IconButton>
+            </Tooltip>
+            <Tooltip title="Set Layer Visibility">
+              <IconButton size="small" onClick={handleVisibilityToggle}>
+                {layer.visible ? (
+                  <VisibilityIcon />
+                ) : (
+                  <VisibilityOffIcon />
+                )}
+              </IconButton>
+            </Tooltip>
+          </Box>
+          {layer.error ? (
+            <Box>{layer.error}</Box>
+          ) : (
+            !!layer.spacing && !!layer.blending ? (
+              <SurfaceSettings
+                surface={layer.surface}
+                spacing={layer.spacing}
+                blending={layer.blending}
+                dig={layer.dig}
+                onSpacingChange={handleSpacingChange}
+                onBlendToggle={(checked) => handleBlendChange('enabled', checked)}
+                onBlendChange={(key, value) => handleBlendChange(key, value)}
+                onDigToggle={(checked) => handleDigChange('enabled', checked)}
+                onDigChanged={(key, value) => handleDigChange(key, value)}
+              />
+            ) : null
+          )}
 
-    </Box>    
+        </Collapse>
+      </Box>
+      <CurveEditDialog layer={layer} open={curveEditorOpen} onClose={handleCurvePointsSaved} />
+    </>
   )
 }
