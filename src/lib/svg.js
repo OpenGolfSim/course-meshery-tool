@@ -297,7 +297,7 @@ export function generateCoursePolygons(data) {
     // log.info(`Parsing layer ${name}`);
     if (!isClosedRing(polygon, 0.1)) {
       log.error('Unclosed path error', polygon);
-      throw new Error(`Detected an unclosed path (${name})`);
+      throw new Error(`Detected an unclosed path (${layer.name})`);
     }
     // const duplicatePoints = hasDuplicatePoints(polygon);
     // if (duplicatePoints) {
@@ -386,6 +386,24 @@ export function generateCoursePolygons(data) {
     }
   });
 
+  // add water planes after cutting
+
+  for (const layer of layers) {
+    if (layer.surface === 'water') {
+      layers.push({
+        ...layerSettings.lake_surface,
+        id: `lake_surface_${layer.id}`,
+        name: `lake_surface_${layer.id}`,
+        hidden: true,
+        surface: 'lake_surface',
+        color: '0088AA',
+        data: layer.data,
+        polygon: layer.polygon,
+        holes: layer.holes
+      });
+    }
+  }
+
   return {
     layers
   }
@@ -439,7 +457,7 @@ export function parseSVG(svgData, palette) {
     name: 'base',
     visible: true,
     surface: 'base',
-    color: 'green',
+    color: 'CCCCCC',
     data: `M 0,0 H ${width} V ${height} H 0 Z`
   });
 

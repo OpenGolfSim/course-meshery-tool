@@ -1,9 +1,10 @@
 GIMP Palette
-Name: OpenGolfSim Surfaces v3
+Name: OpenGolfSim Surfaces v4
 #
   0 196  35 #00C423 #fairway
  71 143  84 #478f54 #first_cut
  17  91  19 #115B13 #rough
+  0  48   0 #003000 #deep_rough
  41 103 213 #2967D5 #water
   0 204 255 #00ccff #river
  52  62  19 #343E13 #trees
@@ -13,5 +14,6 @@ Name: OpenGolfSim Surfaces v3
 229 219 167 #E5DBA7 #sand
 186 186 186 #BABABA #concrete
  87  76  58 #574c3a #dirt
+107  66  36 #6b4224 #pine_straw
   0   0   0 #000000 #black
 255 255 255 #FFFFFF #white
