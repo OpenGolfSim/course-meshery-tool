@@ -113,14 +113,6 @@ ipcMain.handle('svg.select', async (event) => {
 
     const { layers, width, height } = await parseSVG(svgData, palette);
     log.info('got svg info', { width, height });
-    // const result = {
-    //   palette,
-    //   layers,
-    //   width,
-    //   height,
-    //   svg: svgPath
-    // };
-    // mainWindow.webContents.send('svg.imported', result);
     return {
       path: svgPath,
       palette,
