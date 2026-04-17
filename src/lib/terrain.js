@@ -3,86 +3,10 @@ import logger from 'electron-log';
 const log = logger.scope('TERRAIN');
 
 export const dataCache = new Map();
-//   heightMap: undefined,
-//   terrainSize: undefined,
-//   smoothedMap: undefined
-// };
-
-// function setData(key, value) {
-
-// }
 
 export function getTerrain() {
   return dataCache.get('heightMap');
 }
-// function generateGaussianKernel(radius, sigma) {
-//   const kernelSize = radius * 2 + 1; // Kernel is square with side length (2*radius + 1)
-//   const kernel = [];
-//   let sum = 0;
-
-//   for (let y = -radius; y <= radius; y++) {
-//     for (let x = -radius; x <= radius; x++) {
-//       // Gaussian function for 2D
-//       const weight = (1 / (2 * Math.PI * sigma * sigma)) *
-//         Math.exp(-(x * x + y * y) / (2 * sigma * sigma));
-//       kernel.push(weight);
-//       sum += weight;
-//     }
-//   }
-
-//   // Normalize kernel weights to ensure the sum is 1
-//   return kernel.map(v => v / sum);
-// }
-
-// // Step 2: Apply convolution to the terrain
-// function applyGaussianBlur(terrain2D, size, kernel, radius) {
-//   const blurred = [];
-//   const kernelSize = radius * 2 + 1;
-
-//   for (let i = 0; i < size; i++) {
-//     const row = [];
-//     for (let j = 0; j < size; j++) {
-//       let sum = 0;
-//       let k = 0;
-
-//       // Apply the kernel matrix
-//       for (let ky = -radius; ky <= radius; ky++) {
-//         for (let kx = -radius; kx <= radius; kx++, k++) {
-//           const ni = i + ky;
-//           const nj = j + kx;
-
-//           if (ni >= 0 && ni < size && nj >= 0 && nj < size) {
-//             // Multiply the kernel weight by the terrain value
-//             sum += terrain2D[ni][nj] * kernel[k];
-//           }
-//         }
-//       }
-
-//       row.push(sum);
-//     }
-//     blurred.push(row);
-//   }
-
-//   return blurred;
-// }
-
-// // Utilities: Flatten and reshape the terrain
-// function blurTerrainGaussian(terrainArray, size = 4097, sigma = 1, blurRadius = 1) {
-//   // Reshape 1D array into 2D grid
-//   const terrain2D = [];
-//   for (let i = 0; i < size; i++) {
-//     terrain2D.push(terrainArray.slice(i * size, (i + 1) * size));
-//   }
-
-//   // Generate Gaussian kernel
-//   const kernel = generateGaussianKernel(blurRadius, sigma);
-
-//   // Apply blur
-//   const blurred2D = applyGaussianBlur(terrain2D, size, kernel, blurRadius);
-
-//   // Flatten back into 1D array
-//   return blurred2D.flat();
-// }
 
 function generate1DGaussianKernel(radius, sigma) {
   const kernel = [];

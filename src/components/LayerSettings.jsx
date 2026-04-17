@@ -17,6 +17,7 @@ import SurfaceSettings from './SurfaceSettings.jsx';
 export default function LayerSettings({
   layer,
   selectedLayer,
+  onClick,
   onExpand,
   onZoom,
   onCurveEdit,
@@ -57,9 +58,10 @@ export default function LayerSettings({
     }));
   }, [layer]);
   
-  const handleClick = useCallback(() => {
-    onExpand(layer.id, !expanded);
-  }, [expanded]);
+  const handleClick = useCallback((event) => {
+    // onExpand(layer.id, !expanded);
+    onClick(event, layer);
+  }, [layer, expanded]);
 
 
   const handleCurvePointsSaved = useCallback((points) => {
@@ -118,42 +120,7 @@ export default function LayerSettings({
             </Box>
           </ButtonBase>
         </Box>
-        <Collapse in={expanded} sx={theme => ({ backgroundColor: theme.palette.background.paper })}>
-          <Box sx={{ p: 1 }}>
-            <Tooltip title="Zoom to Layer">
-              <IconButton size="small" onClick={() => onZoom(layer)}><ZoomInIcon /></IconButton>
-            </Tooltip>
-            <Tooltip title="Set Layer Visibility">
-              <IconButton size="small" onClick={handleVisibilityToggle}>
-                {layer.visible ? (
-                  <VisibilityIcon />
-                ) : (
-                  <VisibilityOffIcon />
-                )}
-              </IconButton>
-            </Tooltip>
-          </Box>
-          {layer.error ? (
-            <Box>{layer.error}</Box>
-          ) : (
-            !!layer.spacing && !!layer.blending ? (
-              <SurfaceSettings
-                surface={layer.surface}
-                spacing={layer.spacing}
-                blending={layer.blending}
-                dig={layer.dig}
-                onSpacingChange={handleSpacingChange}
-                onBlendToggle={(checked) => handleBlendChange('enabled', checked)}
-                onBlendChange={(key, value) => handleBlendChange(key, value)}
-                onDigToggle={(checked) => handleDigChange('enabled', checked)}
-                onDigChanged={(key, value) => handleDigChange(key, value)}
-              />
-            ) : null
-          )}
-
-        </Collapse>
       </Box>
-      <CurveEditDialog layer={layer} open={curveEditorOpen} onClose={handleCurvePointsSaved} />
     </>
   )
 }

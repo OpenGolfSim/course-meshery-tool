@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect, createContext, useContext, useCallback, useMemo } from 'react';
 import logger from 'electron-log/renderer';
-import * as StackBlur from 'stackblur-canvas';
-import MeshWorker from '../workers/mesh.worker.js';
+import MeshWorker from '../workers/mesh.webworker.js';
 import pMap from 'p-map';
+import { useProject } from './Project.jsx';
 
 const log = logger.scope('RENDERER');
 const CONCURRENT_JOBS = 6;
@@ -15,10 +15,12 @@ const MesheryContext = createContext({
   layers: [],
   clearSVG: () => {},
   clearTerrain: () => {},
+  generateSVGOutlines: () => {},
   clearSystemError: () => {},
   setSettings: () => {},
   updateLayerById: () => {},
-  setLayers: () => {}
+  setLayers: () => {},
+  generateAllMeshes: () => {}
 });
 
 // Create a custom hook to easily consume the context
@@ -26,9 +28,14 @@ export const useMeshery = () => useContext(MesheryContext);
 
 
 export const MesheryProvider = ({ children }) => {
+  const { project } = useProject();
   const meshJobMap = useRef({});
   const firstLoad = useRef(false);
-  const [layers, setLayers] = useState([]);
+
+  // const [layers, setLayers] = useState([
+  //   ...project._layers
+  // ]);
+
   const [systemError, setSystemError] = useState(null);
   const [systemLoading, setSystemLoading] = useState('');
   
@@ -36,7 +43,7 @@ export const MesheryProvider = ({ children }) => {
   const [isImportReady, setIsImportReady] = useState(false);
   const [isSVGReady, setIsSVGReady] = useState(false);
   const [isPending, setIsPending] = useState(false);
-  const [inputHeightMap, setInputHeightMap] = useState(null);
+  // const [inputHeightMap, setInputHeightMap] = useState(null);
   const [finalHeightMap, setFinalHeightMap] = useState(null);
   const [svgData, setSvgData] = useState(null);
   const [jobQueue, setJobQueue] = useState([]);
@@ -46,7 +53,7 @@ export const MesheryProvider = ({ children }) => {
     svgFilePath: undefined,
     rawFilePath: undefined,
     heightScale: 10,
-    svgSize: [0, 0],
+    svgSize: 0,
     terrainSize: 4097,
     terrainSmoothingStrength: 0,
     terrainSmoothingRadius: 5,
@@ -115,20 +122,43 @@ export const MesheryProvider = ({ children }) => {
   // }, [jobQueue]);
 
   const smoothTerrain = useCallback(() => {
-    return startWorkerJob('terrain', { type: 'terrain', settings, heightMap: inputHeightMap });
-  }, [meshJobMap, settings, inputHeightMap]);
+    return startWorkerJob('terrain', {
+      type: 'terrain',
+      settings,
+      // heightMap: inputHeightMap,
+      project: {
+        settings: project.settings,
+        lidar: project.lidar,
+        // raw: project.raw,
+        heightMap: project._heightMap
+      }
+    });
+  }, [meshJobMap, settings, project.settings, project.lidar, project._heightMap]);
 
   const conformMesh = useCallback(async (layer) => {
-    const result = await startWorkerJob(layer.id, { type: 'conform', layer, settings, heightMap: finalHeightMap });
+    const result = await startWorkerJob(layer.id, {
+      type: 'conform',
+      layer,
+      settings,
+      heightMap: finalHeightMap,
+      project: {
+        settings: project.settings,
+        lidar: project.lidar,
+        raw: project.raw,
+        _heightMap: project._heightMap,
+      }
+    });
+    console.log('conformed', result);
     updateLayerById(layer.id, { mesh: result.mesh, pending: false, conformed: true });
-  }, [meshJobMap, settings, finalHeightMap]);
+  }, [meshJobMap, settings, finalHeightMap, project.settings, project.lidar, project.raw, project._heightMap]);
 
   const generateMesh = useCallback(async (layer) => {
     updateLayerById(layer.id, { pending: true, conformed: false });
-    const result = await startWorkerJob(layer.id, { type: 'mesh', layer, settings });
+    const result = await startWorkerJob(layer.id, { type: 'mesh', layer, settings: { ...settings, project: project.settings } });
+    console.log('generated initial mesh', result);
     updateLayerById(layer.id, { mesh: result.mesh, pending: false, conformed: false });
     return result;
-  }, [meshJobMap, settings]);
+  }, [meshJobMap, settings, project.settings]);
 
   const handleWorkerError = useCallback((event) => {
     log.error('WORKER ERROR');
@@ -155,47 +185,63 @@ export const MesheryProvider = ({ children }) => {
     }
   }, [meshJobMap]);
 
-  const generateFirstMeshes = useCallback(() => {
+  const generateAllMeshes = useCallback(() => {
     log.info('Initial meshing...');
-    pMap(layers, async (layer) => {
+    pMap(project._layers, async (layer) => {
       const result = await generateMesh(layer);
-      await conformMesh({ ...layer, mesh: result.mesh });
+      console.log('generated mesh...', result);
+      // await conformMesh({ ...layer, mesh: result.mesh });
     }, { concurrency: CONCURRENT_JOBS }).then(() => {
       log.info('All done');
     });
-  }, [settings, layers]);
+  }, [settings, project._layers]);
 
 
-  useEffect(() => {
-    if (!layers?.length || firstLoad.current || !isSVGReady) {
-      return;
-    }
-    firstLoad.current = true;
-    setSystemLoading('');
-    generateFirstMeshes();
-  }, [layers, isSVGReady]);
+  // useEffect(() => {
+  //   if (!layers?.length || firstLoad.current || !isSVGReady) {
+  //     return;
+  //   }
+  //   firstLoad.current = true;
+  //   setSystemLoading('');
+  //   generateAllMeshes();
+  // }, [layers, isSVGReady]);
 
-  useEffect(() => {
-    if (!isImportReady) {
-      return;
-    }
-    log.debug('handleSVGImported!');
-    startWorkerJob('svg', { type: 'svg', settings, layers, layerSettings }).then(result => {
-      // if (result?.width && result?.height) {
-      //   setSettings(old => ({
-      //     ...old,
-      //     svgSize: [result.width, result.height]
-      //   }));
+  const generateSVGOutlines = useCallback(async () => {
+    startWorkerJob('svg', { type: 'svg', settings, layers: project._layers, layerSettings }).then(result => {
+      console.group('result', result);
+      // if (result.layers) {
+      //   setLayers(result.layers);
       // }
-      console.log('svg result', result);
-      if (result.layers) {
-        setLayers(result.layers);
-      }
-      setIsSVGReady(true);
+      // setIsSVGReady(true);
     }).catch(error => {
       setSystemError(error.message);
     });
-  }, [isImportReady]);
+  }, [project._layers, settings, layerSettings]);
+
+  // useEffect(() => {
+  //   // if (!isImportReady) {
+  //   //   return;
+  //   // }
+  //   if (!project?._layers) {
+  //     return;
+  //   }
+  //   log.debug('handleSVGImported!');
+  //   startWorkerJob('svg', { type: 'svg', settings, layers: project._layers, layerSettings }).then(result => {
+  //     // if (result?.width && result?.height) {
+  //     //   setSettings(old => ({
+  //     //     ...old,
+  //     //     svgSize: result.width
+  //     //   }));
+  //     // }
+  //     console.log('svg result', result);
+  //     if (result.layers) {
+  //       setLayers(result.layers);
+  //     }
+  //     setIsSVGReady(true);
+  //   }).catch(error => {
+  //     setSystemError(error.message);
+  //   });
+  // }, [project._layers]);
 
   const handleError = (event, errorMessage) => {
     setSystemError(errorMessage);
@@ -216,9 +262,9 @@ export const MesheryProvider = ({ children }) => {
       ...settings,
       palette: undefined,
       svgFilePath: undefined,
-      svgSize: [0, 0]
+      svgSize: 0
     }));
-    setLayers([]);
+    // setLayers([]);
     setLayerSettings(null);
     setIsImportReady(false);
     setIsSVGReady(false);
@@ -231,20 +277,20 @@ export const MesheryProvider = ({ children }) => {
   const clearSystemLoading = () => {
     setSystemLoading('');
   }
-  const regenerateAllMeshes = () => {
-    setLayers(existing => existing.map(l => ({ ...l, mesh: false })));
-  }
+  // const regenerateAllMeshes = () => {
+  //   setLayers(existing => existing.map(l => ({ ...l, mesh: false })));
+  // }
   const updateLayerById = (layerId, update) => {
-    if (typeof update === 'function') {
-      setLayers(existing => existing.map(l => (l.id === layerId ? update(l) : l)));
-    } else {
-      setLayers(existing => existing.map(l => (l.id === layerId ? { ...l, ...update } : l)));
-    }
-    // setLayers(old => {
-    //   const matched = old.find(l => l.id === layerId);
-    //   matched = { ...matched, ...update };
-    //   return [...old];
-    // });    
+    // if (typeof update === 'function') {
+    //   setLayers(existing => existing.map(l => (l.id === layerId ? update(l) : l)));
+    // } else {
+    //   setLayers(existing => existing.map(l => (l.id === layerId ? { ...l, ...update } : l)));
+    // }
+    // // setLayers(old => {
+    // //   const matched = old.find(l => l.id === layerId);
+    // //   matched = { ...matched, ...update };
+    // //   return [...old];
+    // // });    
   }
 
 
@@ -266,9 +312,9 @@ export const MesheryProvider = ({ children }) => {
     // setFinalHeightMap({ pending: true });
     setSystemLoading('Smoothing terrain...');
     const result = await smoothTerrain();
-    console.log('SET FINAL HEIGHTMAP');
-    setFinalHeightMap(result.heightMap);
-    setSystemLoading('');
+    console.log('SET FINAL HEIGHTMAP', result);
+    // setFinalHeightMap(result.heightMap);
+    // setSystemLoading('');
     // setIsPending(true);
     // const { terrainSize, terrainSmoothingStrength, terrainSmoothingRadius } = settings;
     // const result = await window.meshery.generateTerrain({
@@ -294,23 +340,23 @@ export const MesheryProvider = ({ children }) => {
     generateTerrainData();
   }, [settings.rawFilePath, isTerrainReady, settings.terrainSmoothingRadius]);
   
-  useEffect(() => {
-    if (!layers?.length) {
-      return; 
-    }
-    console.log('Terrain data change detected, conforming meshes again');
-    setLayers(layers => layers.map(l => ({ ...l, conformed: false })));
-    pMap(layers, conformMesh, { concurrency: CONCURRENT_JOBS }).then(() => {
-      log.info('all done');
-    });
-    // layers.map(async (layer) => {
-    //   updateLayerById(layer.id, { conformed: false });
-    //   const result = await conformMesh(layer);
-    //   updateLayerById(layer.id, { mesh: result.mesh, conformed: true });
-    // })).then(() => {
-    //   console.log('all done');
-    // });
-  }, [finalHeightMap, settings.heightScale]);
+  // useEffect(() => {
+  //   if (!layers?.length) {
+  //     return; 
+  //   }
+  //   console.log('Terrain data change detected, conforming meshes again');
+  //   setLayers(layers => layers.map(l => ({ ...l, conformed: false })));
+  //   pMap(layers, conformMesh, { concurrency: CONCURRENT_JOBS }).then(() => {
+  //     log.info('all done');
+  //   });
+  //   // layers.map(async (layer) => {
+  //   //   updateLayerById(layer.id, { conformed: false });
+  //   //   const result = await conformMesh(layer);
+  //   //   updateLayerById(layer.id, { mesh: result.mesh, conformed: true });
+  //   // })).then(() => {
+  //   //   console.log('all done');
+  //   // });
+  // }, [finalHeightMap, settings.heightScale]);
 
   // const updateSettings = useCallback((update) => {
   //   setSettings(({ ...settings, ...update }));
@@ -337,18 +383,18 @@ export const MesheryProvider = ({ children }) => {
   return (
     <MesheryContext.Provider value={{
       generateMesh,
-      inputHeightMap,
+      // inputHeightMap,
       finalHeightMap,
       conformMesh,
       setSvgData,
-      setInputHeightMap,
+      // setInputHeightMap,
       systemError,
       setSystemError,
       clearSystemError,
       settings: exportedSettings,
       setSettings,
-      layers,
-      setLayers,
+      // layers,
+      // setLayers,
       updateLayerById,
       clearSVG,
       clearTerrain,
@@ -360,7 +406,9 @@ export const MesheryProvider = ({ children }) => {
       setIsTerrainReady,
       isTerrainReady,
       layerSettings,
-      setLayerSettings
+      setLayerSettings,
+      generateSVGOutlines,
+      generateAllMeshes
     }}>
       {children}
     </MesheryContext.Provider>

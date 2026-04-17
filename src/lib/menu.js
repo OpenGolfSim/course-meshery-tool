@@ -1,25 +1,57 @@
 import { app, dialog, Menu, Tray, shell } from 'electron';
+import * as project from './project';
 
 let appMenu;
+let exportRawMenu;
 
 export function buildAppMenu() {
+  const isMac = process.platform === 'darwin'
 
   appMenu = Menu.buildFromTemplate([
+    ...(isMac
+    ? [{
+        label: app.name,
+        submenu: [
+          { role: 'about' },
+          { type: 'separator' },
+          { role: 'services' },
+          { type: 'separator' },
+          { role: 'hide' },
+          { role: 'hideOthers' },
+          { role: 'unhide' },
+          { type: 'separator' },
+          { role: 'quit' }
+        ]
+      }]
+    : []),
     {
       label: 'File',
       submenu: [
         {
-          label: 'About Meshery',
-          role: 'about'
+          label: 'Open Project',
+          click: project.open,
+          accelerator: 'CommandOrControl+O'
         },
         {
-          label: 'Settings',
-          click: async () => {
-
-          }
+          label: 'Save Project',
+          click: project.save,
+          accelerator: 'CommandOrControl+S'
         },
         { type: 'separator' },
-        { role: 'quit', label: 'Exit Meshery' }
+        {
+          id: 'export-raw',
+          label: 'Export RAW Terrain',
+          click: project.save,
+          accelerator: 'CommandOrControl+S'
+        },
+        {
+          id: 'export-raw',
+          label: 'Export Satellite Imagery',
+          click: project.save,
+          accelerator: 'CommandOrControl+S'
+        },
+        { type: 'separator' },
+        isMac ? { role: 'close' } : { role: 'quit' },
       ]
     },
     { role: 'editMenu' },
@@ -28,7 +60,7 @@ export function buildAppMenu() {
     {
       role: 'help',
       submenu: [
-
+        ...!isMac ? [{ role: 'about' }] : [],
         {
           label: 'Join our Discord',
           click: async () => {
@@ -46,4 +78,7 @@ export function buildAppMenu() {
   ]);
 
   Menu.setApplicationMenu(appMenu);
+
+  exportRawMenu = appMenu.getMenuItemById('export-raw');
+  
 }

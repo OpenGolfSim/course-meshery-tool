@@ -1,9 +1,8 @@
 // import fs from 'node:fs';
 import * as cheerio from 'cheerio';
-import { svgPathProperties } from 'svg-path-properties';
 import * as martinez from 'martinez-polygon-clipping';
 import polygonClipping from 'polygon-clipping';
-import log from 'electron-log/renderer';
+import log from 'electron-log';
 import { parse as parseTransform } from 'svg-transform-parser';
 import {
   compose,
@@ -18,11 +17,212 @@ import {
 } from 'transformation-matrix';
 
 import { defaultSettings } from './settings';
+import { getColor, parsePalette } from './colors';
+import { openProject } from './project';
 
 // const earcut = require('earcut');
 
 const COLOR_MATCH = /fill:\s*#([a-z0-9]+)/i;
 
+// maps OSM shapes to OpenGolfSim surfaces
+const SURFACE_MAP = {
+  green: 'green',
+  fairway: 'fairway',
+  tee: 'tee',
+  bunker: 'sand',
+  rough: 'rough',
+  water_hazard: 'water',
+};
+
+export function generateSVG() {
+  let svgPaths = '';
+  const distance = Math.round(openProject.settings.distance * 1000);
+  if (openProject.coursePaths && openProject.settings?.bounds) {
+    svgPaths = storedPathsToSVG(openProject.coursePaths);
+  }
+
+  const trimLength = openProject._workingDir.length + 1;
+
+  const images = [
+    openProject.hillShade?.filePath && 
+      `<image width="${distance}" height="${distance}" id="HillShade" preserveAspectRatio="none" xlink:href="${openProject.hillShade.filePath.slice(trimLength)}" style="display:inline" />`,
+
+    ...openProject.satellite && Object.values(openProject.satellite).map(satellite => {
+      return `<image width="${distance}" height="${distance}" id="Satellite-${satellite.source}" preserveAspectRatio="none" xlink:href="${satellite.filePath.slice(trimLength)}" style="display:inline" />`;
+    })
+
+  ].filter(Boolean).join('\n ');
+
+  const svgProps = [
+  //  'inkscape:version="1.3 (0e150ed, 2023-07-21)"',
+   'xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"',
+   'xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"',
+   'xmlns:xlink="http://www.w3.org/1999/xlink"',
+   'xmlns="http://www.w3.org/2000/svg"',
+   'xmlns:svg="http://www.w3.org/2000/svg"',
+  ].join(' ');
+
+  return [
+    '<?xml version="1.0" encoding="UTF-8" standalone="no"?>',
+    `<svg ${svgProps} width="${distance}mm" height="${distance}mm" viewBox="0 0 ${distance} ${distance}">`,
+    
+    '<g id="overlays" inkscape:groupmode="layer">',
+      images,
+    '</g>',  
+  
+    '<g id="course" inkscape:groupmode="layer">',
+      svgPaths,
+    '</g>',
+
+    '</svg>'
+  ].filter(Boolean).join('\n');
+}
+
+// Signed area via the shoelace formula; we only care about magnitude here.
+// const ringArea = (pts) => {
+//   let a = 0;
+//   for (let i = 0, n = pts.length; i < n; i++) {
+//     const [x1, y1] = pts[i];
+//     const [x2, y2] = pts[(i + 1) % n];
+//     a += x1 * y2 - x2 * y1;
+//   }
+//   return Math.abs(a) / 2;
+// };
+
+function ringArea(ring) {
+  // Shoelace formula, for absolute area comparison
+  let area = 0;
+  for (let i = 0, n = ring?.length; i < n - 1; i++) {
+    const [x0, y0] = ring[i];
+    const [x1, y1] = ring[i + 1];
+    area += (x0 * y1 - x1 * y0);
+  }
+  return Math.abs(area / 2);
+}
+
+export function storedPathsToSVG(paths) {
+  return paths
+    .map((p, idx) => `<path id="${p.surface}-${idx}" d="${p.d}" style="fill:#${p.color ?? '115B13'}" />`)
+    .join('\n  ');
+}
+
+export function geoJSONToSvgPaths(geojson) {
+  const size = Math.round(openProject.settings.distance * 1000);
+  const { south: minLat, west: minLon, north: maxLat, east: maxLon } = openProject.settings.bounds;
+  const lonRange = maxLon - minLon;
+  const latRange = maxLat - minLat;
+
+  // Linear projection across the bbox. Because you've chosen the bbox to be
+  // a square in real-world meters, lonRange != latRange (lon degrees are
+  // shorter at lat ~40.5), and stretching each axis independently to `size`
+  // gives you the correct equirectangular result for a small area.
+  const project = ([lon, lat]) => [
+    ((lon - minLon) / lonRange) * size,
+    ((maxLat - lat) / latRange) * size,   // flip Y: SVG y grows downward
+  ];
+
+  // const ringToPath = (ring) => {
+  //   const pts = ring.map(project);
+  //   const [x0, y0] = pts[0];
+  //   const rest = pts.slice(1)
+  //     .map(([x, y]) => `L${x.toFixed(2)} ${y.toFixed(2)}`)
+  //     .join(' ');
+  //   return `M${x0.toFixed(2)} ${y0.toFixed(2)} ${rest} Z`;
+  // };
+  const mid = ([x1, y1], [x2, y2]) => [(x1 + x2) / 2, (y1 + y2) / 2];
+  const fmt = n => n.toFixed(2);
+
+  // Closed ring -> smoothed path
+  const ringToPath = (ring) => {
+    const pts = ring.map(project);
+    // OSM rings are usually closed (last point == first); drop the duplicate
+    // so "next" wraps cleanly.
+    if (pts.length > 1 &&
+        pts[0][0] === pts[pts.length - 1][0] &&
+        pts[0][1] === pts[pts.length - 1][1]) {
+      pts.pop();
+    }
+    if (pts.length < 3) return ringToPathStraight(pts, true);
+
+    const n = pts.length;
+    // Start at the midpoint of the edge between the last and first vertex.
+    const start = mid(pts[n - 1], pts[0]);
+    let d = `M${fmt(start[0])} ${fmt(start[1])}`;
+
+    for (let i = 0; i < n; i++) {
+      const ctrl = pts[i];                    // original vertex = control point
+      const end  = mid(pts[i], pts[(i + 1) % n]); // midpoint to next vertex
+      d += ` Q${fmt(ctrl[0])} ${fmt(ctrl[1])} ${fmt(end[0])} ${fmt(end[1])}`;
+    }
+    d += ' Z';
+    return d;
+  };
+
+  // Open line -> smoothed path (keeps the true first/last endpoints sharp)
+  const lineToPath = (pts) => {
+    if (pts.length < 3) return ringToPathStraight(pts, false);
+
+    let d = `M${fmt(pts[0][0])} ${fmt(pts[0][1])}`;
+    // Line from the first point to the midpoint of edge 0-1, then quadratics
+    // through every interior vertex, then a final line into the last point.
+    const firstMid = mid(pts[0], pts[1]);
+    d += ` L${fmt(firstMid[0])} ${fmt(firstMid[1])}`;
+
+    for (let i = 1; i < pts.length - 1; i++) {
+      const ctrl = pts[i];
+      const end  = mid(pts[i], pts[i + 1]);
+      d += ` Q${fmt(ctrl[0])} ${fmt(ctrl[1])} ${fmt(end[0])} ${fmt(end[1])}`;
+    }
+    const last = pts[pts.length - 1];
+    d += ` L${fmt(last[0])} ${fmt(last[1])}`;
+    return d;
+  };
+
+  // Fallback for degenerate cases (fewer than 3 points)
+  const ringToPathStraight = (pts, close) => {
+    if (!pts.length) return '';
+    const [x0, y0] = pts[0];
+    const rest = pts.slice(1).map(([x, y]) => `L${fmt(x)} ${fmt(y)}`).join(' ');
+    return `M${fmt(x0)} ${fmt(y0)} ${rest}${close ? ' Z' : ''}`;
+  };  
+
+  const paths = [];
+
+  for (const f of geojson.features) {
+    const g = f.geometry;
+    if (!g) continue;
+    const golf = f.properties?.golf;
+    if (!golf) continue;
+    const surface = SURFACE_MAP?.[golf] ?? {};
+    const color = getColor(surface);
+
+    if (g.type === 'Polygon') {
+      // coordinates[0] is the outer ring; coordinates[1..] are holes — skip them
+      const ring = g.coordinates[0].map(project);
+      paths.push({ golf, d: ringToPath(g.coordinates[0]), surface, color, area: ringArea(ring) });
+
+    } else if (g.type === 'MultiPolygon') {
+      // Each member polygon's [0] is its outer ring; ignore inner rings
+      for (const poly of g.coordinates) {
+        const ring = poly[0].map(project);
+        paths.push({ golf, d: ringToPath(poly[0]), surface, color, area: ringArea(ring) });
+      }
+
+    } else if (g.type === 'LineString') {
+      const pts = g.coordinates.map(project);
+      paths.push({ golf, d: lineToPath(pts), surface, color, area: 0 });
+      // e.g. a tee mapped as a way without area=yes
+      // const pts = g.coordinates.map(project);
+      // const d = 'M' + pts.map(([x, y]) => `${x.toFixed(2)} ${y.toFixed(2)}`).join(' L');
+      // paths.push({ golf, d });
+    }
+  }
+
+  // largest objects first
+  paths.sort((a, b) => b.area - a.area);
+
+  return paths;
+}
 
 function toMatrix(t) {
   if (t.translate) {
@@ -79,16 +279,6 @@ function closeAllRings(multiPoly) {
   if (!Array.isArray(multiPoly)) return [];
   return multiPoly.map(forceClosedRing);
 }
-function ringArea(ring) {
-  // Shoelace formula, for absolute area comparison
-  let area = 0;
-  for (let i = 0, n = ring?.length; i < n - 1; i++) {
-    const [x0, y0] = ring[i];
-    const [x1, y1] = ring[i + 1];
-    area += (x0 * y1 - x1 * y0);
-  }
-  return Math.abs(area / 2);
-}
 
 function ensureClosed(points, tolerance = 1e-6) {
   if (!points?.length) return points;
@@ -136,62 +326,15 @@ function cutHolesFromPolygon(polygon, polygonsToCut) {
   };
 }
 
-function hasDuplicatePoints(points, tolerance = 1) {
-  const n = points.length - 1; // last points are the same
-
-  // Compare each point with every other point
-  for (let i = 0; i < n; i++) {
-    for (let j = i + 1; j < n; j++) {
-      const [x1, y1] = points[i];
-      const [x2, y2] = points[j];
-
-      // Calculate the Euclidean distance
-      const distance = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
-      if (distance <= tolerance) {
-        return `[${Math.round(x1)},${Math.round(y1)}],[${Math.round(x2)},${Math.round(y2)}]`;
-      }
-    }
-  }
-
-  return false; // No duplicates were found
-}
-
-// Ensure the ring is closed! (first and last points are the same)
-function isClosedRing(points, tolerance = 1) {
-  if (points.length < 2) {
-    return false; // A path with fewer than 2 points cannot be closed
-  }
-
-  // Get the first and last point
-  const [startX, startY] = points[0];
-  const [endX, endY] = points[points.length - 1];
-
-  // Calculate the Euclidean distance
-  const distance = Math.sqrt((endX - startX) ** 2 + (endY - startY) ** 2);
-  // Check if the distance is within the specified tolerance
-  return distance <= tolerance;
-}
-
-function closeRing(points) {
-  if (
-    points.length === 0 ||
-    (points[0][0] === points[points.length - 1][0] &&
-      points[0][2] === points[points.length - 1][2])
-  ) {
-    return points;
-  }
-  return points.concat([points[0]]);
-}
 
 function parseTreeLayers($, treeLayer, palette) {
 
   // Get all <path> in the layer
   return treeLayer.find('path').map((i, el) => {
     const name = $(el).attr('id');
-    const style = $(el).attr('style').toLowerCase();
-    log.info(`Parsing layer ${name}...`);
+    const style = $(el).attr('style').toLowerCase() || '';
 
-    const matched = style.match(COLOR_MATCH);
+    const matched = style && style.match(COLOR_MATCH);
     if (!matched) {
       throw new Error(`Unable to match layer (${name}) to a valid surface!`);
     }
@@ -214,8 +357,7 @@ function parseCourseLayers($, courseLayer, palette) {
   return courseLayer.find('path').map((i, el) => {
     const data = $(el).attr('d');
     const name = $(el).attr('id');
-    const style = $(el).attr('style').toLowerCase();
-    log.info(`Parsing layer ${name}`, style);
+    const style = $(el).attr('style')?.toLowerCase();
 
     const matched = style.match(COLOR_MATCH);
     if (!matched) {
@@ -247,7 +389,7 @@ function parseCourseLayers($, courseLayer, palette) {
     try {
       const transformString = $(el).attr('transform');
       // Default: Identity matrix (no transform)
-      log.info(`Parsing layer ${i} (${name})`, JSON.stringify(transformString));
+      // log.info(`Parsing layer ${i} (${name})`, JSON.stringify(transformString));
 
       if (transformString) {
         // Parse into a list of transforms
@@ -270,149 +412,13 @@ function parseCourseLayers($, courseLayer, palette) {
   }).get();
 }
 
-export function generateCoursePolygons(data) {
-  log.info('generateCoursePolygons', data);
-  const { layers: courseLayers, layerSettings } = data;
-  let layers = courseLayers.map((layer) => {
-    const properties = new svgPathProperties(layer.data);
-    const length = properties.getTotalLength();
-    // at least 100 points
-    // then based on line length (every 2 units)
-    const minPoints = 500;
-    const maxPoints = 12000;
-    const numPoints = Math.min(Math.max(Math.round(length) * 2, minPoints), maxPoints);
-    let polygon = [];
-    // log.info(`Parsing layer ${i} points: ${numPoints}`);
-    for (let i = 0; i <= numPoints; i++) {
-      const length = properties.getTotalLength();
-      const pct = i / numPoints;
-      const pos = properties.getPointAtLength(length * pct);
-      if (layer.matrix) {
-        const transformed = applyToPoint(layer.matrix, { x: pos.x, y: pos.y });
-        polygon.push([transformed.x, transformed.y]);
-      } else {
-        polygon.push([pos.x, pos.y]);
-      }
-    }
-    // log.info(`Parsing layer ${name}`);
-    if (!isClosedRing(polygon, 0.1)) {
-      log.error('Unclosed path error', polygon);
-      throw new Error(`Detected an unclosed path (${layer.name})`);
-    }
-    // const duplicatePoints = hasDuplicatePoints(polygon);
-    // if (duplicatePoints) {
-    //   throw new Error(`Detected duplicate points in the same spot (${name}, ${duplicatePoints})`);
-    // }
-    // polygon = closeRing(polygon);
-
-    let settings = { ...defaultSettings.rough };
-    if (layerSettings?.[layer.surface]) {
-      settings = layerSettings?.[layer.surface];
-    }
-    return {
-      ...layer,
-      ...settings,
-      // data,
-      // edge,
-      // spacing,
-      // dig,
-      // blend
-      polygon,
-      holes: [],
-    }
-  })
-
-  if (!layers?.length) {
-    log.error('No valid paths found in course layer');
-    throw new Error('No valid paths found in course layer');
-  }
-  // const layersToCut = layers[0].polygon.map(points => [points[0], points[2]]);
-  // const layersToCut = layers.map(layer => layer.polygon);
-
-  // cut holes from above layers
-  // layers = layers.map((layer, index) => {
-  //   // const layersAbove = layers.slice(index + 1).map(l => l.polygon);
-  //   const layersAbove = (layers.slice(index + 1) || []);
-  //   // console.log('layersAbove', layersAbove);
-  //   if (!layersAbove.length) {
-  //     return { ...layer, holes: [] };
-  //   }
-  //   const { polygon, holes } = cutHolesFromPolygon(layer.polygon, layersAbove.map(l => l.polygon));
-  //   console.log(`${layer.id} polygon: ${polygon.length}, holes: ${holes.length}`);
-  //   return {
-  //     ...layer,
-  //     polygon,
-  //     holes
-  //   };
-  // });
-
-  layers = layers.map((layer, index) => {
-    try {
-      const layersAbove = (layers.slice(index + 1) || []);
-      const layersToCut = layersAbove.map(layer => [layer.polygon]);
-      let polygon = [...layer.polygon];
-      let holes = [];
-      if (layersToCut?.length > 0) {
-        for (const cl of layersToCut) {
-          const result = polygonClipping.difference([layer.polygon], [cl]);
-          const rings = result[0];
-          polygon = rings[0];
-          holes = [...holes, ...rings.slice(1)];
-          // log.debug('polygon', polygon);
-          // log.debug('holes', holes);
-
-          // const m_result = martinez.diff([[layer.polygon]], [[cl]]);
-          // console.log('m_result', result);
-          // // polygon = result?.[0]?.[0]; // .map(points => [points[0], points[1]]);
-          // // holes = [...holes, ...result?.[0]?.slice(1)];
-          // const rings = result[0]; // exterior and possible holes
-          // // const closedRings = closeAllRings(rings);
-          // polygon = rings[0];
-          // holes = [...holes, ...rings.slice(1)];
-        }
-      }
-      return {
-        ...layer,
-        polygon,
-        holes
-      }
-    } catch (error) {
-      log.error('Cut error', error);
-      // throw new Error(`Error cutting shape: ${layer.name}`);
-      return {
-        ...layer,
-        error: 'Cut Error: Unable to cut holes in shape'
-      }
-    }
-  });
-
-  // add water planes after cutting
-
-  for (const layer of layers) {
-    if (layer.surface === 'water') {
-      layers.push({
-        ...layerSettings.lake_surface,
-        id: `lake_surface_${layer.id}`,
-        name: `lake_surface_${layer.id}`,
-        hidden: true,
-        surface: 'lake_surface',
-        color: '0088AA',
-        data: layer.data,
-        polygon: layer.polygon,
-        holes: layer.holes
-      });
-    }
-  }
-
-  return {
-    layers
-  }
-}
 
 // export function parseSVG(payload) {
-export function parseSVG(svgData, palette) {
+export async function parseSVG(svgData, palette = null) {
   // const { svgData, settings: { palette } } = payload;
-  // const palette = await parsePalette();
+  if (!palette) {
+    palette = await parsePalette();
+  }
 
   // const stats = await fs.promises.stat(svgPath);
   // if (stats.size > MAX_FILESIZE) {

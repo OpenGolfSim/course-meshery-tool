@@ -54,3 +54,79 @@ canvas {
   padding: 1em;
   /* background-color: rgba(0, 255, 0, 0.2); */
 }
+
+.leaflet-control-button {
+  padding: 5px;
+  cursor: pointer;
+}
+
+.control-icon {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center center;
+}
+.control-icon-poi {
+  background-image: url('data:image/svg+xml,%3Csvg%20id%3D%22Layer_1%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20version%3D%221.1%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cdefs%3E%3Cstyle%3E%20%20%20%20%20%20.st0%20%7B%20%20%20%20%20%20%20%20fill%3A%20%235b5b5b%3B%20%20%20%20%20%20%20%20fill-rule%3A%20evenodd%3B%20%20%20%20%20%20%7D%20%20%20%20%3C%2Fstyle%3E%3C%2Fdefs%3E%3Cpath%20class%3D%22st0%22%20d%3D%22M9.3%2C18.9c-1.9-.8-3.4-2.3-4.2-4.2-.2-.6-.9-.8-1.4-.6s-.8.9-.6%2C1.4c1%2C2.5%2C2.9%2C4.4%2C5.4%2C5.4.6.2%2C1.2%2C0%2C1.4-.6.2-.6%2C0-1.2-.6-1.4ZM18.8%2C14.8c-.7%2C1.9-2.3%2C3.4-4.2%2C4.2-.6.2-.8.9-.6%2C1.4.2.6.9.8%2C1.4.6%2C2.5-1%2C4.4-2.9%2C5.4-5.4.2-.6%2C0-1.2-.6-1.4s-1.2%2C0-1.4.6ZM14.7%2C5.2c1.9.8%2C3.4%2C2.3%2C4.2%2C4.2.2.6.9.8%2C1.4.6.6-.2.8-.9.6-1.4-1-2.5-2.9-4.4-5.4-5.4-.6-.2-1.2%2C0-1.4.6-.2.6%2C0%2C1.2.6%2C1.4ZM5.1%2C9.4c.7-1.9%2C2.3-3.4%2C4.2-4.2.6-.2.8-.9.6-1.4-.2-.6-.9-.8-1.4-.6-2.5%2C1-4.4%2C2.9-5.4%2C5.4-.2.6%2C0%2C1.2.6%2C1.4.6.2%2C1.2%2C0%2C1.4-.6Z%22%2F%3E%3Cpath%20class%3D%22st0%22%20d%3D%22M10.9%2C1.1v5c0%2C.6.5%2C1.1%2C1.1%2C1.1s1.1-.5%2C1.1-1.1V1.1c0-.6-.5-1.1-1.1-1.1s-1.1.5-1.1%2C1.1Z%22%2F%3E%3Cpath%20class%3D%22st0%22%20d%3D%22M10.9%2C17.9v5c0%2C.6.5%2C1.1%2C1.1%2C1.1s1.1-.5%2C1.1-1.1v-5c0-.6-.5-1.1-1.1-1.1s-1.1.5-1.1%2C1.1Z%22%2F%3E%3Cpath%20class%3D%22st0%22%20d%3D%22M22.9%2C10.9h-5c-.6%2C0-1.1.5-1.1%2C1.1s.5%2C1.1%2C1.1%2C1.1h5c.6%2C0%2C1.1-.5%2C1.1-1.1s-.5-1.1-1.1-1.1Z%22%2F%3E%3Cpath%20class%3D%22st0%22%20d%3D%22M6.1%2C10.9H1.1C.5%2C10.9%2C0%2C11.4%2C0%2C12s.5%2C1.1%2C1.1%2C1.1h5c.6%2C0%2C1.1-.5%2C1.1-1.1s-.5-1.1-1.1-1.1Z%22%2F%3E%3Cpath%20class%3D%22st0%22%20d%3D%22M12%2C8.1c-2.2%2C0-4%2C1.8-4%2C4s1.8%2C4%2C4%2C4%2C4-1.8%2C4-4-1.8-4-4-4ZM12%2C10.3c1%2C0%2C1.8.8%2C1.8%2C1.8s-.8%2C1.8-1.8%2C1.8-1.8-.8-1.8-1.8.8-1.8%2C1.8-1.8Z%22%2F%3E%3C%2Fsvg%3E');
+}
+.control-icon-draw {
+  background-image: url('data:image/svg+xml,%3Csvg%20id%3D%22Layer_1%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20version%3D%221.1%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20fill%3D%22%235c5c5c%22%20d%3D%22M.7%2C21.9c0%2C0%2C0-.2%2C0-.2h0c0%2C0%2C2.7-5.8%2C2.7-5.8%2C0%2C0%2C.1-.2.2-.2L14.9%2C4.6c.3-.3.9-.3%2C1.2%2C0l3%2C3c.3.3.3.9%2C0%2C1.2%2C0%2C0%2C0%2C0%2C0%2C0l-11.2%2C11.1c0%2C0-.2.1-.2.2l-2.2%2C1.1h17c.5%2C0%2C.9.4.9.9s-.4.9-.9.9H1.5c-.2%2C0-.4%2C0-.6-.3h0c-.2-.2-.2-.4-.3-.6h0c0-.1%2C0%2C0%2C0%2C0Z%22%2F%3E%3Cpath%20fill%3D%22%235c5c5c%22%20d%3D%22M20.7%2C7.2c-.3.3-.9.3-1.2%2C0l-3-3c-.3-.3-.3-.9%2C0-1.2%2C0%2C0%2C0%2C0%2C0%2C0l1.2-1.1c.8-.8%2C2.2-.8%2C3.1%2C0l1.2%2C1.2c.9.8.9%2C2.2%2C0%2C3.1%2C0%2C0%2C0%2C0%2C0%2C0l-1.1%2C1.1Z%22%2F%3E%3C%2Fsvg%3E');
+}
+.leaflet-control-attribution a {
+  color: #333 !important;
+}
+.leaflet-control-attribution svg {
+  display: none !important;
+}
+.popup-container {
+  display:flex; flex-direction:column; gap: 5px;
+}
+.popup-buttons {
+  display: flex;
+  flex-direction: row;
+  gap: 5px;
+}
+.popup-button {
+  width: 24px;
+  height: 24px;
+  background-repeat: no-repeat;
+  background-position: center center;
+  background-size: 75%;
+  background-color: #fff;
+  border: 1px solid rgba(0,0,0,0.25);
+  border-radius: 5px;
+}
+.popup-button:active {
+  background-color: #f0f0f0;
+}
+.popup-button#edit_btn {
+  background-image: url('data:image/svg+xml,%3Csvg%20id%3D%22Layer_1%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20version%3D%221.1%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20fill%3D%22%235b5b5b%22%20d%3D%22M5.2%2C23.2H.8v-4.4c0-.5.2-1%2C.6-1.3L13.7%2C5.1l5.2%2C5.2-12.4%2C12.4c-.4.4-.8.6-1.3.6h0Z%22%2F%3E%3Cpath%20fill%3D%22%235b5b5b%22%20d%3D%22M20.6%2C1.4l1.9%2C1.9c.9.9.9%2C2.4%2C0%2C3.2l-2.5%2C2.5-5.2-5.2%2C2.5-2.5c.9-.9%2C2.4-.9%2C3.2%2C0Z%22%2F%3E%3C%2Fsvg%3E');
+}
+.popup-button.active#edit_btn {
+  background-image: url('data:image/svg+xml,%3Csvg%20id%3D%22Layer_1%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20version%3D%221.1%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20fill%3D%22%235b5bfb%22%20d%3D%22M5.2%2C23.2H.8v-4.4c0-.5.2-1%2C.6-1.3L13.7%2C5.1l5.2%2C5.2-12.4%2C12.4c-.4.4-.8.6-1.3.6h0Z%22%2F%3E%3Cpath%20fill%3D%22%235b5bfb%22%20d%3D%22M20.6%2C1.4l1.9%2C1.9c.9.9.9%2C2.4%2C0%2C3.2l-2.5%2C2.5-5.2-5.2%2C2.5-2.5c.9-.9%2C2.4-.9%2C3.2%2C0Z%22%2F%3E%3C%2Fsvg%3E');
+  /* background-image: url('data:image/svg+xml,%3Csvg%20id%3D%22Layer_1%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20version%3D%221.1%22%20viewBox%3D%220%200%2024%2024%22%3E%3C!--%20Generator%3A%20Adobe%20Illustrator%2029.8.5%2C%20SVG%20Export%20Plug-In%20.%20SVG%20Version%3A%202.1.1%20Build%202)%20%20--%3E%3Cdefs%3E%3Cstyle%3E%20%20%20%20%20%20.st0%20%7B%20%20%20%20%20%20%20%20fill%3A%20%235b5bfb%3B%20%20%20%20%20%20%7D%20%20%20%20%3C%2Fstyle%3E%3C%2Fdefs%3E%3Cpath%20class%3D%22st0%22%20d%3D%22M5.2%2C23.2H.8v-4.4c0-.5.2-1%2C.6-1.3L13.7%2C5.1l5.2%2C5.2-12.4%2C12.4c-.4.4-.8.6-1.3.6h0Z%22%2F%3E%3Cpath%20class%3D%22st0%22%20d%3D%22M20.6%2C1.4l1.9%2C1.9c.9.9.9%2C2.4%2C0%2C3.2l-2.5%2C2.5-5.2-5.2%2C2.5-2.5c.9-.9%2C2.4-.9%2C3.2%2C0Z%22%2F%3E%3C%2Fsvg%3E'); */
+}
+.popup-button#smooth_btn {
+  background-image: url('data:image/svg+xml,%3Csvg%20id%3D%22Layer_1%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20version%3D%221.1%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20fill%3D%22%235b5b5b%22%20d%3D%22M19.7%2C6.4c1.2%2C0%2C2.1-.9%2C2.1-2.1s-.9-2.1-2.1-2.1-2.1.9-2.1%2C2.1.9%2C2.1%2C2.1%2C2.1ZM19.7%2C7.8c1.9%2C0%2C3.5-1.6%2C3.5-3.5s-1.6-3.5-3.5-3.5-3.1%2C1.2-3.4%2C2.8c-6.8.3-12.3%2C5.8-12.7%2C12.7-1.6.3-2.8%2C1.7-2.8%2C3.4s1.6%2C3.5%2C3.5%2C3.5%2C3.5-1.6%2C3.5-3.5-1.2-3.1-2.8-3.4c.3-6.1%2C5.2-10.9%2C11.3-11.3.3%2C1.6%2C1.7%2C2.8%2C3.4%2C2.8h0ZM4.3%2C21.8c1.2%2C0%2C2.1-.9%2C2.1-2.1s-.9-2.1-2.1-2.1-2.1.9-2.1%2C2.1.9%2C2.1%2C2.1%2C2.1Z%22%2F%3E%3C%2Fsvg%3E');
+}
+.popup-button#remove_btn {
+  background-image: url("data:image/svg+xml,<?xml%20version=%221.0%22%20encoding=%22UTF-8%22?%3E%0A%3Csvg%20width=%2224px%22%20height=%2224px%22%20viewBox=%220%200%2024%2024%22%20version=%221.1%22%20xmlns=%22http://www.w3.org/2000/svg%22%20xmlns:xlink=%22http://www.w3.org/1999/xlink%22%3E%0A%20%20%20%20%3C%21--%20Generator:%20Sketch%2052.5%20%2867469%29%20-%20http://www.bohemiancoding.com/sketch%20--%3E%0A%20%20%20%20%3Ctitle%3EAtoms/Icons/Tools/Eraser%3C/title%3E%0A%20%20%20%20%3Cdesc%3ECreated%20with%20Sketch.%3C/desc%3E%0A%20%20%20%20%3Cdefs%3E%0A%20%20%20%20%20%20%20%20%3Cpath%20d=%22M17.7874219,18.4812552%20L11.6480079,13.3498184%20L6.40466009,19.3816001%20L10.5539156,22.9884929%20L13.86934,22.9884929%20L17.7874219,18.4812552%20Z%20M16.5074252,22.9884929%20L26.0000002,22.9884929%20L26.0000002,24.9884929%20L10.0000002,24.9884929%20L9.80708313,24.9884929%20L5.09254204,20.8910192%20C4.25891285,20.1663564%204.17057814,18.9031112%204.89524093,18.069482%20L16.0482444,5.23941916%20C16.7729072,4.40578998%2018.0361525,4.31745526%2018.8697816,5.04211806%20L24.9074583,10.2905903%20C25.7410875,11.0152531%2025.8294222,12.2784983%2025.1047594,13.1121275%20L16.5074252,22.9884929%20Z%22%20id=%22path-1%22%3E%3C/path%3E%0A%20%20%20%20%3C/defs%3E%0A%20%20%20%20%3Cg%20id=%22Symbols%22%20stroke=%22none%22%20stroke-width=%221%22%20fill=%22none%22%20fill-rule=%22evenodd%22%3E%0A%20%20%20%20%20%20%20%20%3Cg%20id=%22Atoms/Icons/Tools/Eraser%22%20transform=%22translate%28-3.000000,%20-3.000000%29%22%3E%0A%20%20%20%20%20%20%20%20%20%20%20%20%3Cmask%20id=%22mask-2%22%20fill=%22white%22%3E%0A%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%3Cuse%20xlink:href=%22%23path-1%22%3E%3C/use%3E%0A%20%20%20%20%20%20%20%20%20%20%20%20%3C/mask%3E%0A%20%20%20%20%20%20%20%20%20%20%20%20%3Cuse%20id=%22Combined-Shape%22%20fill=%22%235B5B5B%22%20fill-rule=%22nonzero%22%20xlink:href=%22%23path-1%22%3E%3C/use%3E%0A%20%20%20%20%20%20%20%20%3C/g%3E%0A%20%20%20%20%3C/g%3E%0A%3C/svg%3E");
+}
+
+
+svg#course path {
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  paint-order: markers stroke fill;
+  fill: #7b8279;
+  stroke: #353d35;
+  stroke-opacity: 1;
+  fill-opacity: 1;
+}
+svg#course path.fairway {
+  fill: #87b97b;
+  stroke: #26e11c;
+}

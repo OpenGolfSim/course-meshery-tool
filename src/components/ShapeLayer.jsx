@@ -3,10 +3,16 @@ import { Line, useBounds } from '@react-three/drei';
 
 import { svgToTerrain, interpHeight } from '../utils/terrain';
 import { useMeshery } from '../contexts/Meshery.jsx';
+import { useProject } from '../contexts/Project.jsx';
 
 export default function ShapeLayer({ layer, polygon, layerId, ...props }) {
+  const { project } = useProject();
   const { settings } = useMeshery();
   const shapeRef = useRef();
+
+  const svgSize = useMemo(() => {
+    return project.settings.distance ? Math.round(project.settings.distance * 1000) : 1000;
+  }, [project.settings?.distance]);
 
   let height = 0;
   const points = useMemo(() => {
@@ -34,7 +40,7 @@ export default function ShapeLayer({ layer, polygon, layerId, ...props }) {
         points={points}
         lineWidth={1}
         color={`#${layer.color}`}
-        position={[-(settings.svgSize[0]/2), 0, -(settings.svgSize[1]/2)]}
+        position={[-(svgSize/2), 0, -(svgSize/2)]}
         {...props}
       />
       

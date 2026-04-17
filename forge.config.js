@@ -64,8 +64,26 @@ module.exports = {
                 js: './src/preload.js',
               },
             },
+            {
+              html: './src/workers/worker.html',
+              js: './src/workers/worker.js',
+              name: 'worker_window',
+              preload: {
+                js: './src/workers/preload.js',
+              },
+            },
           ],
         },
+        devContentSecurityPolicy: [
+          "default-src 'self' blob: data: gap:",
+          "style-src 'self' 'unsafe-inline' blob: data: gap:",
+          "script-src 'self' 'unsafe-eval' 'unsafe-inline' blob: data: gap:",
+          "object-src 'self' blob: data: gap:",
+          "img-src 'self' blob: data: gap: *.openstreetmap.org *.arcgisonline.com mt.google.com *.virtualearth.net",
+          "connect-src 'self' https://*.mapbox.com blob: data: gap: project: laz:",
+          "frame-src 'self' blob: data: gap:",
+          "worker-src 'self' blob: data: gap:"
+        ].join('; ')
       },
     },
     // Fuses are used to enable/disable various Electron functionality

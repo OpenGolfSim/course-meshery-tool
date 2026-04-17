@@ -1,10 +1,11 @@
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
-import Button from '@mui/material/Button';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import Workarea from './components/Workarea.jsx';
+import { ProjectProvider } from './contexts/Project.jsx';
 import { MesheryProvider } from './contexts/Meshery.jsx';
+import { InstallerProvider } from './contexts/Installer.jsx';
 
 const palette = {
   mode: 'dark',
@@ -64,8 +65,12 @@ const root = createRoot(document.body);
 root.render(
   <ThemeProvider theme={darkTheme}>
     <CssBaseline />
-    <MesheryProvider>
-      <Workarea />
-    </MesheryProvider>
+    <InstallerProvider>
+      <ProjectProvider>
+        <MesheryProvider>
+          <Workarea />
+        </MesheryProvider>
+      </ProjectProvider>
+    </InstallerProvider>
   </ThemeProvider>
 );

@@ -10,6 +10,12 @@ const PALETTE_PATH = path.join(resourceRoot(), 'extra-resources/palette.gpl');
 const log = logger.scope('PALETTE');
 
 let colorCache = null;
+let surfaceMap = new Map();
+let colorMap = new Map();
+
+export function getColor(surface) {
+  return surfaceMap.get(surface);
+}
 
 export async function parsePalette() {
   if (colorCache) {
@@ -20,6 +26,8 @@ export async function parsePalette() {
 
   const paletteLines = paletteData.toString('utf-8').toLowerCase().split('\n');
 
+  surfaceMap = new Map();
+  colorMap = new Map();
   const colors = {};
   for (const line of paletteLines) {
     const matches = line.match(MATCHER);
@@ -27,9 +35,12 @@ export async function parsePalette() {
       const [, hex, surface] = matches;
       if (hex && surface) {
         colors[hex] = surface;
+        surfaceMap.set(surface, hex);
+        colorMap.set(hex, surface);
       }
     }
   }
+  console.log('surfaceMap', [...surfaceMap.entries()]);
   colorCache = colors;
   return colors;
 }

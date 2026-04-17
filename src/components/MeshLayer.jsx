@@ -5,6 +5,7 @@ import { useBounds } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import log from 'electron-log/renderer';
 import { isPointInPolygon, distanceToPolygonEdge } from '../lib/mesh';
+import { useProject } from '../contexts/Project.jsx';
 
 function cubicBezierY(points, t) {
   const y0 = 1 - points[0][1];
@@ -81,6 +82,7 @@ function digMesh(original, positions, polygon, holes, digOptions) {
 
 export default function MeshLayer(props) {
   const ref = useRef();
+  const { project } = useProject();
   
   const [firstLoad, setFirstLoad] = useState(false);
   const { generateMesh, conformMesh, finalHeightMap, settings, updateLayerById } = useMeshery();
@@ -90,10 +92,16 @@ export default function MeshLayer(props) {
     transparent: true,
     opacity: 1
     // opacity: 0.8,
-  }))
+  }));
+
+  const svgSize = useMemo(() => {
+    return Math.round(project.settings.distance * 1000);
+  }, [project.settings?.distance]);
+  
   // const [meshData, setMeshData] = useState();
 
   const timer = useRef();
+
   const delayedAction = useCallback(async () => {
     try {
       const response = await generateMesh(props.layer);
@@ -130,8 +138,8 @@ export default function MeshLayer(props) {
   // }, [props.layer.mesh]);
 
   const meshPosition = useMemo(() => {
-    return [-(settings.svgSize[0]/2), 0, -(settings.svgSize[1]/2)];
-  }, [settings.svgSize]);
+    return [-(svgSize/2), 0, -(svgSize/2)];
+  }, [svgSize]);
 
   const geometry = useMemo(() => {
     const geometry = new THREE.BufferGeometry();

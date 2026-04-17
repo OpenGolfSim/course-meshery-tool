@@ -43,3 +43,12 @@ git push origin main
 # then push and the version tag
 git push origin vx.x.x
 ```
+
+
+To install/unpack python tools:
+```bash
+mkdir myenv
+tar -xf example.tar.gz -C myenv
+cd myenv
+./bin/conda-unpack 
+```

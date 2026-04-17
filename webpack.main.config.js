@@ -1,11 +1,21 @@
+// const ThreadsPlugin = require('threads-plugin');
+
 module.exports = {
-  /**
-   * This is the main entry point for your application, it's the first file
-   * that runs in the main process.
-   */
-  entry: './src/main.js',
+  entry: {
+    index: './src/main.js',
+    'svg.worker': './src/lib/workers/svg.worker.js',
+  },
+  target: 'electron-main',
+  output: {
+    filename: '[name].js',
+  },
   // Put your normal webpack config below here
   module: {
-    rules: require('./webpack.rules'),
+    rules: require('./webpack.rules'),    
   },
+  // plugins: [
+  //   new ThreadsPlugin({
+  //     target: 'electron-node', // important for Electron main process
+  //   }),
+  // ],
 };

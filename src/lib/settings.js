@@ -15,7 +15,7 @@ const defaultDig = {
 
 export const defaultSettings = {
   base: {
-    spacing: 10,
+    spacing: 7,
     spacingEdge: 0,
     blend: 0,
     blending: { ...defaultBlend },
