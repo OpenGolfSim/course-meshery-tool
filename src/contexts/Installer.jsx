@@ -16,7 +16,6 @@ export const InstallerProvider = ({ children }) => {
 
 
   const handleStateChange = (event, stateChange) => {
-    console.log('stateChange', stateChange);
     setInstallState(stateChange);
   }
 

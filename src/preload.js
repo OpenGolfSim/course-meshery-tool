@@ -16,6 +16,9 @@ contextBridge.exposeInMainWorld('meshery', {
   off: (event, callback) => ipcRenderer.off(event, callback),
   // onError: (callback) => ipcRenderer.on('error', callback),
   
+  app: {
+    exit: () => ipcRenderer.invoke('app.exit')
+  },
   dialog: {
     confirm: (options) => ipcRenderer.invoke('dialog.confirm', options)
   },
@@ -57,5 +60,6 @@ contextBridge.exposeInMainWorld('meshery', {
   tools: {
     checkInstallState: () => ipcRenderer.invoke('tools.checkInstallState'),
     installStart: () => ipcRenderer.invoke('tools.installStart'),
+    installCancel: () => ipcRenderer.invoke('tools.installCancel'),
   }
 });

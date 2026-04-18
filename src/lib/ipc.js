@@ -7,6 +7,10 @@ import * as tools from './tools';
 import { getRecentProjects } from './app';
 
 
+ipcMain.handle('app.exit', async (_event, options) => {
+  app.quit();
+});
+
 ipcMain.handle('dialog.confirm', async (_event, options) => {
   const result = await dialog.showMessageBox({
     type: 'question',
@@ -47,3 +51,4 @@ ipcMain.handle('imagery.satellite', (_event, wmsSource) => imagery.generateSatel
 
 ipcMain.handle('tools.checkInstallState', () => tools.checkInstallState());
 ipcMain.handle('tools.installStart', () => tools.installStart());
+ipcMain.handle('tools.installCancel', () => tools.installCancel());

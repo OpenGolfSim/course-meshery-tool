@@ -1,5 +1,6 @@
 import { app, dialog, Menu, Tray, shell } from 'electron';
 import * as project from './project';
+import { isInstalled } from './tools';
 
 let appMenu;
 let exportRawMenu;
@@ -30,26 +31,28 @@ export function buildAppMenu() {
         {
           label: 'Open Project',
           click: project.open,
+          enabled: isInstalled(),
           accelerator: 'CommandOrControl+O'
         },
         {
           label: 'Save Project',
           click: project.save,
+          enabled: isInstalled(),
           accelerator: 'CommandOrControl+S'
         },
-        { type: 'separator' },
-        {
-          id: 'export-raw',
-          label: 'Export RAW Terrain',
-          click: project.save,
-          accelerator: 'CommandOrControl+S'
-        },
-        {
-          id: 'export-raw',
-          label: 'Export Satellite Imagery',
-          click: project.save,
-          accelerator: 'CommandOrControl+S'
-        },
+        // { type: 'separator' },
+        // {
+        //   id: 'export-raw',
+        //   label: 'Export RAW Terrain',
+        //   click: project.save,
+        //   accelerator: 'CommandOrControl+S'
+        // },
+        // {
+        //   id: 'export-raw',
+        //   label: 'Export Satellite Imagery',
+        //   click: project.save,
+        //   accelerator: 'CommandOrControl+S'
+        // },
         { type: 'separator' },
         isMac ? { role: 'close' } : { role: 'quit' },
       ]

@@ -3,19 +3,20 @@ import CheckCircle from '@mui/icons-material/CheckCircle';
 import { Alert, Box, Button, Card, CardActionArea, CardActions, CardContent, CardHeader, Container, Grid, LinearProgress, List, ListItem, ListItemButton, ListItemIcon, ListItemText, Paper, Stack, Typography } from '@mui/material';
 import { useInstaller } from '../contexts/Installer';
 
-function InstallStart() {
+function InstallStart({ state }) {
   const handleInstallStart = async () => {
     window.meshery.tools.installStart();
   }
 
   const handleExit = () => {
-
+    window.meshery.app.exit();
   }
 
   return (
     <React.Fragment>
       <CardContent>
-        <Alert severity="warning">We need to install some required tools for elevation data and image processing.</Alert>
+        <Typography sx={{ mb: 2 }}>Welcome to OpenGolfSim Course Meshery! This software requires a few additional tools to run, including PDAL, GDAL, and other geospatial processing libraries. Click Install Tools and we'll set everything up for you. </Typography>
+        <Alert severity="info">These extra tools require about {state.requiredSpace} of free disk space and may take a few moments to install</Alert>
       </CardContent>
       <CardActions>
         <Button onClick={handleExit} fullWidth variant="contained" color="secondary">Exit</Button>
@@ -26,14 +27,21 @@ function InstallStart() {
 }
 
 function InstallProgress({ state }) {
+  const cancelInstall = () => {
+    window.meshery.tools.installCancel();
+  }
   return (
     <React.Fragment>
       <CardContent>
-        <LinearProgress value={state.progress} variant="determinate" />
+        <LinearProgress
+          sx={{ mb: 2 }}
+          value={state.progress > -1 ? state.progress : null}
+          variant={state.progress > -1 ? 'determinate' : 'indeterminate'}
+        />
         <Typography>{state.status}</Typography>
       </CardContent>
       <CardActions>
-        <Button fullWidth variant="contained" color="secondary">Cancel</Button>
+        <Button fullWidth onClick={cancelInstall} variant="contained" color="secondary">Cancel</Button>
       </CardActions>
     </React.Fragment>
   );
@@ -46,8 +54,8 @@ function InstallComplete({ state }) {
         {state.error ? (
           <Alert severity="error">{state.error}</Alert>
         ) : (
-          <Box>
-            <CheckCircle />
+          <Box sx={{ textAlign: 'center' }}>
+            <CheckCircle sx={{ fontSize: 48 }} />
             <Typography>{state.status}</Typography>
           </Box>
         )}

@@ -61,7 +61,6 @@ export default function Workarea() {
     setCurrentTab(newValue);
   };
 
-  console.log('Render worker area', project);
   if (!installState?.installed) {
     return (
       <Install />
