@@ -47,7 +47,7 @@ export default function GenerateMeshDialog(props) {
       return [];
     }
     return Object.entries(layerSettings).reduce((prev, [key, val]) => {
-      const count = project._layers.filter(layer => (layer.surface === key)).length;
+      const count = project._layers?.filter(layer => (layer.surface === key))?.length || 0;
       return [
         ...prev,
         {
@@ -199,7 +199,7 @@ export default function GenerateMeshDialog(props) {
 
         {jobState.phase === 'settings' ? (
           <React.Fragment>
-            <Alert sx={{ mb: 5 }}>Detected {project._layers.length} layers</Alert>
+            <Alert sx={{ mb: 5 }}>Detected {project._layers?.length || 0} layers</Alert>
 
             <Typography sx={{ mb: 3 }} variant="h3">Global Settings</Typography>
             {settingGroups.map(setting => (
@@ -277,7 +277,7 @@ export default function GenerateMeshDialog(props) {
             {jobState.status ? (
               <Typography>{jobState.status}</Typography>
             ) : (
-              <Typography>Generating {jobState.count} of {project._layers.length} meshes...</Typography>
+              <Typography>Generating {jobState.count} of {project._layers?.length || 0} meshes...</Typography>
             )}
           </Stack>
         ) : null}

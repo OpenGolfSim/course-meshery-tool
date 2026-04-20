@@ -259,7 +259,11 @@ export default function Course() {
               </Box>
             ) : (
               <Stack sx={{ p: 3 }} spacing={3}>
-                <Button onClick={handleGenerateMeshes} fullWidth variant="contained">Generate Meshes</Button>
+                {project._layers?.length ? (
+                  <Button onClick={handleGenerateMeshes} fullWidth variant="contained">Generate Meshes</Button>
+                ) : (
+                  <Typography textAlign="center" color="textSecondary">You must generate an SVG before you can create meshes</Typography>
+                )}
               </Stack>              
             )}
           </Box>
