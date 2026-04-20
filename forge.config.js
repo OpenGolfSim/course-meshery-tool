@@ -6,12 +6,15 @@ module.exports = {
     name: 'Meshery',
     authors: 'OpenGolfSim',
     description: 'OpenGolfSim Meshery is a tool for converting and building you course meshes',
-    asar: true,
+    // asar: true,
     icon: 'images/Meshery',
     appCategoryType: 'public.app-category.developer-tools',
     extraResource: [
       './extra-resources'
     ],
+    asar: {
+      unpack: '**/.webpack/main/*.worker.js',
+    },
     ...process.env.OSX_SIGN && {
       osxSign: {
         identity: process.env.APPLE_SIGNING_IDENTITY,

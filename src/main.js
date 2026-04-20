@@ -41,6 +41,14 @@ app.whenReady().then(async () => {
   // load color palette into memory
   await parsePalette();
 
+  const filter = { urls: ['https://*.tile.openstreetmap.org/*'] };
+
+  session.defaultSession.webRequest.onBeforeSendHeaders(filter, (details, cb) => {
+    details.requestHeaders['Referer']    = 'https://help.opengolfsim.com/tools/course-meshery/';
+    details.requestHeaders['User-Agent'] = 'OGSMeshery/2.0.0 (help@opengolfsim.com)';
+    cb({ requestHeaders: details.requestHeaders });
+  });
+
   // if (process.env.REACT_DEVTOOLS) {
   //   const ext = await session.defaultSession.extensions.loadExtension(
   //     process.env.REACT_DEVTOOLS, { allowFileAccess: true }
