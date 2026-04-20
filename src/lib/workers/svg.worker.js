@@ -1,4 +1,5 @@
-import { expose } from "threads/worker"
+import { expose } from 'threads/worker';
+import { Observable, Subject } from 'threads/observable';
 import logger from 'electron-log';
 import { svgPathProperties } from 'svg-path-properties';
 import polygonClipping from 'polygon-clipping';
@@ -16,6 +17,8 @@ import {
 import { defaultSettings } from '../../lib/settings';
 
 const log = logger.scope('SVG_WORKER');
+
+const progressSubject = new Subject();
 
 // Ensure the ring is closed! (first and last points are the same)
 function isClosedRing(points, tolerance = 1) {
@@ -45,10 +48,13 @@ function closeRing(points) {
 }
 
 export function generateCoursePolygons(courseLayers, layerSettings) {
-  log.info('generateCoursePolygons-courseLayers', typeof courseLayers);
-  log.info('generateCoursePolygons-layerSettings', typeof layerSettings);
-  // const { layers: courseLayers, layerSettings } = data;
-  let layers = courseLayers.map((layer) => {
+  let layers = [];
+  const polygonMap = new Map();
+  // convert outer rings to polygons
+  let current = 0;
+
+  courseLayers.forEach(layer => {
+  // let layers = courseLayers.map((layer) => {
     const properties = new svgPathProperties(layer.data);
     const length = properties.getTotalLength();
     // at least 100 points
@@ -82,12 +88,31 @@ export function generateCoursePolygons(courseLayers, layerSettings) {
     if (layerSettings?.[layer.surface]) {
       settings = layerSettings?.[layer.surface];
     }
-    return {
+
+    // layers.push({ ...layer, ...settings });
+    // polygons.push({ id: layer.id, ...settings, polygon, holes: [] });
+    polygonMap.set(layer.id, { polygon, holes: [] });
+    layers.push({
       ...layer,
       ...settings,
-      polygon,
-      holes: [],
-    }
+      // polygon,
+      // holes: [],
+    });
+
+    progressSubject.next({
+      current,
+      total: courseLayers.length,
+      progress: (current / courseLayers.length) * 100,
+      status: `Processing layer ${current + 1}`,
+    });
+    current++;
+
+    // return {
+    //   ...layer,
+    //   ...settings,
+    //   polygon,
+    //   holes: [],
+    // }
   })
 
   if (!layers?.length) {
@@ -96,38 +121,44 @@ export function generateCoursePolygons(courseLayers, layerSettings) {
   }
   
   // Cut-out any layers above
-  layers = layers.map((layer, index) => {
+  // layers = layers.map((layer, index) => {
+  layers.forEach((layer, index) => {
     try {
       const layersAbove = (layers.slice(index + 1) || []);
-      const layersToCut = layersAbove.map(layer => [layer.polygon]);
-      let polygon = [...layer.polygon];
+      const layersToCut = layersAbove.map(l => [polygonMap.get(l.id)?.polygon]);
+      // let polygon = [...layer.polygon];
+      let polygon = polygonMap.get(layer.id)?.polygon || [];
+
       let holes = [];
       if (layersToCut?.length > 0) {
         for (const cl of layersToCut) {
-          const result = polygonClipping.difference([layer.polygon], [cl]);
+          const result = polygonClipping.difference([polygon], [cl]);
           const rings = result[0];
           polygon = rings[0];
           holes = [...holes, ...rings.slice(1)];
         }
       }
-      return {
-        ...layer,
-        polygon,
-        holes
-      }
+      polygonMap.set(layer.id, { polygon, holes });
+      // return {
+      //   ...layer,
+      //   polygon,
+      //   holes
+      // }
     } catch (error) {
       log.error('Cut error', error);
-      return {
-        ...layer,
-        error: 'Cut Error: Unable to cut holes in shape'
-      }
+      layer.error = 'Cut Error: Unable to cut holes in shape';
+      // return {
+      //   ...layer,
+      //   error: 'Cut Error: Unable to cut holes in shape'
+      // }
     }
   });
 
   // adds an extra water plane after cutting
   for (const layer of layers) {
     if (layer.surface === 'water') {
-      layers.push({
+      const existingPoly = polygonMap.get(layer.id);
+      const newlayer = {
         ...layerSettings && layerSettings?.lake_surface,
         id: `lake_surface_${layer.id}`,
         name: `lake_surface_${layer.id}`,
@@ -135,15 +166,19 @@ export function generateCoursePolygons(courseLayers, layerSettings) {
         surface: 'lake_surface',
         color: '0088AA',
         data: layer.data,
-        polygon: layer.polygon,
-        holes: layer.holes
-      });
+        // polygon: layer.polygon,
+        // holes: layer.holes
+      };
+      layers.push(newlayer);
+      polygonMap.set(newlayer.id, { ...existingPoly });
     }
   }
 
-  return layers;
+  return { layers, polygonMap };
 }
 
-expose({
-  generateCoursePolygons
-});
+function progress() {
+  return Observable.from(progressSubject);
+}
+
+expose({ generateCoursePolygons, progress });

@@ -1,16 +1,22 @@
 import React, { Fragment, useState, useRef, useCallback, useEffect } from 'react';
-import { Dialog, DialogTitle, DialogContent, DialogActions, Button, Box, Typography, CircularProgress, Alert, Grid, List, ListItem, Checkbox, ListItemIcon, Stack, ListItemText } from '@mui/material';
+import { Dialog, DialogTitle, DialogContent, DialogActions, Button, Box, Typography, CircularProgress, Alert, Grid, List, ListItem, Checkbox, ListItemIcon, Stack, ListItemText, Link, Chip } from '@mui/material';
+import CheckIcon from '@mui/icons-material/Check';
 import { useProject } from '../contexts/Project';
 import * as turf from '@turf/turf';
 
 export default function SearchShapesDialog(props) {
   const { project, searchOSMShapes } = useProject();
   const { onClose, open } = props;
+  const [exportState, setExportState] = useState({ phase: 'search' });
   const [isPending, setIsPending] = useState(false);
   const [endpoints, setEndpoints] = useState([]);
   const [results, setResults] = useState(null);
   const [error, setError] = useState();
   
+  const handleSkip = useCallback(async () => {
+    setExportState(old => ({ ...old, phase: 'export' }));
+  }, []);
+
   const handleSearch = useCallback(async () => {
     setIsPending(true);
     setResults(null);
@@ -24,7 +30,8 @@ export default function SearchShapesDialog(props) {
       // const rest = await searchOSMShapes(coords);
       const response = await window.meshery.map.searchShapes(coords);
       console.log('response', response);
-      setResults(response.coursePaths);
+      setResults({ paths: response?.coursePaths, success: true });
+      setExportState(old => ({ ...old, phase: 'export' }));
     } catch (error) {
       console.log(error);
       setError(`${error}`);
@@ -59,10 +66,42 @@ export default function SearchShapesDialog(props) {
       open={open}
     >
       <DialogTitle>
-        Search OSM Golf Data
+        Generate SVG
       </DialogTitle>
       <DialogContent sx={{ textAlign: 'center' }}>
-        <Grid container={true}>
+
+
+        <Stack spacing={3} sx={{ alignItems: 'center', justifyItems: 'center' }}>
+
+          <Typography variant="h4">Search Course Shapes</Typography>
+          <Typography>Meshery can auto generate rough course shapes from the <Link onClick={() => window.meshery.openExternalUrl('https://wiki.openstreetmap.org/wiki/Tag:leisure%3Dgolf_course')}>OpenStreetMap</Link> database of golf features. Would you like to search for existing shapes to include?</Typography>
+          
+          {results ? (
+            <Box>
+              <Chip
+                icon={<CheckIcon />}
+                label={`Added ${results.paths.length} shapes`}
+              />
+              {error ? (
+                <Alert severity="error">{error}</Alert>
+              ) : null}
+            </Box>
+          ) : (
+            <Button
+              variant="outlined"
+              color="primary"
+              startIcon={isPending && <CircularProgress />}
+              disabled={isPending}
+              onClick={handleSearch}
+            >
+              Search OSM Shapes
+            </Button>
+          )}
+
+
+        </Stack>
+
+        {/* <Grid container={true}>
           <Grid size={4}>OpenStreetMap Shapes</Grid>
           <Grid size={8}>
             {isPending ? (
@@ -74,42 +113,12 @@ export default function SearchShapesDialog(props) {
                 <Button onClick={handleSearch}>Search Shapes</Button>
               )
             )}
-            {/* {isPending ? (
-              <>
-                <CircularProgress />
-                <Typography>Searching shapes at {JSON.stringify(project.settings.centerPoint)}</Typography>
-              </>
-            ) : (
-              results?.length ? (
-                <Typography>{results.length} shapes</Typography>
-              ) : (
-                <Typography>No existing course shapes found</Typography>
-              )
-            )} */}
           </Grid>
 
-          <Grid size={4}>Imagery</Grid>
-          <Grid size={8}>
-            <List>
-              <ListItem>
-                <ListItemIcon>
-                  <Checkbox
-                    edge="start"
-                    tabIndex={-1}
-                    disableRipple
-                  />
-                </ListItemIcon>
-                <ListItemText primary="Satellite" />
-              </ListItem>
-            </List>
-          </Grid>
+        </Grid> */}
 
-        </Grid>
-
-        {error ? (
-          <Alert severity="error">{error}</Alert>
-        ) : null}
       </DialogContent>
+
       <DialogActions sx={{ display: 'flex', flexDirection: 'row' }}>
         <Button
           fullWidth
@@ -129,6 +138,51 @@ export default function SearchShapesDialog(props) {
           Export SVG
         </Button>
       </DialogActions>
+
+        {/* {exportState.phase === 'search' ? (
+          <DialogActions sx={{ display: 'flex', flexDirection: 'row' }}>
+            <Button
+              fullWidth
+              variant="text"
+              color="inherit"
+              onClick={props.onClose}
+            >
+              Cancel
+            </Button>
+            <Button
+              fullWidth
+              // variant="outlined"
+              color="inherit"
+              disabled={isPending}
+              onClick={handleSkip}
+            >
+              Skip
+            </Button>
+            
+        </DialogActions>
+        ) : null}
+
+        {exportState.phase === 'export' ? (
+          <DialogActions sx={{ display: 'flex', flexDirection: 'row' }}>
+            <Button
+              fullWidth
+              variant="text"
+              color="inherit"
+              onClick={props.onClose}
+            >
+              Cancel
+            </Button>
+            <Button
+              fullWidth
+              variant="contained"
+              color="primary"
+              disabled={isPending}
+              onClick={handleSave}
+            >
+              Export SVG
+            </Button>
+          </DialogActions>
+        ) : null} */}
     </Dialog>
   );
  

@@ -245,7 +245,6 @@ export function isInstalled() {
   return Object.keys(REQUIRED_BINARIES).every(binName => {
     const binPath = getBin(binName);
     const e = fs.existsSync(binPath);
-    console.log(`Check: ${binPath}, exist: ${e}`);
     return e;
   });
 }
@@ -302,7 +301,6 @@ export function getBin(name) {
   const dir = getToolsDir();
   
   const pref = REQUIRED_BINARIES?.[name];
-  console.log('pref', pref);
   let binDir = 'bin';
   if (process.platform === 'win32' && pref?.windowsPath) {
     binDir = pref.windowsPath;

@@ -44,3 +44,21 @@ export async function parsePalette() {
   colorCache = colors;
   return colors;
 }
+
+export function hexToRGB01(hex) {
+  // Remove the hash if it exists
+  hex = hex.replace(/^#/, '');
+
+  // Parse the hex strings to decimal integers (0-255)
+  const rInt = parseInt(hex.substring(0, 2), 16);
+  const gInt = parseInt(hex.substring(2, 4), 16);
+  const bInt = parseInt(hex.substring(4, 6), 16);
+
+  // Normalize to 0-1 range by dividing by 255
+  return [
+    +(rInt / 255).toFixed(3),
+    +(gInt / 255).toFixed(3),
+    +(bInt / 255).toFixed(3),
+    1
+  ];
+}

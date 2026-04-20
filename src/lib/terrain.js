@@ -142,3 +142,69 @@ export function smoothTerrainData(heightMap, terrainSize = 4097, terrainSmoothin
   log.info('Skipping smoothing');
   return heightMap;
 }
+
+export function conformMeshToTerrain(layer, mesh, project) {
+  let svgSize = Math.round(project.settings.distance * 1000);
+  let heightScale = project.lidar?.stats?.relief || 1;
+  if (!(svgSize > 0)) {
+    throw new Error('SVG size is invalid');
+  }
+  const positions = [];
+  if (!project._heightMap?.data) {
+    log.warn('No heightmap data');
+  } else if (!project._heightMap?.size) {
+    log.warn('No heightmap size');
+  }
+  // const mesh = layer.mesh;
+  for (let index = 0; index < mesh.points.length; index += 3) {
+    const x = mesh.points[index];
+    let y = 0; // mesh.points[index + 1];
+    const z = mesh.points[index + 2];
+
+    if (project._heightMap?.data && project._heightMap?.size && layer.surface !== 'lake_surface') {
+      const [tx, tz] = svgToTerrain(x, z, svgSize, project._heightMap.size);
+      // Get/interpolate terrain height
+      y = interpHeight(project._heightMap.data, tx, tz, project._heightMap.size);
+
+      // If Unity height range is [0, 65535], you might want to scale to meters
+      // For example, if your terrain in Unity is 600m tall, scale = 600/65535
+      // If not, just use the raw value.
+      y = (y / 65535) * heightScale;
+    }
+    positions.push(x, y, z);
+  }
+
+  return {
+    ...mesh,
+    points: new Float32Array(positions)
+  }
+}
+
+function svgToTerrain(x, z, svgSize, terrainSize = 4097) {
+  // Clamp/limit to prevent overflow on edges
+  const tx = Math.max(0, Math.min(terrainSize - 1, (x / svgSize) * (terrainSize - 1)));
+  const tz = Math.max(0, Math.min(terrainSize - 1, (z / svgSize) * (terrainSize - 1)));
+  return [tx, tz];
+}
+
+function interpHeight(heights, tx, tz, terrainSize = 4097) {
+
+  const x0 = Math.floor(tx);
+  const x1 = Math.min(terrainSize - 1, x0 + 1);
+  const z0 = Math.floor(tz);
+  const z1 = Math.min(terrainSize - 1, z0 + 1);
+
+  const fx = tx - x0;
+  const fz = tz - z0;
+
+  // 4 corners of the cell
+  const h00 = heights[z0 * terrainSize + x0];
+  const h10 = heights[z0 * terrainSize + x1];
+  const h01 = heights[z1 * terrainSize + x0];
+  const h11 = heights[z1 * terrainSize + x1];
+
+  // Bilinear interpolation
+  const h0 = h00 * (1 - fx) + h10 * fx;
+  const h1 = h01 * (1 - fx) + h11 * fx;
+  return h0 * (1 - fz) + h1 * fz;
+}

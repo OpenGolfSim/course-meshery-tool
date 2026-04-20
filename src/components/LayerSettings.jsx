@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Box, ListItemText, IconButton, ListItem, ListItemAvatar, Avatar, ListItemButton, Link, Button, ButtonBase, Typography, CircularProgress, Accordion, AccordionDetails, AccordionSummary, Slider, Stack, Tooltip, TextField, MenuItem, Collapse, Chip } from '@mui/material';
 import RouteIcon from '@mui/icons-material/Route';
-import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import ErrorIcon from '@mui/icons-material/Error';
+import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -13,12 +13,12 @@ import { useMeshery } from '../contexts/Meshery.jsx';
 import CurveEditDialog from '../dialogs/CurveEditDialog.jsx';
 import SurfaceSettings from './SurfaceSettings.jsx';
 
-
 export default function LayerSettings({
   layer,
   selectedLayer,
   onClick,
   onExpand,
+  onShowHide,
   onZoom,
   onCurveEdit,
 }) {
@@ -82,45 +82,66 @@ export default function LayerSettings({
 
 
   const isDisabled = useMemo(() => {
-    return layer.error || !layer.mesh || layer.pending || !layer.conformed;
+    return layer.error || layer.pending;
   }, [layer]);
+  
+  const handleShowHide = (event) => {
+    event.preventDefault();
+    console.log('show');
+    if (onShowHide) onShowHide();
+  }
+  const handleZoom = (event) => {
+    event.preventDefault();
+    console.log('hide');
+    if (onZoom) onZoom();
+  }
 
   return (
-    <>
-      <Box>
-        <Box sx={{ p: 2, opacity: layer.visible ? 1 : 0.6 }}>
-          <ButtonBase
-            sx={{
-              width: '100%',
-              display: 'flex',
-              flexDirection: 'row',
-              gap: 3,
-              textAlign: 'left'
-            }}
-            onClick={handleClick}
-          >
-            {layer.error ? (
-              <Tooltip title={layer.error}>
-                <ErrorIcon color="error" />
-              </Tooltip>
-            ) : (
-                isDisabled ? (
-                <CircularProgress size={15} />
-              ) : (
-                <Avatar sx={{ backgroundColor: `#${layer.color}`, width: 15, height: 15 }}>{' '}</Avatar>
-              )
-            )}
-            <Box sx={{ flex: 1 }}>
-              <Typography component="span">{layer.surface}</Typography>{' '}
-              <Typography color="textSecondary" component="span">{layer.name}</Typography>
-              
-            </Box>
-            <Box>
-              {expanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-            </Box>
-          </ButtonBase>
-        </Box>
-      </Box>
-    </>
+    <ListItemButton
+      onClick={handleClick}
+      sx={{ opacity: layer.visible ? 1 : 0.6 }}
+    >
+      {/* <ButtonBase
+        sx={{
+          width: '100%',
+          display: 'flex',
+          flexDirection: 'row',
+          gap: 3,
+          textAlign: 'left'
+        }}
+        onClick={handleClick}
+      > */}
+
+        {/* {layer.error ? (
+          <Tooltip title={layer.error}>
+            <ErrorIcon color="error" />
+          </Tooltip>
+        ) : (
+            isDisabled ? (
+            <CircularProgress size={15} />
+          ) : (
+            <Avatar sx={{ backgroundColor: `#${layer.color}`, width: 15, height: 15 }}>{' '}</Avatar>
+          )
+        )} */}
+        <ListItemAvatar sx={{ minWidth: 30 }}>
+          {isDisabled ? (
+            <CircularProgress size={15} />
+          ) : (
+            <Avatar sx={{ backgroundColor: `#${layer.color}`, width: 15, height: 15 }}>{' '}</Avatar>
+          )}
+        </ListItemAvatar>
+        <ListItemText primary={layer.name} />
+        {/* <Box sx={{ flex: 1 }}>
+          <Typography component="span">{layer.name}</Typography>
+          <Typography color="textSecondary" component="span">{layer.name}</Typography>
+        </Box> */}
+        {/* <Box>
+          <IconButton onClick={handleZoom} size="small"><ZoomInIcon /></IconButton>
+          <IconButton onClick={handleShowHide} size="small">
+            {layer.visible ? <VisibilityOffIcon /> : <VisibilityIcon />}
+          </IconButton>
+        </Box> */}
+      {/* </ButtonBase> */}
+    </ListItemButton>
   )
 }

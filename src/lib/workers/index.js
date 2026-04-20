@@ -2,19 +2,52 @@ import { app, session, shell, BrowserWindow, ipcMain, dialog, protocol, net } fr
 import path from 'path';
 import { spawn, Thread, Worker } from 'threads';
 
-export async function svgToCourseLayers(data) {
-  // console.log('job', job);
-  // console.log('data', data);
-  const { layers, settings } = data;
-  const workerPath = path.resolve(__dirname, 'svg.worker.js');
-  console.log("workerPath:", workerPath)
-  const svg = await spawn(new Worker(workerPath));
-  const courseLayers = await svg.generateCoursePolygons(layers, settings);
-  await Thread.terminate(svg);
-  console.log(`Generated ${courseLayers.length} course layers from svg`);
-  return courseLayers;
+function getWorker(workerFilename) {
+  return spawn(new Worker(path.join(__dirname, workerFilename)));
 }
 
+export async function svgToCourseLayers(data, onProgress) {
+  // console.log('job', job);
+  // console.log('data', data);
+  const { layers, layerSettings } = data;
+  const svg = await getWorker('svg.worker.js');
+  // const workerPath = path.resolve(__dirname, 'svg.worker.js');
+  // console.log("workerPath:", workerPath)
+  // const svg = await spawn(new Worker(workerPath));
+
+  const subscription = svg.progress().subscribe(p => {
+    if (onProgress) onProgress(p);
+    // or forward to renderer via IPC:
+    // mainWindow.webContents.send('svg-progress', p);
+  });
+
+  const result = await svg.generateCoursePolygons(layers, layerSettings);
+  
+  subscription.unsubscribe();
+  await Thread.terminate(svg);
+  console.log(`Generated ${result.layers.length} course layers from svg`);
+  return result;
+}
+
+export async function layerToMesh(layer, shape, project) {
+  const meshWorker = await getWorker('mesh.worker.js');
+  let mesh = await meshWorker.generateMesh(layer, shape);
+  mesh = await meshWorker.conformMeshToTerrain(layer, mesh, project);
+  if (layer.dig?.enabled) {
+    mesh = await meshWorker.digMesh(mesh, shape, layer);
+  }
+  await Thread.terminate(meshWorker);
+  // console.log(`Generated mesh from layer`);
+  return mesh;
+}
+
+export async function conformMesh(layer, mesh, project) {
+  const conformWorker = await getWorker('mesh.worker.js');
+  const conformed = await conformWorker.conformMeshToTerrain(layer, mesh, project);
+  await Thread.terminate(conformWorker);
+  return conformed;
+  // console.log(`Mesh ${finished} of ${courseLayers.length} (triangles:${mesh.triangles.length}, points:${mesh.points.length})`);  
+}
 export let workerWindow;
 export async function createWorkerWindow(preloadUrl, mainUrl) {
   // Create the window

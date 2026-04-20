@@ -18,11 +18,13 @@ export default function CourseMapLayer(props) {
 
   return (
     <ListItem secondaryAction={<IconButton onClick={handleClick}><MoreIcon /></IconButton>}>
-      <ListItemIcon
-        sx={{ minWidth: 30 }}
-      >
-        {props.icon}
-      </ListItemIcon>
+      {props.icon ? (
+        <ListItemIcon
+          sx={{ minWidth: 30 }}
+        >
+          {props.icon}
+        </ListItemIcon>
+      ) : null}
       <ListItemText
         primary={props.label}
         secondary={props.secondary}
@@ -35,6 +37,11 @@ export default function CourseMapLayer(props) {
           }
         }}
       />
+      {props.endIcon ? (
+        <ListItemIcon sx={{ minWidth: 30 }}>
+          {props.endIcon}
+        </ListItemIcon>
+      ) : null}
       <Menu
         anchorEl={anchorEl}
         open={open}

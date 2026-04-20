@@ -43,6 +43,7 @@
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
     "@geoman-io/leaflet-geoman-free": "^2.19.2",
+    "@gltf-transform/core": "^4.3.0",
     "@gsap/react": "^2.1.2",
     "@loaders.gl/core": "^4.3.4",
     "@loaders.gl/las": "^4.3.4",

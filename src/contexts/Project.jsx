@@ -15,8 +15,10 @@ const ProjectContext = createContext({
   searchOSMShapes: () => {},
   handleDownloadCourse: () => {},
   createProject: () => {},
+  updateLayerById: () => {},
   lidarSources: null,
   lidarFile: null,
+  palette: null
 });
 
 // Create a custom hook to easily consume the context
@@ -29,11 +31,17 @@ export const ProjectProvider = ({ children }) => {
   const [lidarSources, setLidarSources] = useState(null);
   // const [lidarFile, setLidarFile] = useState(null);
   const [project, setProject] = useState(null);
+  const [palette, setPalette] = useState(null);
   const [meshLayers, setMeshLayers] = useState([]);
   const meshJobMap = useRef({});
 
   const setProjectSettings = (update) => {
     setProject((old) => ({ ...old, settings: { ...old.settings, ...update } }))
+  }
+  const getPalette = async () => {
+    const res = await window.meshery.colors.palette();
+    console.log('project: ', res);
+    setPalette(res);
   }
   const getOpenProject = async () => {
     const data = await window.meshery.project.getOpenProject();
@@ -78,13 +86,13 @@ export const ProjectProvider = ({ children }) => {
     return promise;
   }
 
-  const generateMesh = useCallback(async (layer) => {
-    updateLayerById(layer.id, { pending: true, conformed: false });
-    const result = await startWorkerJob(layer.id, { type: 'mesh', layer, settings: { project: project?.settings } });
-    console.log('generated initial mesh', result);
-    updateLayerById(layer.id, { mesh: result.mesh, pending: false, conformed: false });
-    return result;
-  }, [meshJobMap, project?.settings]);
+  // const generateMesh = useCallback(async (layer) => {
+  //   updateLayerById(layer.id, { pending: true, conformed: false });
+  //   const result = await startWorkerJob(layer.id, { type: 'mesh', layer, settings: { project: project?.settings } });
+  //   console.log('generated initial mesh', result);
+  //   updateLayerById(layer.id, { mesh: result.mesh, pending: false, conformed: false });
+  //   return result;
+  // }, [meshJobMap, project?.settings]);
   
   const refreshLidarSources = async () => {
     const data = await window.meshery.map.lidarSources();
@@ -150,9 +158,11 @@ export const ProjectProvider = ({ children }) => {
   //   window.meshery.project.saveWrite(settings);
   // }, [settings]);
 
-  const handleMeshLayerChange = (_evt, layers) => {
-    console.log('mesh layer');
-    setMeshLayers(layers);
+
+  const updateLayerById = async (layerId, update) => {
+    const result = await window.meshery.project.updateLayerById(layerId, update);
+    console.log('updated', result);
+    setProject(old => ({ ...old, ...result }));    
   }
 
   useEffect(() => {
@@ -166,16 +176,15 @@ export const ProjectProvider = ({ children }) => {
     console.log('scope load')
     Promise.all([
       getOpenProject(),
+      getPalette(),
       refreshLidarSources(),
       // getMeshLayers()
     ]).then(() => {
       setIsPending(false);
     });
     window.meshery.on('project.opened', handleProjectOpen);
-    window.meshery.on('project.meshLayers', handleMeshLayerChange);
     return () => {
       window.meshery.off('project.opened', handleProjectOpen);
-      window.meshery.off('project.meshLayers', handleMeshLayerChange);
     }    
   }, []);
 
@@ -197,7 +206,9 @@ export const ProjectProvider = ({ children }) => {
       searchOSMShapes,
       handleDownloadCourse,
       generateHillShade,
-      generateSatellite
+      generateSatellite,
+      palette,
+      updateLayerById
     }}>
       {children}
     </ProjectContext.Provider>

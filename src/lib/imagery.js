@@ -6,17 +6,20 @@ import { IMAGERY_DIR, MAP_SRS, PROJECT_FILE_PROTOCOL, TERRAIN_DIR, TIFF_SIZE } f
 import { getBin, getSpawnEnv } from './tools.js';
 import { resourceRoot } from './app.js';
 import { openProject, saveProjectSettings } from './project.js';
+import { broadcast } from './window.js';
 
 const log = logger.scope('GDAL');
 
 const WMS_FOLDER = path.join(resourceRoot(), 'extra-resources/wms');
 
 
-function runGDALCommand(binaryName, options) {
+function runGDALCommand(binaryName, options, onProgress) {
   log.debug(`Running ${binaryName} with options`, options);
   const binaryPath = getBin(binaryName);  
   let stderr = '';
   let stdout = '';
+  let progress = 0;
+  if (onProgress) onProgress({ progress });
   return new Promise((resolve, reject) => {
     const child = spawn(binaryPath, options, { env: getSpawnEnv() });
     child.stderr.on('data', (data) => {
@@ -25,7 +28,11 @@ function runGDALCommand(binaryName, options) {
     });
     child.stdout.on('data', (data) => {
       stdout += data.toString();
-      log.debug(`stdout: ${data}`);
+      if (/^\d+$/.test(data)) {
+        progress = parseInt(data, 10);
+        if (onProgress) onProgress({ progress });
+      }
+      log.debug(`stdout (${progress}%): ${data}`);
     });
     child.on('close', (code) => {
       log.debug(`code: ${code}`);
@@ -42,11 +49,13 @@ export async function generateSatelliteImage(wmsSource) {
   const wmsPath = path.join(WMS_FOLDER, `${wmsSource || 'google'}.xml`);
 
   const bounds = openProject.settings.bounds;
-  const generatedFile = `satellite_${wmsSource}_${Date.now().toString(16)}.tif`;
+  const generatedFileTIFF = `satellite_${wmsSource}_${Date.now().toString(16)}.tif`;
+  const generatedFileJPEG = `satellite_${wmsSource}_${Date.now().toString(16)}.jpg`;
 
   const imageryFolder = path.join(openProject._workingDir, IMAGERY_DIR);
-  const outputTiff = path.join(imageryFolder, generatedFile);
-  log.debug(`outputTiff: ${outputTiff}`);
+  const outputTIFF = path.join(imageryFolder, generatedFileTIFF);
+  const outputJPEG = path.join(imageryFolder, generatedFileJPEG);
+  log.debug(`outputTiff: ${outputTIFF}`);
 
   if (!fs.existsSync(imageryFolder)) {
     fs.mkdirSync(imageryFolder);
@@ -56,26 +65,46 @@ export async function generateSatelliteImage(wmsSource) {
   // const sw = transform.forward([bounds.west, openProject.settings.bounds.south]);
   // const ne = transform.forward([bounds.east, bounds.north]);
 
-  const gdalOptions = [
+  let currentProgress = 0;
+  const steps = 2;
+  const totalProgress = steps * 100;
+
+  await runGDALCommand('gdalwarp', [
     '-te', `${bounds.west}`, `${bounds.south}`, `${bounds.east}`, `${bounds.north}`,
     '-te_srs', MAP_SRS,      // CRS of the bounding box coords
     '-t_srs', openProject.lidar.srs,
     '-ts', `${TIFF_SIZE}`, `${TIFF_SIZE}`,
     '-r', 'bilinear',             // resampling method (better than nearest for imagery)
     '-of', 'GTiff',               // output format
-    '-co', 'COMPRESS=JPEG',       // compress — satellite imagery is huge at 8192x8192
-    '-co', 'JPEG_QUALITY=90',
+    // '-co', 'COMPRESS=JPEG',       // compress — satellite imagery is huge at 8192x8192
+    // '-co', 'JPEG_QUALITY=95',
     wmsPath,
-    outputTiff
-  ];
-  log.debug('gdalOptions', gdalOptions);
-  await runGDALCommand('gdalwarp', gdalOptions);
-  
+    outputTIFF
+  ], (update) => {
+    currentProgress = update.progress;
+    broadcast('imagery.progress', { progress: (currentProgress / totalProgress) * 100 });
+  });
+
+    // generate lower-res jpg
+  await runGDALCommand('gdal_translate', [
+    // '-if', 'JPEG',
+    '-of', 'JPEG',
+    '-r', 'cubic',
+    '-co', 'QUALITY=95',
+    '-outsize', `${TIFF_SIZE}`, `${TIFF_SIZE}`,
+    outputTIFF,
+    outputJPEG
+  ], (update) => {
+    currentProgress = 100 + update.progress;
+    broadcast('imagery.progress', { progress: (currentProgress / totalProgress) * 100 });
+  });
+
   const asset = {
-    filePath: outputTiff,
-    fileName: path.basename(outputTiff),
+    filePath: outputTIFF,
+    filePathJPEG: outputJPEG,
+    fileName: path.basename(outputTIFF),
     source: wmsSource,
-    uri: `${PROJECT_FILE_PROTOCOL}:///${path.join(IMAGERY_DIR, generatedFile)}`
+    uri: `${PROJECT_FILE_PROTOCOL}:///${path.join(IMAGERY_DIR, generatedFileJPEG)}`
   };
 
   const satellite = {
@@ -110,16 +139,20 @@ export async function generateHillShade() {
     throw new Error('Elevation TIF file missing!');
   }
   const generatedFile = `hillshade_${Date.now().toString(16)}.tif`;
+  const generatedJPEG = `hillshade_${Date.now().toString(16)}.jpg`;
 
   const imageryFolder = path.join(openProject._workingDir, IMAGERY_DIR);
   const outputTiff = path.join(imageryFolder, generatedFile);
+  const outputJPEG = path.join(imageryFolder, generatedJPEG);
   log.debug(`outputTiff: ${outputTiff}`);
+  log.debug(`outputTiffLowRes: ${outputJPEG}`);
 
   if (!fs.existsSync(imageryFolder)) {
     fs.mkdirSync(imageryFolder);
   }
 
-  const options = [
+  // generate high res hill shade GeoTIFF
+  await runGDALCommand('gdaldem', [
     'hillshade',
     openProject.dem.filePath,
     outputTiff,
@@ -127,16 +160,26 @@ export async function generateHillShade() {
     '-alt', '45',          // sun altitude in degrees
     '-z', '1.0',           // vertical exaggeration factor (raise to dramatize terrain)
     '-compute_edges',      // avoids black border artifacts at DEM edges
+    // '-outsize', '8192', '8192',
     '-of', 'GTiff',
     '-co', 'COMPRESS=DEFLATE'
     // outputFile
-  ];
-  log.debug('options', options);
+  ]);
 
-  await runGDALCommand('gdaldem', options);
+  // generate lower-res jpg
+  await runGDALCommand('gdal_translate', [
+    '-of', 'JPEG',
+    '-r', 'cubic',
+    '-co', 'QUALITY=95',
+    '-outsize', '8192', '8192',
+    outputTiff,
+    outputJPEG
+  ]);
 
   const hillShade = {
     filePath: outputTiff,
+    filePathJPEG: outputJPEG,
+    // filePathLowRes: outputTiffLowRes,
     uri: `${PROJECT_FILE_PROTOCOL}:///${path.join(IMAGERY_DIR, generatedFile)}`
   };
 

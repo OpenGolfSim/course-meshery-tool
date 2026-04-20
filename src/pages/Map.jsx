@@ -33,6 +33,7 @@ import ShapeLineIcon from '@mui/icons-material/ShapeLine';
 import TonalityIcon from '@mui/icons-material/Tonality';
 import ImageIcon from '@mui/icons-material/Image';
 import CheckIcon from '@mui/icons-material/Check';
+import ZoomIcon from '@mui/icons-material/ZoomIn';
 import FocusIcon from '@mui/icons-material/CenterFocusStrong';
 import Visibility from '@mui/icons-material/Visibility';
 import VisibilityOff from '@mui/icons-material/VisibilityOff';
@@ -68,6 +69,7 @@ import NumberField from '../components/NumberField';
 import SVGEditor from '../components/SVGEditor';
 import CourseMapLayer from '../components/CourseMapLayer';
 import GenerateSatelliteDialog from '../dialogs/GenerateSatelliteDialog';
+import TerrainDownloadDialog from '../dialogs/TerrainDownloadDialog';
 
 // gsap.registerPlugin(useGSAP, MotionPathPlugin);
 
@@ -191,9 +193,10 @@ export default function Map() {
   const pathEditor = useRef();
   const [layerVisibility, setLayerVisibility] = useState({
     hillshade: true,
-    satellite: true,
+    satellite: false,
     svg: true
   });
+  const [isEditingCenter, setIsEditingCenter] = useState(false);
   // const [mapState, setMapState] = useState({ setCenter: false });
 
   // const [courseLayers, setCourseLayers] = useState([
@@ -207,6 +210,8 @@ export default function Map() {
   const [shapesDialogOpen, setShapesDialogOpen] = useState(false);
   const [satelliteDialogOpen, setSatelliteDialogOpen] = useState(false);
   const [elevationDialogOpen, setElevationDialogOpen] = useState(false);
+  const [lidarDialogData, setLidarDialogData] = useState(null);
+
   const [isLidarDownloading, setIsLidarDownloading] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(15);
 
@@ -218,25 +223,51 @@ export default function Map() {
     return vals;
   }, [project?.satellite]);
 
-  const addSatelliteImageLayer = async (uri) => {
-    console.log('sat', uri);
-    const response = await fetch(uri);
-    const arrayBuffer = await response.arrayBuffer();
-    const georaster = await parseGeoraster(arrayBuffer);
-
-    if (!satelliteLayer.current) {
-      mapRef.current.createPane('satellite');
-      mapRef.current.getPane('satellite').style.zIndex = 251; // above tilePane (200)
+  const addSatelliteImageLayer = async (item) => {
+    console.log('sat', outlineLayer.current, item);
+    if (!item.uri) {
+      return;
     }
-
-    satelliteLayer.current = new GeoRasterLayer({
-      georaster,
-      pane: 'satellite',
-      opacity: 0.7,
-      resolution: 128, // controls rendering quality vs performance
-      updateWhenIdle: true,      // only re-render after zoom/pan finishes
-      updateWhenZooming: false,  // skip intermediate frames
+    const bounds = outlineLayer.current.getBounds();
+    const coords = [
+      [bounds.getNorth(), bounds.getWest()],
+      [bounds.getSouth(), bounds.getEast()]
+    ];
+    // const coords = {
+    //   south: bounds.getSouth(),
+    //   west: bounds.getWest(),
+    //   north: bounds.getNorth(),
+    //   east: bounds.getEast()
+    // };
+    console.log('bounds', bounds);
+    satelliteLayer.current = L.imageOverlay(item.uri, coords, {
+      opacity: 0.7, // Optional: Set transparency
+      interactive: false // Optional: Enable click events
     });
+    setLayerVisibility(old => ({ ...old, satellite: item.source }));
+
+    // const response = await fetch(item.uri);
+    // console.log('fetched', response.status);
+    // const arrayBuffer = await response.arrayBuffer();
+    // console.log('read data, parsing georaster...');
+    // const georaster = await parseGeoraster(arrayBuffer);
+    // console.log('Done parsing georaster...');
+
+    // if (!satelliteLayer.current) {
+    //   mapRef.current.createPane('satellite');
+    //   mapRef.current.getPane('satellite').style.zIndex = 251; // above tilePane (200)
+    // } else {
+    //   mapRef.current.removeLayer(satelliteLayer.current);
+    // }
+
+    // satelliteLayer.current = new GeoRasterLayer({
+    //   georaster,
+    //   pane: 'satellite',
+    //   opacity: 0.7,
+    //   resolution: 128, // controls rendering quality vs performance
+    //   updateWhenIdle: true,      // only re-render after zoom/pan finishes
+    //   updateWhenZooming: false,  // skip intermediate frames
+    // });
 
     satelliteLayer.current.addTo(mapRef.current);
   }
@@ -285,6 +316,17 @@ export default function Map() {
     });
   }, []);
 
+  const handleShowHideSatelliteLayer = useCallback((satelliteSource) => {
+    setLayerVisibility(old => {
+      if (!!old.satellite) {
+        mapRef.current.removeLayer(satelliteLayer.current);
+        return { ...old, satellite: null };
+      }
+      satelliteLayer.current.addTo(mapRef.current);
+      return { ...old, satellite: satelliteSource };
+    });
+  }, []);
+
   const handleShowHideLayer = useCallback((layerId, layerRef) => {
     console.log('show=hide');
     setLayerVisibility(old => {
@@ -314,9 +356,9 @@ export default function Map() {
   const handleGenerateHillShade = async () => {
     const result = await generateHillShade();
     console.log('result', result);
-    if (result?.hillShade?.uri) {
-      await addHillShadeLayer(result.hillShade.uri);
-    }
+    // if (result?.uri) {
+    //   await addHillShadeLayer(result.uri);
+    // }
     // mapRef.current.fitBounds(hillshadeLayer.current.getBounds());
   }
 
@@ -336,18 +378,19 @@ export default function Map() {
   }
   
   const processLidar = async (lidarFeature) => {
-    const bounds = outlineLayer.current.getBounds();
-    const coords = {
-      south: bounds.getSouth(),
-      west: bounds.getWest(),
-      north: bounds.getNorth(),
-      east: bounds.getEast()
-    };
-    setIsLidarDownloading(true);
-    console.log('download', lidarFeature);
-    console.log('from', coords);
-    await handleDownloadCourse(lidarFeature, coords);
-    setIsLidarDownloading(false);
+    setLidarDialogData(lidarFeature);
+    // const bounds = outlineLayer.current.getBounds();
+    // const coords = {
+    //   south: bounds.getSouth(),
+    //   west: bounds.getWest(),
+    //   north: bounds.getNorth(),
+    //   east: bounds.getEast()
+    // };
+    // setIsLidarDownloading(true);
+    // console.log('download', lidarFeature);
+    // console.log('from', coords);
+    // await handleDownloadCourse(lidarFeature, coords);
+    // setIsLidarDownloading(false);
   }
 
   const handleShapesSave = () => {
@@ -375,6 +418,14 @@ export default function Map() {
     return turf.bboxPolygon(bbox);
   }
   
+  const handleMapClick = useCallback((evt) => {
+    if (isEditingCenter) {
+      console.log('map clicked: ', isEditingCenter, evt.latlng);
+      setIsEditingCenter(false);
+      setCenterPoint(evt.latlng);
+    }
+  }, [isEditingCenter]);
+
   const handleZoomChange = (e) => {
     console.log('event', e);
     const newZoom = e.target.getZoom();
@@ -386,11 +437,12 @@ export default function Map() {
     if (centerPointLayer.current) {
       mapRef.current.removeLayer(centerPointLayer.current);
     }
-    const newLayer = L.marker([latlng.lat, latlng.lng]).bindPopup('This is Ruby Hill Park.');
-    newLayer.addTo(mapRef.current);
-    centerPointLayer.current = newLayer;
+    // const newLayer = L.marker([latlng.lat, latlng.lng]).bindPopup('This is Ruby Hill Park.');
+    // newLayer.addTo(mapRef.current);
+    // centerPointLayer.current = newLayer;
 
-    const { lat, lng } = centerPointLayer.current.getLatLng();
+    // const { lat, lng } = centerPointLayer.current.getLatLng();
+    const { lat, lng } = latlng;
     console.log('New Center POI:', { lat, lng });
     setProjectSettings({
       centerPoint: { lat, lng },
@@ -462,8 +514,17 @@ export default function Map() {
 
   }, [project._svgBuffer]);
 
+  const handleCenterClick = () => {
+    // project.settings.centerPoint?.lat && handleZoomToCenter()
+    setIsEditingCenter(old => !old);
+    
+  }
+
   const handleZoomToCenter = () => {
     // mapRef.current
+    if (!project.settings.centerPoint?.lat){
+      return;
+    }
     const bounds = outlineLayer.current.getBounds();
     // mapRef.current.setView([latitude, longitude], zoomLevel);
     // Fit the map view to the bounds
@@ -492,6 +553,31 @@ export default function Map() {
     //   updateOutlineBox();
     // }
   }, [project.settings.centerPoint, project.settings.distance]);
+
+  useEffect(() => {
+    if (!mapRef.current) {
+      return;
+    }
+    mapRef.current.getContainer().style.cursor = isEditingCenter ? 'crosshair' : ''; // Change map cursor
+    mapRef.current.on('click', handleMapClick);
+    return () => {
+      mapRef.current.off('click', handleMapClick);
+    }
+  }, [isEditingCenter]);
+
+  useEffect(() => {
+    if (project.hillShade?.uri) {
+      addHillShadeLayer(project.hillShade.uri);
+    }
+  }, [project.hillShade?.uri]);
+  
+  // useEffect(() => {
+  //   const vals = Object.values(project.satellite || {});
+  //   if (outlineLayer.current && vals.length) {
+  //     console.log('add sat', vals[0]);
+  //     addSatelliteImageLayer(vals[0]);
+  //   }
+  // }, [project.satellite]);
 
   useEffect(() => {
     console.log('create map...', project.settings);
@@ -590,50 +676,66 @@ export default function Map() {
       }
     }).addTo(mapRef.current);
 
+    // var editInfo = L.control({
+    //   position: 'topleft'
+    // });
+    // editInfo.onAdd = function (map) {
+    //     this._div = L.DomUtil.create('div', 'info'); // create a div with class "info"
+    //     this.update();
+    //     return this._div;
+    // };
 
-    L.Control.CustomTools = L.Control.extend({
-      options: { position: 'topleft' },
-      onAdd: (map) => {
+    // editInfo.update = function (props) {
+    //     this._div.innerHTML = '<h4>Map Information</h4>' +  (props ?
+    //         '<b>' + props.name + '</b>' : 'Hover over a feature');
+    // };
+    // editInfo.addTo(mapRef.current);
+
+
+    // L.Control.CustomTools = L.Control.extend({
+    //   options: { position: 'topleft' },
+    //   onAdd: (map) => {
         
-        var container = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
-        // center button
-        var button = L.DomUtil.create('a', 'leaflet-control-button', container);
-        var icon = L.DomUtil.create('div', 'control-icon control-icon-poi', button);
-        L.DomEvent.disableClickPropagation(button);
-        let isEditing = false;
-        L.DomEvent.on(button, 'click', () => {
-          console.log('click');
-          // button.style.backgroundColor = '#ccc'; // Highlight button to show it's active
-          // map.getContainer().style.cursor = 'crosshair'; // Change map cursor
-          isEditing = true;
+    //     var container = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
+    //     // center button
+    //     var button = L.DomUtil.create('a', 'leaflet-control-button', container);
+    //     var icon = L.DomUtil.create('div', 'control-icon control-icon-poi', button);
+    //     L.DomEvent.disableClickPropagation(button);
+    //     let isEditing = false;
+    //     L.DomEvent.on(button, 'click', () => {
+    //       console.log('click');
+          
+    //       button.style.backgroundColor = '#ccc'; // Highlight button to show it's active
+    //       map.getContainer().style.cursor = 'crosshair'; // Change map cursor
+    //       isEditing = true;
 
-          map.on('click', (evt) => {
-            console.log('selected center point!', evt);
-            // isEditing = !isEditing;
-            if (isEditing) {
-              setCenterPoint(evt.latlng);
-              isEditing = false;
-            }
-          });
-        });
-        button.title = "Set course center position";
+    //       map.on('click', (evt) => {
+    //         console.log('selected center point!', evt);
+    //         // isEditing = !isEditing;
+    //         if (isEditing) {
+    //           setCenterPoint(evt.latlng);
+    //           isEditing = false;
+    //         }
+    //       });
+    //     });
+    //     button.title = "Set course center position";
         
-        // draw button
-        var drawButton = L.DomUtil.create('a', 'leaflet-control-button', container);
-        var drawIcon = L.DomUtil.create('div', 'control-icon control-icon-draw', drawButton);
-        L.DomEvent.disableClickPropagation(drawButton);
-        L.DomEvent.on(drawButton, 'click', () => {
-            console.log('drawButton click');
-        });
-        drawButton.title = "Add new course shape";
+    //     // draw button
+    //     var drawButton = L.DomUtil.create('a', 'leaflet-control-button', container);
+    //     var drawIcon = L.DomUtil.create('div', 'control-icon control-icon-draw', drawButton);
+    //     L.DomEvent.disableClickPropagation(drawButton);
+    //     L.DomEvent.on(drawButton, 'click', () => {
+    //         console.log('drawButton click');
+    //     });
+    //     drawButton.title = "Add new course shape";
 
-        return container;
-      },
-      onRemove: (map) => {},
-    });
+    //     return container;
+    //   },
+    //   onRemove: (map) => {},
+    // });
 
-    const controls = new L.Control.CustomTools();
-    controls.addTo(mapRef.current);
+    // const controls = new L.Control.CustomTools();
+    // controls.addTo(mapRef.current);
 
     // L.Control.CustomColors = L.Control.extend({
     //   options: { position: 'bottomleft' },
@@ -655,12 +757,7 @@ export default function Map() {
     // colors.addTo(mapRef.current);
 
 
-    if (project.hillShade?.uri) {
-      // addHillShadeLayer(project.hillShade?.uri);
-    }
-    if (Object.values(project.satellite)?.[0]?.uri) {
-      // addSatelliteImageLayer(Object.values(project.satellite)?.[0].uri);
-    }
+    
 
     // if (project._svgBuffer) {
     //   console.log('render SVG', project._svgBuffer);
@@ -692,15 +789,35 @@ export default function Map() {
             </AccordionSummary>
             <AccordionDetails>
               <Stack sx={{ p: 2 }} spacing={4}>
-                <Chip
-                  onDelete={() => project.settings.centerPoint?.lat && handleZoomToCenter()}
-                  deleteIcon={<FocusIcon />}
-                  label={
-                    project.settings.centerPoint?.lat ? 
-                    `${project.settings.centerPoint.lat.toFixed(4)}, ${project.settings.centerPoint.lng.toFixed(4)}` : 
-                    'Not Set'
-                  }
-                />
+                
+                <Stack direction="row" alignItems="center">
+                  <Box flex={1}>
+                    {project.settings.centerPoint?.lat ? (
+                      <Typography>{project.settings.centerPoint.lat.toFixed(4)}, {project.settings.centerPoint.lng.toFixed(4)}</Typography>
+                    ) : (
+                      <Typography color="textSecondary">Not Set</Typography>
+                    )}
+                  </Box>
+                  <Tooltip title="Set Center">
+                    <IconButton
+                      disabled={project.lidar}
+                      color={isEditingCenter ? 'primary' : 'inherit'}
+                      onClick={handleCenterClick}
+                    >
+                      <FocusIcon />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title="Zoom to Area">
+                    <span>
+                      <IconButton
+                        disabled={!project.settings.centerPoint?.lat}
+                        onClick={handleZoomToCenter}
+                      >
+                        <ZoomIcon />
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+                </Stack>
                 <NumberField
                   label="Course Size (km)"
                   min={0.2}
@@ -779,14 +896,20 @@ export default function Map() {
                         );
                       })
                     ): (
-                      <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', p: 2 }}>
-                        <Typography component="div" variant="caption" color="textSecondary" sx={{ textAlign: 'center' }}>
-                          {`No lidar exists for this course yet :(`}
-                        </Typography>
-                        <Button onClick={() => window.meshery.openExternalUrl('https://usgs.entwine.io/')}>
-                          View available data
-                        </Button>
-                      </Box>
+                      project.settings.centerPoint ? (
+                        <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', p: 2 }}>
+                          <Typography component="div" variant="caption" color="textSecondary" sx={{ textAlign: 'center' }}>
+                            {`No lidar exists for this course yet :(`}
+                          </Typography>
+                          <Button onClick={() => window.meshery.openExternalUrl('https://usgs.entwine.io/')}>
+                            View available data
+                          </Button>
+                        </Box>
+                      ) : (
+                        <Box sx={{ textAlign: 'center', p: 2 }}>
+                          <Typography color="textSecondary">Course center point must be set</Typography>
+                        </Box>
+                      )
                     )}
                   </List>
                 )}
@@ -803,9 +926,10 @@ export default function Map() {
               <List disablePadding={true}>
                 
                 <CourseMapLayer
-                  icon={<TonalityIcon />}
+                  icon={<TonalityIcon color={layerVisibility.hillshade ? 'inherit' : 'secondary'} />}
+                  endIcon={<CheckIcon color={!!project.hillShade ? 'success' : 'secondary'} />}
                   hidden={!layerVisibility.hillshade}
-                  label={project.hillShade?.fileName || 'Hillshade'}
+                  label={project?.hillShade?.fileName || 'Hillshade'}
                   menuItems={[
                     {
                       label: layerVisibility.hillshade ? 'Hide Layer' : 'Show Layer',
@@ -865,16 +989,17 @@ export default function Map() {
                 {satelliteLayers.map(satellite => (
                   <CourseMapLayer
                     key={satellite.source}
-                    icon={<ImageIcon />}
-                    hidden={!layerVisibility[satellite.source]}
+                    icon={<SatelliteIcon />}
+                    endIcon={<CheckIcon color={satellite.source !== 'none' ? 'success' : 'secondary'} />}
+                    // hidden={layerVisibility.satellite !== satellite.source}
                     label={'Satellite'}
                     secondary={satellite.source}
                     menuItems={[
-                      satellite.source !== 'none' && {
-                        label: layerVisibility[satellite.source] ? 'Hide Layer' : 'Show Layer',
-                        icon: layerVisibility[satellite.source] ? <Visibility /> : <VisibilityOff />,
-                        onClick: () => handleShowHideLayer('satellite', satelliteLayer)
-                      },
+                      // satellite.source !== 'none' && {
+                      //   label: layerVisibility.satellite === satellite.source ? 'Hide Layer' : 'Show Layer',
+                      //   icon: layerVisibility.satellite === satellite.source ? <Visibility /> : <VisibilityOff />,
+                      //   onClick: () => handleShowHideSatelliteLayer(satellite.source)
+                      // },
                       {
                         label: 'Generate Satellite',
                         icon: <MagicIcon />,
@@ -920,10 +1045,11 @@ export default function Map() {
                 )} */}
                 
                 <CourseMapLayer
-                  icon={<ShapeLineIcon />}
+                  icon={<ShapeLineIcon color={layerVisibility.svg ? 'inherit' : 'secondary'} />}
+                  endIcon={<CheckIcon color={!!project.svg ? 'success' : 'secondary'} />}
                   hidden={!layerVisibility.svg}
-                  secondary="SVG File"
-                  primary={project.svg?.fileName}
+                  secondary={project.svg?.fileName ? 'SVG File' : ''}
+                  label={project.svg?.fileName ? project.svg.fileName : 'SVG File'}
                   menuItems={
                     !project.svg?.fileName ? [
                       {
@@ -953,12 +1079,12 @@ export default function Map() {
                         icon: <ReloadIcon />,
                         onClick: () => window.meshery.svg.refresh()
                       },
-                      {
-                        label: 'Export SVG',
-                        icon: <SaveIcon />,
-                        disabled: !project.svg,
-                        onClick: () => window.meshery.project.saveSVG()
-                      },
+                      // {
+                      //   label: 'Export SVG',
+                      //   icon: <SaveIcon />,
+                      //   disabled: !project.svg,
+                      //   onClick: () => window.meshery.project.saveSVG()
+                      // },
                     ]
                   }
                 />                
@@ -1023,9 +1149,14 @@ export default function Map() {
         {/* This seems to get moved to the map when we add the svgOverlay */}
       </Box>
 
-      
       <GenerateSatelliteDialog open={satelliteDialogOpen} onClose={() => setSatelliteDialogOpen(false)} />
       <GenerateSVGDialog open={shapesDialogOpen} onSave={handleShapesSave} onClose={() => setShapesDialogOpen(false)} />
+      <TerrainDownloadDialog
+        open={!!lidarDialogData}
+        data={lidarDialogData}
+        layerRef={outlineLayer}
+        onClose={() => setLidarDialogData(null)}
+      />
       <ViewLidarDialog open={elevationDialogOpen} onClose={() => setElevationDialogOpen(false)} />
     </React.Fragment>
   );

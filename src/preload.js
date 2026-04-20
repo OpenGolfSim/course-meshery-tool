@@ -19,6 +19,9 @@ contextBridge.exposeInMainWorld('meshery', {
   app: {
     exit: () => ipcRenderer.invoke('app.exit')
   },
+  colors: {
+    palette: () => ipcRenderer.invoke('colors.palette')
+  },
   dialog: {
     confirm: (options) => ipcRenderer.invoke('dialog.confirm', options)
   },
@@ -33,6 +36,12 @@ contextBridge.exposeInMainWorld('meshery', {
     getSettings: () => ipcRenderer.invoke('project.getSettings'),
     recent: () => ipcRenderer.invoke('project.recent'),
     saveSVG: () => ipcRenderer.invoke('project.saveSVG'),
+    // meshes
+    generateMeshes: () => ipcRenderer.invoke('project.generateMeshes'),
+    getMeshDataState: () => ipcRenderer.invoke('project.getMeshDataState'),
+    getMeshDataForLayer: (layerId) => ipcRenderer.invoke('project.getMeshDataForLayer', layerId),
+    updateLayerById: (layerId, update) => ipcRenderer.invoke('project.updateLayerById', layerId, update),
+    exportMeshes: (exportSettings) => ipcRenderer.invoke('project.exportMeshes', exportSettings),
     // saveWrite: (settings) => ipcRenderer.invoke('project.saveWrite', settings),
   },
   terrain: {
@@ -61,5 +70,5 @@ contextBridge.exposeInMainWorld('meshery', {
     checkInstallState: () => ipcRenderer.invoke('tools.checkInstallState'),
     installStart: () => ipcRenderer.invoke('tools.installStart'),
     installCancel: () => ipcRenderer.invoke('tools.installCancel'),
-  }
+  },
 });

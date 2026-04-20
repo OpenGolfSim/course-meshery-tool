@@ -24,7 +24,7 @@ import TerrainSettings from './TerrainSettings.jsx';
 import LayerListItem from './LayerListItem.jsx';
 import CurveEditDialog from '../dialogs/CurveEditDialog.jsx';
 import LoadingDialog from '../dialogs/LoadingDialog.jsx';
-import ImportSettingsDialog from '../dialogs/ImportSettingsDialog.jsx';
+import GenerateMeshDialog from '../dialogs/GenerateMeshDialog.jsx';
 import LayerSettings from './LayerSettings.jsx';
 import TerrainImportButton from './TerrainImportButton.jsx';
 import SvgImportButton from './SvgImportButton.jsx';
@@ -422,7 +422,7 @@ export default function Workarea() {
       </Box>
       <ErrorDialog open={!!systemError} onClose={clearSystemError} systemError={systemError} />
       <LoadingDialog open={!!systemLoading} label={systemLoading} onClose={clearSystemLoading} />
-      <ImportSettingsDialog open={isImportDialogOpen} onClose={handleImportDialogClose} />
+      <GenerateMeshDialog open={isImportDialogOpen} onClose={handleImportDialogClose} />
       <TerrainSettingsDialog open={isTerrainSettingsDialogOpen} onClose={handleTerrainSettingsDialogClose} />
     </>
   )

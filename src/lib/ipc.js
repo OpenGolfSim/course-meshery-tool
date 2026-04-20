@@ -4,6 +4,8 @@ import * as map from './map';
 import * as project from './project';
 import * as imagery from './imagery';
 import * as tools from './tools';
+import * as colors from './colors';
+import { exportMeshes } from './export';
 import { getRecentProjects } from './app';
 
 
@@ -31,6 +33,14 @@ ipcMain.handle('project.openRecent', (_event, p) => project.openRecent(p));
 ipcMain.handle('project.storeSettings', (_event, settings) => project.storeSettings(settings));
 ipcMain.handle('project.getSettings', (_event) => project.getSettings());
 ipcMain.handle('project.recent', (_event) => getRecentProjects());
+ipcMain.handle('project.generateMeshes', (_event, layerSettings) => project.generateMeshes(layerSettings));
+
+ipcMain.handle('project.getMeshDataState', () => project.getMeshDataState());
+ipcMain.handle('project.getMeshDataForLayer', (_event, layerId) => project.getMeshDataForLayer(layerId));
+ipcMain.handle('project.updateLayerById', (_event, layerId, update) => project.updateLayerById(layerId, update));
+ipcMain.handle('project.exportMeshes', (_event, exportSettings) => exportMeshes(exportSettings));
+
+ipcMain.handle('colors.palette', (_event) => colors.parsePalette());
 // ipcMain.handle('project.reloadSVG', (_event) => project.reloadSVG());
 // ipcMain.handle('project.saveWrite', (_event, settings) => project.saveWrite(settings));
 
@@ -52,3 +62,4 @@ ipcMain.handle('imagery.satellite', (_event, wmsSource) => imagery.generateSatel
 ipcMain.handle('tools.checkInstallState', () => tools.checkInstallState());
 ipcMain.handle('tools.installStart', () => tools.installStart());
 ipcMain.handle('tools.installCancel', () => tools.installCancel());
+

@@ -7,7 +7,7 @@ import { broadcast, mainWindow } from './window';
 import { addToRecent } from './app';
 import { generateSVG, geoJSONToSvgPaths, parseSVG, storedPathsToSVG } from './svg';
 import { parseRaw } from './heightmap';
-import { svgToCourseLayers } from './workers';
+import { conformMesh, layerToMesh, svgToCourseLayers } from './workers';
 
 const log = logger.scope('PROJECT');
 
@@ -33,6 +33,12 @@ export let openProject = {
   settings: defaultProjectSettings
 };
 
+export const meshData = {
+  courseLayers: [],
+  meshes: new Map(),
+  shapes: new Map(),
+  state: { running: false }
+}
 
 function setDirty() {
   openProject._dirty = true;
@@ -137,17 +143,18 @@ async function updateSVGData() {
   log.info(`Parsing generated SVG to layers...`);
   const { layers } = await parseSVG(openProject._svgBuffer);
   openProject._layers = layers;
+  broadcast('project.opened', openProject);
 
-  log.info('Generating course polygons from SVG...');
-  // openProject.$meshLayers = [...layers];
-  svgToCourseLayers({ layers: openProject._layers, settings: openProject.settings }).then((courseLayers) => {
-    // openProject.$meshLayers = courseLayers;
-    openProject._layers = courseLayers;
-    // broadcast('meshLayers', openProject.$meshLayers);
-    broadcast('project.opened', openProject);
-  }).catch(error => {
-    log.error(error);
-  });  
+  // log.info('Generating course polygons from SVG...');
+  // // openProject.$meshLayers = [...layers];
+  // svgToCourseLayers({ layers: openProject._layers, settings: openProject.settings }).then((courseLayers) => {
+  //   // openProject.$meshLayers = courseLayers;
+  //   openProject._layers = courseLayers;
+  //   // broadcast('meshLayers', openProject.$meshLayers);
+  //   broadcast('project.opened', openProject);
+  // }).catch(error => {
+  //   log.error(error);
+  // });  
 }
 
 async function loadSVG(filePath) {
@@ -292,4 +299,106 @@ export function getOpenProject() {
 
 export function getMeshLayers() {
   return openProject.$meshLayers;
+}
+
+export async function generateMeshes(layerSettings) {
+  try {
+
+    let progress = 1;
+    let steps = 2;
+
+    meshData.courseLayers = [];
+    meshData.shapes.clear();
+    meshData.meshes.clear();
+    meshData.state = { running: true };
+    
+    broadcast('mesh.progress', { progress, count: 0, status: 'Generating polygons from SVG' });
+
+    const result = await svgToCourseLayers({
+      layers: openProject._layers,
+      settings: openProject.settings,
+      layerSettings
+    }, (update) => {
+      console.log(`${update.current}/${update.total} — ${update.status}`);
+      broadcast('mesh.progress', {
+        progress: update.progress,
+        count: (update.current + 1),
+        status: `Generating ${update.current+1} of ${update.total} polygons`
+      });
+    });
+
+    if (!result.layers?.length) {
+      throw new Error('No course layers were generated');
+    }
+    if (!result.polygonMap) {
+      throw new Error('No course layers were generated');
+    }
+    meshData.shapes = result.polygonMap;
+    
+    openProject._layers = [ ...result.layers ];
+    broadcast('project.opened', openProject);
+
+    // meshData.courseLayers = courseLayers;
+  
+    console.log(`Generated ${result.layers.length} layers, ${meshData.shapes.size} polygons`);
+
+    broadcast('mesh.progress', { progress, count: 0, status: `Starting ${result.layers.length} meshes` });
+
+    let index = 0;
+    for (const layer of result.layers) {
+      const shape = meshData.shapes.get(layer.id);
+      if (!shape) {
+        throw new Error(`Unable to find polygon for ${layer.id} (${layer.name})`);
+      }
+      broadcast('mesh.progress', {
+        progress,
+        count: (index + 1),
+        status: `Meshing ${layer.name} (${index+1} of ${result.layers.length})`
+      });      
+      const mesh = await layerToMesh(layer, shape, openProject);
+      // layer.mesh = mesh;
+      // meshMap.set(layer.id, mesh);
+      // const conformedMesh = await conformMesh(layer, mesh, openProject);
+      // console.log(`Meshing ${index} of ${result.layers.length} (triangles:${mesh.triangles.length}, points:${mesh.points.length})`);
+      meshData.meshes.set(layer.id, { name: layer.name, mesh });
+      console.log(`Conformed (${layer.id}) ${index} of ${result.layers.length} (triangles:${mesh.triangles.length}, points:${mesh.points.length})`);
+      
+      progress = (index / result.layers.length) * 100;
+      index++;
+    }
+    meshData.state.error = undefined;
+    meshData.state.generated = index;
+    meshData.state.lastGenerated = Date.now();
+    // courseLayers.forEach((layer) => {
+    //   const mesh = layerToMesh(layer);
+    //   console.log('mesh', mesh);
+    // });
+  } catch (error) {
+    log.error(error);
+    meshData.state.error = error.message;
+  } finally {
+    meshData.state.running = false;
+    console.log('send update', meshData.state);
+    broadcast('mesh.data', meshData.state);
+    return meshData.state;
+  }
+}
+
+export function getMeshDataForLayer(layerId) {
+  return meshData.meshes.get(layerId);
+}
+export function getMeshDataState() {
+  return meshData.state;
+}
+export async function updateLayerById(layerId, update) {
+  let layer = openProject._layers.find(l => l.id === layerId);
+  if (update.spacing || update.dig) {
+    const shape = meshData.shapes.get(layerId);    
+    console.log('regenerate mesh');
+    const mesh = await layerToMesh(layer, shape, openProject);
+    meshData.meshes.set(layer.id, { name: layer.name, mesh });
+    broadcast('mesh.data', meshData.state);
+  }
+  layer = _.merge(layer, update);
+  return openProject;
 }
