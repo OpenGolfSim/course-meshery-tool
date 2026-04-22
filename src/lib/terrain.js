@@ -155,21 +155,46 @@ export function conformMeshToTerrain(layer, mesh, project) {
   } else if (!project._heightMap?.size) {
     log.warn('No heightmap size');
   }
+
+  const hasHeightMap = !!(project._heightMap?.data && project._heightMap?.size);
+  const isLakeSurface = layer.surface === 'lake_surface';
+  // Pre-pass for lakes: find the lowest terrain height across the shape so
+  // the whole surface can sit flat at that elevation.
+  let lakeY = 0;
+  if (hasHeightMap && isLakeSurface) {
+    let minRaw = Infinity;
+    for (let index = 0; index < mesh.points.length; index += 3) {
+      const x = mesh.points[index];
+      const z = mesh.points[index + 2];
+      const [tx, tz] = svgToTerrain(x, z, svgSize, project._heightMap.size);
+      const h = interpHeight(project._heightMap.data, tx, tz, project._heightMap.size);
+      if (h < minRaw) minRaw = h;
+    }
+    if (minRaw !== Infinity) {
+      lakeY = (minRaw / 65535) * heightScale;
+    }
+  }
+
   // const mesh = layer.mesh;
   for (let index = 0; index < mesh.points.length; index += 3) {
     const x = mesh.points[index];
     let y = 0; // mesh.points[index + 1];
     const z = mesh.points[index + 2];
-
-    if (project._heightMap?.data && project._heightMap?.size && layer.surface !== 'lake_surface') {
-      const [tx, tz] = svgToTerrain(x, z, svgSize, project._heightMap.size);
-      // Get/interpolate terrain height
-      y = interpHeight(project._heightMap.data, tx, tz, project._heightMap.size);
-
-      // If Unity height range is [0, 65535], you might want to scale to meters
-      // For example, if your terrain in Unity is 600m tall, scale = 600/65535
-      // If not, just use the raw value.
-      y = (y / 65535) * heightScale;
+    
+    if (project._heightMap?.data && project._heightMap?.size) {
+      if (isLakeSurface) {
+        // make lake surface mesh flat, but at lowest point of terrain data for this area?
+        y = lakeY;
+      } else {
+        const [tx, tz] = svgToTerrain(x, z, svgSize, project._heightMap.size);
+        // Get/interpolate terrain height
+        y = interpHeight(project._heightMap.data, tx, tz, project._heightMap.size);
+  
+        // If Unity height range is [0, 65535], you might want to scale to meters
+        // For example, if your terrain in Unity is 600m tall, scale = 600/65535
+        // If not, just use the raw value.
+        y = (y / 65535) * heightScale;
+      }
     }
     positions.push(x, y, z);
   }

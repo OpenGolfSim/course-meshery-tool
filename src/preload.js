@@ -37,7 +37,7 @@ contextBridge.exposeInMainWorld('meshery', {
     recent: () => ipcRenderer.invoke('project.recent'),
     saveSVG: () => ipcRenderer.invoke('project.saveSVG'),
     // meshes
-    generateMeshes: () => ipcRenderer.invoke('project.generateMeshes'),
+    generateMeshes: (layerSettings) => ipcRenderer.invoke('project.generateMeshes', layerSettings),
     getMeshDataState: () => ipcRenderer.invoke('project.getMeshDataState'),
     getMeshDataForLayer: (layerId) => ipcRenderer.invoke('project.getMeshDataForLayer', layerId),
     updateLayerById: (layerId, update) => ipcRenderer.invoke('project.updateLayerById', layerId, update),

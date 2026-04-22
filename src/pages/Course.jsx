@@ -103,7 +103,7 @@ export default function Course() {
   const handleSpacingChange = useCallback((newValue) => {
     console.log('selectedLayer', selectedLayer);
     console.log('selectedLayer', newValue);
-    updateLayerById(selectedLayer.layer.id, { spacing: newValue });
+    // updateLayerById(selectedLayer.layer.id, { spacing: newValue });
     setSelectedLayer(old => ({ ...old, layer: { ...old.layer, spacing: newValue }}))
   }, [selectedLayer]);
 
@@ -209,54 +209,60 @@ export default function Course() {
             
 
             {meshDataState?.generated && project._layers?.length ? (
-              <Box sx={{ overflow: 'auto' }}>
-                <List>
-                  {project._layers.map(layer => (
-                    <LayerSettings
-                      key={layer.id}
-                      layer={layer}
-                      surface={layer.surface}
-                      selectedLayer={selectedLayer}
-                      onExpand={handleLayerExpand}
-                      onClick={handleLayerClick}
-                    />
-                  ))}
-                </List>
-                <Popover
-                  open={Boolean(selectedLayer?.target)}
-                  anchorEl={selectedLayer?.target}
-                  onClose={handleSettingsClose}
-                  anchorOrigin={{
-                    vertical: 'top',
-                    horizontal: 'right',
-                  }}
-                  transformOrigin={{
-                    vertical: 'top',
-                    horizontal: 'left'
-                  }}
-                >
-                  {selectedLayer?.layer ? (
-                    <SurfaceSettings
-                      layer={selectedLayer.layer}
-                      surface={selectedLayer.layer.surface}
-                      spacing={selectedLayer.layer.spacing}
-                      dig={selectedLayer.layer.dig}
-                      onZoom={handleLayerZoom}
-                      onSave={handleSaveChanges}
-                      // surface={selectedLayer.layer.surface}
-                      // spacing={selectedLayer.layer.spacing}
-                      // blending={selectedLayer.layer.blending}
-                      // dig={selectedLayer.layer.dig}
-                      // onClick={handleLayerClick}
-                      // onSpacingChange={handleSpacingChange}
-                      // onBlendToggle={(checked) => handleBlendChange('enabled', checked)}
-                      // onBlendChange={(key, value) => handleBlendChange(key, value)}
-                      // onDigToggle={(checked) => handleDigChange('enabled', checked)}
-                      // onDigChanged={(key, value) => handleDigChange(key, value)}
-                    />
-                  ) : null}
-                </Popover>
-              </Box>
+              <React.Fragment>
+                <Box sx={{ p: 2 }}>
+                  <Button onClick={handleGenerateMeshes} fullWidth variant="contained" color="secondary">Regenerate</Button>
+                </Box>
+                <Box sx={{ overflow: 'auto' }}>
+                  <List>
+                    {project._layers.map(layer => (
+                      <LayerSettings
+                        key={layer.id}
+                        layer={layer}
+                        surface={layer.surface}
+                        selectedLayer={selectedLayer}
+                        onExpand={handleLayerExpand}
+                        onClick={handleLayerClick}
+                      />
+                    ))}
+                  </List>
+                  <Popover
+                    open={Boolean(selectedLayer?.target)}
+                    anchorEl={selectedLayer?.target}
+                    onClose={handleSettingsClose}
+                    anchorOrigin={{
+                      vertical: 'top',
+                      horizontal: 'right',
+                    }}
+                    transformOrigin={{
+                      vertical: 'top',
+                      horizontal: 'left'
+                    }}
+                  >
+                    {selectedLayer?.layer ? (
+                      <SurfaceSettings
+                        layer={selectedLayer.layer}
+                        surface={selectedLayer.layer.surface}
+                        spacing={selectedLayer.layer.spacing}
+                        dig={selectedLayer.layer.dig}
+                        onZoom={handleLayerZoom}
+                        onSave={handleSaveChanges}
+                        // surface={selectedLayer.layer.surface}
+                        // spacing={selectedLayer.layer.spacing}
+                        // blending={selectedLayer.layer.blending}
+                        // dig={selectedLayer.layer.dig}
+                        // onClick={handleLayerClick}
+                        // onSpacingChange={handleSpacingChange}
+                        // onBlendToggle={(checked) => handleBlendChange('enabled', checked)}
+                        // onBlendChange={(key, value) => handleBlendChange(key, value)}
+                        // onDigToggle={(checked) => handleDigChange('enabled', checked)}
+                        // onDigChanged={(key, value) => handleDigChange(key, value)}
+                      />
+                    ) : null}
+                  </Popover>
+                </Box>
+                
+              </React.Fragment>
             ) : (
               <Stack sx={{ p: 3 }} spacing={3}>
                 {project._layers?.length ? (

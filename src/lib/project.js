@@ -100,6 +100,7 @@ export async function refreshSVG() {
   if (openProject.svg?.filePath) {
     await loadSVG(openProject.svg.filePath);
   }
+
   broadcast('project.opened', openProject);
 }
 
@@ -361,7 +362,7 @@ export async function generateMeshes(layerSettings) {
       // const conformedMesh = await conformMesh(layer, mesh, openProject);
       // console.log(`Meshing ${index} of ${result.layers.length} (triangles:${mesh.triangles.length}, points:${mesh.points.length})`);
       meshData.meshes.set(layer.id, { name: layer.name, mesh });
-      console.log(`Conformed (${layer.id}) ${index} of ${result.layers.length} (triangles:${mesh.triangles.length}, points:${mesh.points.length})`);
+      // console.log(`Conformed (${layer.id}) ${index} of ${result.layers.length} (triangles:${mesh.triangles.length}, points:${mesh.points.length})`);
       
       progress = (index / result.layers.length) * 100;
       index++;
@@ -392,13 +393,13 @@ export function getMeshDataState() {
 }
 export async function updateLayerById(layerId, update) {
   let layer = openProject._layers.find(l => l.id === layerId);
+  layer = _.merge(layer, update);
+
   if (update.spacing || update.dig) {
     const shape = meshData.shapes.get(layerId);    
-    console.log('regenerate mesh');
     const mesh = await layerToMesh(layer, shape, openProject);
     meshData.meshes.set(layer.id, { name: layer.name, mesh });
     broadcast('mesh.data', meshData.state);
   }
-  layer = _.merge(layer, update);
   return openProject;
 }

@@ -51,6 +51,11 @@ export default function ExportCourseDialog(props) {
   //     window.meshery.off('export.progress', handleProgressUpdate);
   //   }
   // }, []);
+  useEffect(() => {
+    if (!open) {
+      setJobState({ phase: 'settings', count: 0, progress: 0 });
+    }
+  }, [open]);
 
   return (
     <Dialog

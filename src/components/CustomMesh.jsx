@@ -66,7 +66,9 @@ export default function CustomMesh(props) {
       return;
     }
     window.meshery.project.getMeshDataForLayer(props.layer.id).then(data => {
-      setMeshData(data.mesh);
+      if (data?.mesh) {
+        setMeshData(data.mesh);
+      }
     });
   }, [props.meshDataState]);
 

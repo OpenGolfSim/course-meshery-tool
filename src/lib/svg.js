@@ -102,7 +102,7 @@ function ringArea(ring) {
 
 export function storedPathsToSVG(paths) {
   return paths
-    .map((p, idx) => `<path id="${p.surface}-${idx}" d="${p.d}" style="fill:#${p.color ?? '115B13'}" />`)
+    .map((p, idx) => `<path id="${p.surface}_${idx}" d="${p.d}" style="fill:#${p.color ?? '115B13'}" />`)
     .join('\n  ');
 }
 
