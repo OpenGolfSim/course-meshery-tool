@@ -29,6 +29,7 @@ import { useMeshery } from '../contexts/Meshery.jsx';
 import SurfaceSettings from '../components/SurfaceSettings.jsx';
 import { useProject } from '../contexts/Project.jsx';
 import { defaultSettings } from '../lib/settings.js';
+import NumberField from '../components/NumberField.jsx';
 
 export default function GenerateMeshDialog(props) {
   const { project, palette } = useProject();
@@ -36,6 +37,7 @@ export default function GenerateMeshDialog(props) {
   const { onClose, open } = props;
   const [expanded, setExpanded] = React.useState(false);
   const [layerSettings, setLayerSettings] = React.useState({ ...defaultSettings });
+  const [terrainSettings, setTerrainSettings] = React.useState({ smoothing: 0 });
   const [jobState, setJobState] = React.useState({ phase: 'settings', count: 0, progress: 0 });
 
   const handleChange = (panel) => (event, isExpanded) => {
@@ -148,6 +150,9 @@ export default function GenerateMeshDialog(props) {
 
   }, [layerSettings]);
 
+  const handleTerrainChange = (setting, change) => {
+    setTerrainSettings(old => ({ ...old, [setting]: change }));
+  }
   const handleSaveChanges = (setting, changes) => {
     console.log('setting, changes', setting, changes);
     setLayerSettings(old => ({
@@ -163,23 +168,26 @@ export default function GenerateMeshDialog(props) {
   const handleConfirm = useCallback(async () => {
     console.log('generate them!');
     setJobState(old => ({ ...old, phase: 'generate' }));
-    await window.meshery.project.generateMeshes(layerSettings);
+    const result = await window.meshery.project.generateMeshes(layerSettings, terrainSettings);
     console.log('Done generating meshes!');
-    setJobState(old => ({ ...old, phase: 'complete' }));
+    setJobState(old => ({ ...old, ...result, phase: 'complete' }));
     // onClose(true);
-  }, [layerSettings]);
+  }, [layerSettings, terrainSettings]);
 
   const handleProgressUpdate = useCallback(async (evt, update) => {
-    // console.log('update progress', update);
+    console.log('update progress', update);
     setJobState(old => ({ ...old, ...update }));
   }, []);
 
   useEffect(() => {
     window.meshery.on('mesh.progress', handleProgressUpdate);
+    if (!open) {
+      setJobState({ phase: 'settings', count: 0, progress: 0 });
+    }
     return () => {
       window.meshery.off('mesh.progress', handleProgressUpdate);
     }
-  }, []);
+  }, [open]);
 
   return (
     <Dialog
@@ -198,76 +206,95 @@ export default function GenerateMeshDialog(props) {
       <DialogContent>
 
         {jobState.phase === 'settings' ? (
-          <React.Fragment>
-            <Alert sx={{ mb: 5 }}>Detected {project._layers?.length || 0} layers</Alert>
+          <Stack spacing={3}>
+            {/* <Alert sx={{ mb: 5 }}>Detected {project._layers?.length || 0} layers</Alert> */}
 
-            <Typography sx={{ mb: 3 }} variant="h3">Global Settings</Typography>
-            {settingGroups.map(setting => (
-              <Accordion key={setting.surface} expanded={expanded === setting.surface} onChange={handleChange(setting.surface)}>
-                <AccordionSummary
-                  expandIcon={<ExpandMoreIcon />}
-                  aria-controls="panel1bh-content"
-                  id="panel1bh-header"
-                >
-                  <Box sx={{ width: '33%', flexShrink: 0, display: 'flex', alignItems: 'center' }}>
-                    <Avatar
-                      sx={{
-                        backgroundColor: `#${getKeyByValue(palette, setting.surface) || 'aaa'}`,
-                        width: 15,
-                        height: 15,
-                        mr: 2
-                      }}
-                    >{' '}</Avatar>
-                    <Typography component="span">
-                      {setting.surface}
-                      ({setting.count})
+            <Box>
+              <Typography sx={{ mb: 3 }} variant="h3">Terrain Smoothing</Typography>
+              <Box>
+                <NumberField
+                  value={terrainSettings.smoothing}
+                  onChange={(val) => handleTerrainChange('smoothing', val)}
+                  fullWidth={true}
+                  label="Smooth Amount"
+                  min={0}
+                  step={1}
+                  max={30}
+                />
+                <Typography color="textSecondary" variant="caption">Apply smoothing to the raw lidar terrain</Typography>
+              </Box>
+            </Box>
+
+            <Box>
+              <Typography sx={{ mb: 3 }} variant="h3">Global Settings</Typography>
+              {settingGroups.map(setting => (
+                <Accordion key={setting.surface} expanded={expanded === setting.surface} onChange={handleChange(setting.surface)}>
+                  <AccordionSummary
+                    expandIcon={<ExpandMoreIcon />}
+                    aria-controls="panel1bh-content"
+                    id="panel1bh-header"
+                  >
+                    <Box sx={{ width: '33%', flexShrink: 0, display: 'flex', alignItems: 'center' }}>
+                      <Avatar
+                        sx={{
+                          backgroundColor: `#${getKeyByValue(palette, setting.surface) || 'aaa'}`,
+                          width: 15,
+                          height: 15,
+                          mr: 2
+                        }}
+                      >{' '}</Avatar>
+                      <Typography component="span">
+                        {setting.surface}
+                        ({setting.count})
+                      </Typography>
+                    </Box>
+                    <Typography component="span" sx={{ color: 'text.secondary', display: 'flex', gap: 2 }}>
+                      
+                      <Chip
+                        size="small"
+                        avatar={<TriangleIcon />}
+                        // label={`${setting.dig?.depth}m:${setting.dig?.distance}m`}
+                        label={`${setting.spacing.toFixed(2)}m`}
+                      />
+                      
+                      {setting.blending.enabled ? (
+                        <Chip
+                          size="small"
+                          avatar={<GradientIcon />}
+                          label={`${setting.blending?.distance?.toFixed(2)}m:${setting.blending?.spacing?.toFixed(2)}m`}
+                        />
+                      ) : null}
+
+                      {setting.dig.enabled ? (
+                        <Chip
+                          size="small"
+                          avatar={<ArrowDownwardIcon />}
+                          label={`${setting.dig?.depth?.toFixed(2)}m:${setting.dig?.distance?.toFixed(2)}m`}
+                        />
+                      ) : null}
+
                     </Typography>
-                  </Box>
-                  <Typography component="span" sx={{ color: 'text.secondary', display: 'flex', gap: 2 }}>
-                    
-                    <Chip
-                      size="small"
-                      avatar={<TriangleIcon />}
-                      // label={`${setting.dig?.depth}m:${setting.dig?.distance}m`}
-                      label={`${setting.spacing.toFixed(2)}m`}
+                  </AccordionSummary>
+                  <AccordionDetails>
+                    <SurfaceSettings
+                      surface={setting.surface}
+                      spacing={setting.spacing}
+                      // blending={setting.blending}
+                      dig={setting.dig}
+                      onChange={(changes) => handleSaveChanges(setting, changes)}
+                      // onSpacingChange={(value) => handleSpacingChange(setting, value)}
+                      // onBlendChange={(key, value) => handleBlendChange(setting, key, value)}
+                      // onBlendToggle={(value) => handleBlendToggle(setting, value)}
+                      // onDigToggle={(value) => handleDigToggle(setting, value)}
+                      // onDigChanged={(key, value) => handleDigChange(setting, key, value)}
                     />
-                    
-                    {setting.blending.enabled ? (
-                      <Chip
-                        size="small"
-                        avatar={<GradientIcon />}
-                        label={`${setting.blending?.distance?.toFixed(2)}m:${setting.blending?.spacing?.toFixed(2)}m`}
-                      />
-                    ) : null}
+                  </AccordionDetails>
+                </Accordion>
+              ))}
+            </Box>
 
-                    {setting.dig.enabled ? (
-                      <Chip
-                        size="small"
-                        avatar={<ArrowDownwardIcon />}
-                        label={`${setting.dig?.depth?.toFixed(2)}m:${setting.dig?.distance?.toFixed(2)}m`}
-                      />
-                    ) : null}
 
-                  </Typography>
-                </AccordionSummary>
-                <AccordionDetails>
-                  <SurfaceSettings
-                    surface={setting.surface}
-                    spacing={setting.spacing}
-                    // blending={setting.blending}
-                    dig={setting.dig}
-                    onChange={(changes) => handleSaveChanges(setting, changes)}
-                    // onSpacingChange={(value) => handleSpacingChange(setting, value)}
-                    // onBlendChange={(key, value) => handleBlendChange(setting, key, value)}
-                    // onBlendToggle={(value) => handleBlendToggle(setting, value)}
-                    // onDigToggle={(value) => handleDigToggle(setting, value)}
-                    // onDigChanged={(key, value) => handleDigChange(setting, key, value)}
-                  />
-                </AccordionDetails>
-              </Accordion>
-            ))}
-
-          </React.Fragment>
+          </Stack>
         ) : null}        
       
       
@@ -285,9 +312,15 @@ export default function GenerateMeshDialog(props) {
         {jobState.phase === 'complete' ? (
           <Stack spacing={3} sx={{ justifyItems: 'center', alignItems: 'center' }}>
             <Box>
-              <CheckIcon color="success" sx={{ fontSize: 48 }} />
+              {!jobState.error ? (
+                <CheckIcon color="success" sx={{ fontSize: 48 }} />
+              ) : null}
             </Box>
-            <Typography color="textSecondary">Meshes have been generated</Typography>
+            {jobState.error ? (
+              <Alert severity="error">{jobState.error}</Alert>
+            ) : (
+              <Typography color="textSecondary">Meshes have been generated</Typography>
+            )}
           </Stack>
         ) : null}
       </DialogContent>

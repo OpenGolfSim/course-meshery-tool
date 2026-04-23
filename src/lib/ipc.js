@@ -33,7 +33,7 @@ ipcMain.handle('project.openRecent', (_event, p) => project.openRecent(p));
 ipcMain.handle('project.storeSettings', (_event, settings) => project.storeSettings(settings));
 ipcMain.handle('project.getSettings', (_event) => project.getSettings());
 ipcMain.handle('project.recent', (_event) => getRecentProjects());
-ipcMain.handle('project.generateMeshes', (_event, layerSettings) => project.generateMeshes(layerSettings));
+ipcMain.handle('project.generateMeshes', (_event, layerSettings, terrainSettings) => project.generateMeshes(layerSettings, terrainSettings));
 
 ipcMain.handle('project.getMeshDataState', () => project.getMeshDataState());
 ipcMain.handle('project.getMeshDataForLayer', (_event, layerId) => project.getMeshDataForLayer(layerId));

@@ -7,7 +7,7 @@ import { broadcast, mainWindow } from './window';
 import { addToRecent } from './app';
 import { generateSVG, geoJSONToSvgPaths, parseSVG, storedPathsToSVG } from './svg';
 import { parseRaw } from './heightmap';
-import { conformMesh, layerToMesh, svgToCourseLayers } from './workers';
+import { conformMesh, layerToMesh, smoothTerrain, svgToCourseLayers } from './workers';
 
 const log = logger.scope('PROJECT');
 
@@ -302,7 +302,7 @@ export function getMeshLayers() {
   return openProject.$meshLayers;
 }
 
-export async function generateMeshes(layerSettings) {
+export async function generateMeshes(layerSettings, terrainSettings) {
   try {
 
     let progress = 1;
@@ -320,7 +320,7 @@ export async function generateMeshes(layerSettings) {
       settings: openProject.settings,
       layerSettings
     }, (update) => {
-      console.log(`${update.current}/${update.total} — ${update.status}`);
+      // console.log(`${update.current}/${update.total} — ${update.status}`);
       broadcast('mesh.progress', {
         progress: update.progress,
         count: (update.current + 1),
@@ -344,6 +344,13 @@ export async function generateMeshes(layerSettings) {
     console.log(`Generated ${result.layers.length} layers, ${meshData.shapes.size} polygons`);
 
     broadcast('mesh.progress', { progress, count: 0, status: `Starting ${result.layers.length} meshes` });
+
+    if (terrainSettings.smoothing && openProject._heightMap?.data) {
+      log.info(`Smoothing terrain ${terrainSettings.smoothing}`);
+      openProject._heightMap.smoothData = await smoothTerrain(openProject._heightMap.data, terrainSettings.smoothing);
+    } else {
+      openProject._heightMap.smoothData = null;
+    }
 
     let index = 0;
     for (const layer of result.layers) {

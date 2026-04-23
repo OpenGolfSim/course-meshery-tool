@@ -32,6 +32,7 @@ export async function svgToCourseLayers(data, onProgress) {
 export async function layerToMesh(layer, shape, project) {
   const meshWorker = await getWorker('mesh.worker.js');
   let mesh = await meshWorker.generateMesh(layer, shape);
+
   mesh = await meshWorker.conformMeshToTerrain(layer, mesh, project);
   if (layer.dig?.enabled) {
     mesh = await meshWorker.digMesh(mesh, shape, layer);
@@ -39,6 +40,14 @@ export async function layerToMesh(layer, shape, project) {
   await Thread.terminate(meshWorker);
   // console.log(`Generated mesh from layer`);
   return mesh;
+}
+
+export async function smoothTerrain(heightMapData, smoothingRadius) {
+  const smoothWorker = await getWorker('mesh.worker.js');
+  const smoothed = await smoothWorker.smoothTerrainData(heightMapData, smoothingRadius);
+  await Thread.terminate(smoothWorker);
+  return smoothed;
+  // console.log(`Mesh ${finished} of ${courseLayers.length} (triangles:${mesh.triangles.length}, points:${mesh.points.length})`);  
 }
 
 export async function conformMesh(layer, mesh, project) {

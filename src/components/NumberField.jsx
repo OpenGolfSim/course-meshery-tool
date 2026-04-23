@@ -18,7 +18,7 @@ function SSRInitialFilled(_) {
 }
 SSRInitialFilled.muiName = 'Input';
 
-function NumberField({ id: idProp, label, error, onChange, size = 'medium', ...other }) {
+function NumberField({ id: idProp, label, error, onChange, fullWidth, size = 'medium', ...other }) {
   let id = React.useId();
   if (idProp) {
     id = idProp;
@@ -30,6 +30,7 @@ function NumberField({ id: idProp, label, error, onChange, size = 'medium', ...o
       render={(props, state) => (
         <FormControl
           size={size}
+          fullWidth={fullWidth}
           ref={props.ref}
           disabled={state.disabled}
           required={state.required}
@@ -47,6 +48,7 @@ function NumberField({ id: idProp, label, error, onChange, size = 'medium', ...o
         render={(props, state) => (
           <OutlinedInput
             label={label}
+            fullWidth={fullWidth}
             inputRef={props.ref}
             value={state.inputValue}
             onBlur={props.onBlur}
