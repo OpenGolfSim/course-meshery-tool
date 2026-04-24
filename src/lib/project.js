@@ -347,6 +347,11 @@ export async function generateMeshes(layerSettings, terrainSettings) {
 
     if (terrainSettings.smoothing && openProject._heightMap?.data) {
       log.info(`Smoothing terrain ${terrainSettings.smoothing}`);
+      broadcast('mesh.progress', {
+        progress,
+        count: (index + 1),
+        status: `Smoothing terrain with radius of ${terrainSettings.smoothing}`
+      });  
       openProject._heightMap.smoothData = await smoothTerrain(openProject._heightMap.data, terrainSettings.smoothing);
     } else {
       openProject._heightMap.smoothData = null;

@@ -4,8 +4,9 @@ export async function write(filePath, layers, meshData) {
   const lines = ['# Generated from SVG layers'];
   let vertexOffset = 0;
 
+  let index = 0;
   for (const layer of layers) {
-    lines.push(`o ${layer.name || 'layer'}`);
+    lines.push(`o ${layer.surface || 'layer'}_${index}`);
 
     // write this layer's vertices
     const { points, triangles } = meshData.meshes.get(layer.id)?.mesh;
@@ -24,6 +25,7 @@ export async function write(filePath, layers, meshData) {
     }
 
     vertexOffset += points.length / 3;
+    index++;
   }
 
 

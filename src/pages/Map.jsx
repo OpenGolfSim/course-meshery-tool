@@ -413,7 +413,7 @@ export default function Map() {
 
   const turfPointToPolygon = (lng, lat, distance) => {
     const centerTurfPoint = turf.point([lng, lat]);
-    const buffer = turf.buffer(centerTurfPoint, distance, { units: 'kilometers' });
+    const buffer = turf.buffer(centerTurfPoint, (distance / 2), { units: 'kilometers' });
     const bbox = turf.bbox(buffer);
     return turf.bboxPolygon(bbox);
   }

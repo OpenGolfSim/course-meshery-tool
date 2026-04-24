@@ -22,7 +22,7 @@ export default function SearchShapesDialog(props) {
     setResults(null);
     try {
       const centerTurfPoint = turf.point([project.settings.centerPoint.lng, project.settings.centerPoint.lat]);
-      const buffer = turf.buffer(centerTurfPoint, project.settings.distance, { units: 'kilometers' });
+      const buffer = turf.buffer(centerTurfPoint, (project.settings.distance / 2), { units: 'kilometers' });
       const bbox = turf.bbox(buffer);
       const [west, south, east, north] = bbox;
       const coords = [south, west, north, east];
