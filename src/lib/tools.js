@@ -8,7 +8,7 @@ import { filesize } from 'filesize';
 import { app } from 'electron';
 import { resourceRoot } from './utils.js';
 import { broadcast } from './window.js';
-import tar from 'tar';
+import * as tar from 'tar';
 import extractZip from 'extract-zip';
 
 const pipelineAsync = promisify(pipeline)
@@ -144,7 +144,8 @@ async function extractArchive(archivePath, outDir, signal, onProgress) {
   console.log(`Extracting ${format}...`);
 
   if (format === '.gz') {
-    if (onProgress) { onProgress({ progress: -1 }); }    
+    if (onProgress) { onProgress({ progress: -1, status: 'Extracting tools' }); }    
+
     await tar.x({
       file: archivePath,
       cwd: outDir,
@@ -153,7 +154,6 @@ async function extractArchive(archivePath, outDir, signal, onProgress) {
           // Destroying the entry stream halts extraction
           entry.destroy(new CancelledError())
         }
-
         // console.log(`extracting... ${entry.path}`);
         // tar doesn't give a percentage, but you can at least show activity
         // onProgress?.({ phase: 'extract', file: entry.path })
