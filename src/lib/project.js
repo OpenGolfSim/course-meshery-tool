@@ -1,22 +1,28 @@
 import path from 'path';
 import fs from 'fs';
 import * as _ from 'lodash';
-import { dialog, ipcMain } from 'electron';
+import { dialog, ipcMain, shell } from 'electron';
 import logger from 'electron-log';
 import { broadcast, mainWindow } from './window';
-import { addToRecent } from './app';
+import { ensureRecent } from './app';
 import { generateSVG, geoJSONToSvgPaths, parseSVG, storedPathsToSVG } from './svg';
 import { parseRaw } from './heightmap';
 import { conformMesh, layerToMesh, smoothTerrain, svgToCourseLayers } from './workers';
+import { IMAGERY_DIR, PROJECT_FILE_PROTOCOL, TERRAIN_DIR, TREE_IMPORT_PREFIX } from '../constants';
+import { getDateId } from './utils';
+import { randomUUID } from 'crypto';
+import { buildShapeCache, parseShapeCache } from './cache/shapes';
+import { buildMeshCache, parseMeshCache } from './cache/meshes';
 
 const log = logger.scope('PROJECT');
 
 const defaultProjectSettings = {
   centerPoint: null,
-  distance: 1
+  distance: 1,
+  terrainSmooth: 4,
 };
 
-export let openProject = {
+const defaultProjectTemplate = {
   _filePath: null,
   _workingDir: null,
   _dirty: true,
@@ -30,11 +36,31 @@ export let openProject = {
   satellite: {},
   hillShade: null,
   coursePaths: null,
-  settings: defaultProjectSettings
+  settings: defaultProjectSettings,
+  holes: new Map(),
+  scene: {
+    sky: {
+      type: 'clouds',
+      radius: 800,
+      box: { filePath: null, url: null },
+      clouds: {
+        density: 0.4,
+        opacity: 0.8,
+        fogColor: '#f8f8f1',
+        skyColor: '#e0eef4',
+        cloudColor: '#ffffff',
+        scale: 5.0,
+        position: [0, 0, 0]
+      }
+    }, 
+  },
+  trees: []
 };
 
+export let openProject = { ...defaultProjectTemplate };
+
 export const meshData = {
-  courseLayers: [],
+  // layers: [],
   meshes: new Map(),
   shapes: new Map(),
   state: { running: false }
@@ -50,14 +76,22 @@ function setClean() {
   mainWindow.setTitle(`${openProject.name} - Meshery`);
 }
 
-export async function storeSettings(settings) {
-  const changed = !_.isEqual(settings, openProject.settings);
+export async function storeSettings(update) {
+  console.log('---- storeSettings -----');
+  console.log('   update ', update);
+  console.log('   openProject.settings ', openProject.settings);
+  const updatedSettings = _.merge({ ...openProject.settings }, update);
+  const changed = !_.isEqual(updatedSettings, openProject.settings);
   if (changed) {
-    openProject.settings = settings;
+    console.log('Project settings changed!');
+    openProject.settings = updatedSettings;
     await saveProjectSettings();
-    console.log('store project settings', settings);
+  } else {
+    console.log('Project settings NOT changed!');
+    console.log('     vs', updatedSettings);
   }
-  // setDirty();
+  console.log('-------------- - - - -');
+  return openProject;
 }
 
 export function getSettings() {
@@ -67,7 +101,8 @@ export function getSettings() {
 async function parseRawData() {
   try {
     if (!openProject.raw?.filePath) {
-      throw new Error(`No raw file generated yet`);
+      return;
+      // throw new Error(`No raw file generated yet`);
     }
     if (!fs.existsSync(openProject.raw?.filePath)) {
       throw new Error(`Raw file does not exist (${filePath})`);
@@ -87,6 +122,48 @@ async function parseRawData() {
     log.error('RAW error', error);
     return null;
   }
+}
+
+
+export async function saveHeightMap(heightMapData) {
+  const { filePath, canceled } = await dialog.showSaveDialog({
+    title: 'Save RAW',
+    defaultPath: path.join(
+      openProject._workingDir,
+      TERRAIN_DIR,
+      `terrain_edit_${getDateId()}.raw`
+    ),
+    buttonLabel: 'Save',
+  });
+  if (!filePath || canceled) {
+    log.warn('No SVG file was selected');
+    return;
+  }
+  
+  console.log('Writing filePath', filePath);
+  await fs.promises.writeFile(filePath, Buffer.from(heightMapData.buffer));
+
+  const raw = {
+    filePath,
+    uri: `${PROJECT_FILE_PROTOCOL}:///${path.join(TERRAIN_DIR, path.basename(filePath))}`
+  };
+
+  openProject.raw = raw;
+  // shell.showItemInFolder(filePath);
+  
+  await saveProjectSettings();
+
+  openProject._heightMap = { data: heightMapData, size: heightMapData.byteLength };
+}
+
+export async function smoothRaw(data, radius) {
+  console.log(`Smooth data: ${data.length}`);
+  
+  const waterShapes = openProject._meshes
+    .filter(mesh => mesh.surface === 'water')
+    .map(water => meshData.shapes.get(water.id));
+
+  return smoothTerrain(data, radius, openProject, waterShapes);
 }
 
 export async function refreshRawData(emitEvent = false) {
@@ -145,17 +222,6 @@ async function updateSVGData() {
   const { layers } = await parseSVG(openProject._svgBuffer);
   openProject._layers = layers;
   broadcast('project.opened', openProject);
-
-  // log.info('Generating course polygons from SVG...');
-  // // openProject.$meshLayers = [...layers];
-  // svgToCourseLayers({ layers: openProject._layers, settings: openProject.settings }).then((courseLayers) => {
-  //   // openProject.$meshLayers = courseLayers;
-  //   openProject._layers = courseLayers;
-  //   // broadcast('meshLayers', openProject.$meshLayers);
-  //   broadcast('project.opened', openProject);
-  // }).catch(error => {
-  //   log.error(error);
-  // });  
 }
 
 async function loadSVG(filePath) {
@@ -175,8 +241,6 @@ async function loadSVG(filePath) {
   
   await updateSVGData();
 }
-
-
 
 export async function openRecent(project) {
   loadProjectFile(project._filePath);
@@ -198,9 +262,11 @@ export async function createProject() {
 
   console.log(`Created new project folder: ${openProject._filePath}`);
   await saveProjectSettings();
+  broadcast('project.opened', openProject);
+  
   setClean();
 
-  addToRecent(openProject);
+  ensureRecent(openProject);
 
   return openProject;
   // const folder = await createProjectFolder();
@@ -213,29 +279,70 @@ export async function createProject() {
 export async function loadProjectFile(filePath) {
   const stored = JSON.parse(fs.readFileSync(filePath).toString());
   const filePathInfo = path.parse(filePath);
-  openProject = {
+
+  let holes = new Map();
+  console.log('loading project', stored);
+  // parse holes to map
+  if (stored.holes) {
+    console.log('Converting from array of arrays (map)...', stored.holes);
+    holes = new Map(stored.holes);
+  }
+  console.log('openProject.holes', holes);
+
+
+  // then back as openProject.holes = Array.from(myMap.entries());
+  openProject = _.merge({ ...defaultProjectTemplate }, {
     name: filePathInfo.name,
     _dirty: false,
     _filePath: filePath,
     _workingDir: filePathInfo.dir,
-    ...stored
+    ...stored,
+    holes
+  });
+  // openProject = {
+  //   name: filePathInfo.name,
+  //   _dirty: false,
+  //   _filePath: filePath,
+  //   _workingDir: filePathInfo.dir,
+  //   ...stored,
+  //   holes
+  // }
+
+
+  ensureRecent(openProject);
+
+  // migration for moving stats to root
+  if (!openProject.stats && !!openProject.lidar?.stats) {
+    openProject.stats = openProject.lidar.stats;
   }
 
   await refreshSVG();
   await refreshRawData();
 
+  await parseShapeCache();
+  await parseMeshCache();
+
   setClean();
   broadcast('project.opened', openProject);
 }
 
+export async function isOpen() {
+  return !!openProject._filePath;
+}
+
+export async function close() {
+  openProject = { ...defaultProjectTemplate };
+  broadcast('project.opened', openProject, true);
+}
+
 export async function open() {
-  const { canceled, filePath } = await dialog.showOpenDialog({
+  const { canceled, filePaths } = await dialog.showOpenDialog({
     title: 'Open Meshery Project',
     filters: [{ name: 'Meshery Project File', extensions: ['meshery'] }]
   });
-  if (!canceled && filePath) {
-    console.log(`Opened: ${filePath}`);
-    loadProjectFile(filePath);
+  if (!canceled && filePaths.length) {
+    console.log(`Opened: ${filePaths[0]}`);
+    loadProjectFile(filePaths[0]);
   }
 }
 
@@ -244,6 +351,7 @@ export async function saveProjectSettings() {
     return;
   }
   const outputProject = _.omitBy(openProject, (value, key) => key.startsWith('_'));
+  outputProject.holes = Array.from(outputProject.holes ? outputProject.holes.entries() : new Map());
   await fs.promises.writeFile(openProject._filePath, JSON.stringify(outputProject, null, 1));
 }
 
@@ -302,63 +410,69 @@ export function getMeshLayers() {
   return openProject.$meshLayers;
 }
 
+async function generateCourseShapes(layerSettings, terrainSettings) {
+  meshData.shapes.clear();
+  const result = await svgToCourseLayers({
+    layers: openProject._layers,
+    settings: openProject.settings,
+    layerSettings
+  }, (update) => {
+    // console.log(`${update.current}/${update.total} — ${update.status}`);
+    broadcast('mesh.progress', {
+      progress: update.progress,
+      count: (update.current + 1),
+      status: `Generating ${update.current+1} of ${update.total} polygons`
+    });
+  });
+  if (!result.meshLayers?.length) {
+    throw new Error('No course layers were generated');
+  }
+  if (!result.polygonMap) {
+    throw new Error('No course layers were generated');
+  }
+  
+  openProject._meshes = result.meshLayers;
+  
+  meshData.shapes = result.polygonMap;
+  await buildShapeCache();
+}
+
 export async function generateMeshes(layerSettings, terrainSettings) {
   try {
 
     let progress = 1;
     let steps = 2;
 
-    meshData.courseLayers = [];
-    meshData.shapes.clear();
+    // meshData.layers = [];
+    // meshData.shapes.clear();
     meshData.meshes.clear();
     meshData.state = { running: true };
     
     broadcast('mesh.progress', { progress, count: 0, status: 'Generating polygons from SVG' });
 
-    const result = await svgToCourseLayers({
-      layers: openProject._layers,
-      settings: openProject.settings,
-      layerSettings
-    }, (update) => {
-      // console.log(`${update.current}/${update.total} — ${update.status}`);
-      broadcast('mesh.progress', {
-        progress: update.progress,
-        count: (update.current + 1),
-        status: `Generating ${update.current+1} of ${update.total} polygons`
-      });
-    });
+    await generateCourseShapes(layerSettings, terrainSettings)
 
-    if (!result.layers?.length) {
-      throw new Error('No course layers were generated');
-    }
-    if (!result.polygonMap) {
-      throw new Error('No course layers were generated');
-    }
-    meshData.shapes = result.polygonMap;
-    
-    openProject._layers = [ ...result.layers ];
     broadcast('project.opened', openProject);
 
     // meshData.courseLayers = courseLayers;
   
-    console.log(`Generated ${result.layers.length} layers, ${meshData.shapes.size} polygons`);
+    // console.log(`Generated ${result.layers.length} layers, ${meshData.shapes.size} polygons`);
 
-    broadcast('mesh.progress', { progress, count: 0, status: `Starting ${result.layers.length} meshes` });
+    broadcast('mesh.progress', { progress, count: 0, status: `Starting ${openProject._meshes.length} meshes` });
 
-    if (terrainSettings.smoothing && openProject._heightMap?.data) {
-      log.info(`Smoothing terrain ${terrainSettings.smoothing}`);
-      broadcast('mesh.progress', {
-        progress,
-        count: (index + 1),
-        status: `Smoothing terrain with radius of ${terrainSettings.smoothing}`
-      });  
-      openProject._heightMap.smoothData = await smoothTerrain(openProject._heightMap.data, terrainSettings.smoothing);
-    } else {
-      openProject._heightMap.smoothData = null;
-    }
+    // if (terrainSettings.smoothing && openProject._heightMap?.data) {
+    //   log.info(`Smoothing terrain ${terrainSettings.smoothing}`);
+    //   broadcast('mesh.progress', {
+    //     progress,
+    //     status: `Smoothing terrain with radius of ${terrainSettings.smoothing}`
+    //   });  
+    //   openProject._heightMap.smoothData = await smoothTerrain(openProject._heightMap.data, terrainSettings.smoothing);
+    // } else {
+    //   openProject._heightMap.smoothData = null;
+    // }
 
     let index = 0;
-    for (const layer of result.layers) {
+    for (const layer of openProject._meshes) {
       const shape = meshData.shapes.get(layer.id);
       if (!shape) {
         throw new Error(`Unable to find polygon for ${layer.id} (${layer.name})`);
@@ -366,8 +480,8 @@ export async function generateMeshes(layerSettings, terrainSettings) {
       broadcast('mesh.progress', {
         progress,
         count: (index + 1),
-        status: `Meshing ${layer.name} (${index+1} of ${result.layers.length})`
-      });      
+        status: `Meshing ${layer.name} (${index+1} of ${openProject._meshes.length})`
+      });
       const mesh = await layerToMesh(layer, shape, openProject);
       // layer.mesh = mesh;
       // meshMap.set(layer.id, mesh);
@@ -376,12 +490,18 @@ export async function generateMeshes(layerSettings, terrainSettings) {
       meshData.meshes.set(layer.id, { name: layer.name, mesh });
       // console.log(`Conformed (${layer.id}) ${index} of ${result.layers.length} (triangles:${mesh.triangles.length}, points:${mesh.points.length})`);
       
-      progress = (index / result.layers.length) * 100;
+      progress = (index / openProject._meshes.length) * 100;
       index++;
     }
     meshData.state.error = undefined;
     meshData.state.generated = index;
     meshData.state.lastGenerated = Date.now();
+    log.info(`Finished generating ${meshData.state.generated} meshes`);
+
+    // const filePath = 
+    await buildMeshCache();
+    // broadcast('project.opened', openProject);
+
     // courseLayers.forEach((layer) => {
     //   const mesh = layerToMesh(layer);
     //   console.log('mesh', mesh);
@@ -403,15 +523,186 @@ export function getMeshDataForLayer(layerId) {
 export function getMeshDataState() {
   return meshData.state;
 }
+
 export async function updateLayerById(layerId, update) {
-  let layer = openProject._layers.find(l => l.id === layerId);
+  let layer = openProject._meshes.find(l => l.id === layerId);
   layer = _.merge(layer, update);
+  
+  console.log('update', layerId, update);
 
   if (update.spacing || update.dig) {
+    // save settings to disk?
+    await buildShapeCache();
+    // layer._pending = true;
+
     const shape = meshData.shapes.get(layerId);    
     const mesh = await layerToMesh(layer, shape, openProject);
     meshData.meshes.set(layer.id, { name: layer.name, mesh });
     broadcast('mesh.data', meshData.state);
+    // layer._pending = false;
+    await buildMeshCache();
+  }
+
+  return openProject;
+}
+
+export async function updateTrees(treeUpdate) {
+  openProject.trees = [ ...treeUpdate ];
+  await saveProjectSettings();
+}
+
+export async function addTreeLayer() {
+  openProject.trees = [
+    ...(openProject.trees || []),
+    {
+      name: `Layer ${(openProject.trees.length || 0) + 1}`,
+      id: `layer-${randomUUID()}`,
+      randomSeed: 12345,
+      positions: [],
+      treeConfigs: []
+    }
+  ];
+  await saveProjectSettings();
+  return openProject;
+}
+
+export async function updateTreeLayer(layerId, layerUpdate) {
+  const toUpdate = openProject.trees.findIndex(layer => layer.id === layerId);
+  if (toUpdate > -1) {
+    console.log(`updating index:${toUpdate}, id:${layerId}`, layerUpdate);
+    openProject.trees[toUpdate] = _.merge({ ...openProject.trees[toUpdate] }, layerUpdate);
+  }
+  await saveProjectSettings();
+  return openProject;
+}
+
+export async function removeTreeLayer(layerId) {
+  const toRemove = openProject.trees.findIndex(layer => layer.id === layerId);
+  if (toRemove > -1) {
+    openProject.trees.splice(toRemove, 1);
+  }
+  await saveProjectSettings();
+  return openProject;
+}
+
+
+export async function removeTreeConfig(treeLayerId, treeConfigId) {
+  const foundLayer = openProject.trees.find(tl => tl.id === treeLayerId);
+  if (foundLayer) {
+    const foundConfig = foundLayer.treeConfigs.findIndex(cfg => cfg.id === treeConfigId);
+    if (foundConfig > -1) {
+      foundLayer.treeConfigs.splice(foundConfig, 1);
+    }
+    // foundLayer.treeConfigs = [
+    //   ...(foundLayer.treeConfigs || []),
+    //   config
+    // ];
+  }
+  await saveProjectSettings();
+  // broadcast('project.opened', openProject);   
+  return openProject;
+}
+
+export async function postImportTree(treeLayerId, treeConfigId, billboardData) {
+  const foundLayer = openProject.trees.find(tl => tl.id === treeLayerId);
+  const foundConfig = foundLayer.treeConfigs.find(cfg => cfg.id === treeConfigId);
+  // write file data to disk
+  const imageryFolder = path.join(openProject._workingDir, IMAGERY_DIR);
+  // if (!fs.existsSync(imageryFolder)) {
+  //   fs.mkdirSync(imageryFolder);
+  // }
+  const billboardFilename = `tree-${treeConfigId}.png`;
+  const outputTexture = path.join(imageryFolder, billboardFilename);
+  let outputData;
+  if (typeof billboardData.buffer === 'string') {
+    outputData = Buffer.from(billboardData.buffer.split('base64,')[1], 'base64');
+  }
+  if (outputData) {
+    console.log(`Writing file: ${outputTexture}`, outputData);
+    await fs.promises.writeFile(outputTexture, outputData);
+    foundConfig.billboard = {
+      size: billboardData.size,
+      filePath: outputTexture,
+      uri: `${PROJECT_FILE_PROTOCOL}:///${path.join(IMAGERY_DIR, billboardFilename)}`
+    };
+  }
+  await saveProjectSettings();  
+  return openProject.trees;
+}
+
+export async function importTree(treeLayerId) {
+  const { canceled, filePaths } = await dialog.showOpenDialog({
+    title: 'Open Tree Model',
+    filters: [{ name: 'Tree Model', extensions: ['glb'] }]
+  });
+  if (canceled || !filePaths?.length) {
+    return;
+  }
+  const treeConfigId = randomUUID();
+  const config = {
+    url: `${PROJECT_FILE_PROTOCOL}://${TREE_IMPORT_PREFIX}/${treeConfigId}.glb`,
+    filePath: filePaths[0],
+    id: treeConfigId,
+    randomSeed: 12345,
+    scaleRange: { min: 0.6, max: 1.8 },
+    density: 0.2
+  };
+  // console.log(`Adding imported tree ${treeConfigId} to layer: ${treeLayerId}`, config);
+  const foundLayer = openProject.trees.find(tl => tl.id === treeLayerId);
+  if (foundLayer) {
+    foundLayer.treeConfigs = [
+      ...(foundLayer.treeConfigs || []),
+      config
+    ];
+  }
+  // return config;
+  await saveProjectSettings();
+  return openProject.trees;
+  // broadcast('project.opened', openProject); 
+}
+
+export function findTreeConfigById(treeConfigId) {
+  for (const layer of openProject.trees) {
+    if (layer.treeConfigs) {
+      for (const config of layer.treeConfigs) {
+        if (config.id === treeConfigId) {
+          return config;
+        }
+      }
+    }
+  }
+}
+
+export async function updateHoleByNumber(holeNumber, update) {
+  log.debug(`updateHoleByNumber: ${holeNumber}`, update);
+  const existing = openProject.holes.get(holeNumber);
+  if (!existing) {
+    log.debug(`Hole doesn't exist yet! ${holeNumber}`, update);
+  }
+  if (!update) {
+    console.log(`remove hole: ${holeNumber}`);
+    openProject.holes.delete(holeNumber);
+  } else {
+    console.log('update hole!', update);
+    openProject.holes.set(holeNumber, _.merge(existing, update));
+  }
+
+  await saveProjectSettings();
+  broadcast('project.opened', openProject); 
+}
+
+export async function updateScene(update) {
+  const updatedScene = _.merge({ ...openProject.scene }, update);
+  const changed = !_.isEqual(updatedScene, openProject.scene);
+  if (changed) {
+    console.log('Project scene changed!');
+    openProject.scene = updatedScene;
+    await saveProjectSettings();
+  // } else {
+    // console.log('Project scene NOT changed!');
+    // console.log('     vs', updatedScene);
+    // console.log('-------------- - - - -');
   }
   return openProject;
 }
+

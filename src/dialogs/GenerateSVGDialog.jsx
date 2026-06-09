@@ -1,6 +1,7 @@
 import React, { Fragment, useState, useRef, useCallback, useEffect } from 'react';
-import { Dialog, DialogTitle, DialogContent, DialogActions, Button, Box, Typography, CircularProgress, Alert, Grid, List, ListItem, Checkbox, ListItemIcon, Stack, ListItemText, Link, Chip } from '@mui/material';
+import { Dialog, DialogTitle, DialogContent, DialogActions, Button, Box, Typography, CircularProgress, Alert, Grid, List, ListItem, Checkbox, ListItemIcon, Stack, ListItemText, Link, Chip, FormControlLabel, FormControl, Tooltip } from '@mui/material';
 import CheckIcon from '@mui/icons-material/Check';
+import InfoIcon from '@mui/icons-material/Info';
 import { useProject } from '../contexts/Project';
 import * as turf from '@turf/turf';
 
@@ -12,6 +13,7 @@ export default function SearchShapesDialog(props) {
   const [endpoints, setEndpoints] = useState([]);
   const [results, setResults] = useState(null);
   const [error, setError] = useState();
+  const [included, setIncluded] = useState({ hillShade: true, satellite: true, shapes: false });
   
   const handleSkip = useCallback(async () => {
     setExportState(old => ({ ...old, phase: 'export' }));
@@ -31,6 +33,9 @@ export default function SearchShapesDialog(props) {
       const response = await window.meshery.map.searchShapes(coords);
       console.log('response', response);
       setResults({ paths: response?.coursePaths, success: true });
+      if (response?.coursePaths?.length) {
+        setIncluded(old => ({ ...old, shapes: true }));
+      }
       setExportState(old => ({ ...old, phase: 'export' }));
     } catch (error) {
       console.log(error);
@@ -61,44 +66,98 @@ export default function SearchShapesDialog(props) {
   return (
     <Dialog
       fullWidth={true}
-      maxWidth="sm"
+      maxWidth="xs"
       onClose={onClose}
       open={open}
+      slotProps={{ paper: { elevation: 1 } }}
     >
-      <DialogTitle>
+      {/* <DialogTitle>
         Generate SVG
-      </DialogTitle>
-      <DialogContent sx={{ textAlign: 'center' }}>
+      </DialogTitle> */}
+      <DialogContent>
 
+        <Stack spacing={3} sx={{ alignItems: 'center', justifyItems: 'center', textAlign: 'center' }}>
+          <Typography variant="h4">Export SVG</Typography>
+        </Stack>
 
-        <Stack spacing={3} sx={{ alignItems: 'center', justifyItems: 'center' }}>
-
-          <Typography variant="h4">Search Course Shapes</Typography>
-          <Typography>Meshery can auto generate rough course shapes from the <Link onClick={() => window.meshery.openExternalUrl('https://wiki.openstreetmap.org/wiki/Tag:leisure%3Dgolf_course')}>OpenStreetMap</Link> database of golf features. Would you like to search for existing shapes to include?</Typography>
+        <Stack sx={{ p: 5 }} spacing={3}>
+          <FormControl>
+            <FormControlLabel
+              disabled={!project?.hillShade}
+              control={(
+                <Checkbox
+                  checked={included.hillShade}
+                  onChange={(e) => setIncluded(old => ({ ...old, hillShade: e.target.checked }))}
+                />
+              )}
+              label="Include Hillshade"
+            />
+            <Typography>
+              {project?.hillShade?.filePathJPEG?.split(/[\\\/]/).pop()}
+            </Typography>
+          </FormControl>
           
-          {results ? (
+          <FormControl>
+            <FormControlLabel
+              disabled={!project?.satellite}
+              control={(
+                <Checkbox
+                  checked={included.satellite}
+                  onChange={(e) => setIncluded(old => ({ ...old, satellite: e.target.checked }))}
+                />
+              )}
+              label="Include Satellite"
+            />
+            <Typography>
+              {Object.values(project?.satellite)?.[0]?.filePathJPEG?.split(/[\\\/]/).pop()}
+            </Typography>
+          </FormControl>
+
+          <Box>
+            <FormControlLabel
+              disabled={!results}
+              control={(
+                <Checkbox
+                  onChange={(e) => setIncluded(old => ({ ...old, shapes: e.target.checked }))}
+                  checked={included.shapes}
+                />
+              )}
+              label={(
+                <Stack direction="row" spacing={2}>
+                  <Typography flex={1}>Include Shapes</Typography>
+                  <Tooltip
+                    title="Meshery can auto generate rough course shapes from the OpenStreetMap database of golf features."
+                  >
+                    <InfoIcon />
+                  </Tooltip>
+                </Stack>
+              )}
+            />
+                        
             <Box>
-              <Chip
-                icon={<CheckIcon />}
-                label={`Added ${results.paths.length} shapes`}
-              />
-              {error ? (
-                <Alert severity="error">{error}</Alert>
-              ) : null}
+              {results ? (
+                <Box>
+                  <Chip
+                    icon={<CheckIcon />}
+                    label={`${results.paths.length} shapes available`}
+                  />
+                  {error ? (
+                    <Alert severity="error">{error}</Alert>
+                  ) : null}
+                </Box>
+              ) : (
+                <Button
+                  variant="contained"
+                  color="secondary"
+                  startIcon={isPending && <CircularProgress size={18} />}
+                  disabled={isPending}
+                  onClick={handleSearch}
+                >
+                  Search OSM Shapes
+                </Button>
+              )}
             </Box>
-          ) : (
-            <Button
-              variant="outlined"
-              color="primary"
-              startIcon={isPending && <CircularProgress />}
-              disabled={isPending}
-              onClick={handleSearch}
-            >
-              Search OSM Shapes
-            </Button>
-          )}
-
-
+          </Box>
         </Stack>
 
         {/* <Grid container={true}>
@@ -122,8 +181,8 @@ export default function SearchShapesDialog(props) {
       <DialogActions sx={{ display: 'flex', flexDirection: 'row' }}>
         <Button
           fullWidth
-          variant="text"
-          color="inherit"
+          variant="contained"
+          color="secondary"
           onClick={props.onClose}
         >
           Cancel

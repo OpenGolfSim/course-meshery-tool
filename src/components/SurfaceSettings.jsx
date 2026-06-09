@@ -1,75 +1,87 @@
 import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react';
-import { Box, Stack, Typography, Slider, InputBase, Switch, FormControlLabel, Checkbox, TextField, MenuItem, IconButton, Button } from '@mui/material';
-import ZoomInIcon from '@mui/icons-material/ZoomIn';
-import VisibilityIcon from '@mui/icons-material/Visibility';
-import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
+import { Box, Stack, Typography, Slider, InputBase, Switch, FormControlLabel, Checkbox, TextField, MenuItem, IconButton, Button, Avatar, Paper } from '@mui/material';
 import CurveEditDialog from '../dialogs/CurveEditDialog.jsx';
 import NumericInput from './NumericInput.jsx';
 import RouteIcon from '@mui/icons-material/Route';
 import NumberField from './NumberField.jsx';
+import { useProject } from '../contexts/Project.jsx';
 
 export default function SurfaceSettings(props) {
   const {
     layer,
-    surface,
-    spacing,
-    dig,
+    // layer,
+    // surface,
+    // spacing,
+    // dig,
     onSave,
     onZoom,
     onShowHide,
-    onChange
+    onChange,
+    visible
   } = props;
+  // console.log('render', selectedLayer);
+  // return null;
   const firstLoad = useRef();
-  const [tempPrefs, setTempPrefs] = useState({ spacing, dig });
+  const { updateLayerById } = useProject();
+  const [disabled, setDisabled] = useState(false);
+  const [tempPrefs, setTempPrefs] = useState({
+    spacing: layer.spacing,
+    dig: layer.dig
+  });
   const [curveEditorOpen, setCurveEditorOpen] = useState(false);
+
+  const showDig = useMemo(() => {
+    return ['water','sand','river'].includes(layer.surface);
+  }, [layer.surface]);
+
   const onSpacingChange = (newValue) => {
     setTempPrefs(old => ({ ...old, spacing: newValue }));
   }
+
   const onDigChange = (key, val) => {
     setTempPrefs(old => ({ ...old, dig: { ...old.dig, [key]: val } }));
   }
-  const showDig = useMemo(() => {
-    return ['water','sand','river'].includes(surface);
-  }, [surface]);
 
   const handleCurveEditClose = (points) => {
     setTempPrefs(old => ({ ...old, dig: { ...old.dig, curvePoints: points } }));
-    // onDigChanged('curvePoints', points);
     setCurveEditorOpen(false);
   }
 
-  const handleSave = useCallback(() => {
+  const handleSave = useCallback(async () => {
+    console.log('tempPrefs', layer.id, tempPrefs);
+    setDisabled(true);
+    await updateLayerById(layer.id, tempPrefs);
     if (onSave) {
-      onSave(tempPrefs);
+      onSave();
     }
-  }, [tempPrefs]);
+    setDisabled(false);
+  }, [tempPrefs, layer.id]);
 
+  // useEffect(() => {
+  //   if (!layer) {
+  //     return null;
+  //   }
+  //   const { spacing, dig } = layer;
+  //   setTempPrefs({ spacing, dig });
+  // }, [layer]);
+  
   useEffect(() => {
     if (!firstLoad.current) {
       firstLoad.current = true;
       return;
     }
-    if (tempPrefs && onChange) {
-      onChange(tempPrefs);
-    }
+    console.log('tempPrefs', tempPrefs);
+    if (onChange) onChange(tempPrefs);
   }, [tempPrefs]);
 
-  return (
-    <Box>
-      <Stack direction="column" spacing={3} sx={{ p: 2 }}>
-      
-      {layer ? (
-        <Stack direction="row" alignItems="center">
-          <Typography flex={1}>{layer?.name || surface}</Typography>
-          <IconButton onClick={onZoom} size="small"><ZoomInIcon /></IconButton>
-          <IconButton onClick={onShowHide} size="small">
-            {layer.visible ? <VisibilityOffIcon /> : <VisibilityIcon />}
-          </IconButton>
-        </Stack>
-      ) : null}
 
+  return (
+    <>
+      <Stack direction="column" spacing={3}>
         <NumberField
           label="Base Tri Spacing"
+          fullWidth={true}
+          disabled={disabled}
           // disabled={isDisabled}
           value={tempPrefs.spacing}
           size="small"
@@ -82,6 +94,8 @@ export default function SurfaceSettings(props) {
         {showDig ? (
           <React.Fragment>
             <NumberField
+              fullWidth={true}
+              disabled={disabled}
               label="Dig Depth"
               value={tempPrefs.dig.depth}
               size="small"
@@ -91,6 +105,8 @@ export default function SurfaceSettings(props) {
               onChange={(newValue) => onDigChange('depth', newValue)}
             />
             <NumberField
+              fullWidth={true}
+              disabled={disabled}
               label="Dig Distance"
               value={tempPrefs.dig.distance}
               size="small"
@@ -101,19 +117,22 @@ export default function SurfaceSettings(props) {
             />
           </React.Fragment>
         ) : null}
+        {/* <pre>{JSON.stringify(tempPrefs, null, 1)}</pre> */}
 
         {onSave ? (
-          <Button onClick={handleSave}>Save Changes</Button>
+          <Button onClick={handleSave} disabled={disabled}>
+            Save Changes
+          </Button>
         ) : null}
       </Stack>
 
       <CurveEditDialog
-        dig={dig}
+        dig={tempPrefs.dig}
         open={curveEditorOpen}
         onClose={handleCurveEditClose}
       />
 
-    </Box>
+    </>
   )
 }
 

@@ -25,14 +25,16 @@ export async function svgToCourseLayers(data, onProgress) {
   
   subscription.unsubscribe();
   await Thread.terminate(svg);
-  console.log(`Generated ${result.layers.length} course layers from svg`);
+  console.log(`Generated ${result.meshLayers.length} course layers from svg`);
   return result;
 }
 
 export async function layerToMesh(layer, shape, project) {
   const meshWorker = await getWorker('mesh.worker.js');
   let mesh = await meshWorker.generateMesh(layer, shape);
-
+  if (!mesh.points.length || !mesh.triangles.length) {
+    console.log(`No points or triangles generated for ${layer.id}`);
+  }
   mesh = await meshWorker.conformMeshToTerrain(layer, mesh, project);
   if (layer.dig?.enabled) {
     mesh = await meshWorker.digMesh(mesh, shape, layer);
@@ -42,10 +44,19 @@ export async function layerToMesh(layer, shape, project) {
   return mesh;
 }
 
-export async function smoothTerrain(heightMapData, smoothingRadius) {
-  const smoothWorker = await getWorker('mesh.worker.js');
-  const smoothed = await smoothWorker.smoothTerrainData(heightMapData, smoothingRadius);
+export async function smoothTerrain(heightMapData, smoothingRadius, project, lakeShapes = []) {
+  const smoothWorker = await getWorker('terrain.worker.js');
+  
+  let smoothed = await smoothWorker.smoothTerrainData(heightMapData, smoothingRadius);
+
+  const heightSize = project._heightMap?.size;
+  const svgSize = Math.round(project.settings.distance * 1000);
+  // const lakeShapes = project.
+
+  smoothed = await smoothWorker.smoothLakeShores(smoothed, heightSize, svgSize, lakeShapes)
+
   await Thread.terminate(smoothWorker);
+
   return smoothed;
   // console.log(`Mesh ${finished} of ${courseLayers.length} (triangles:${mesh.triangles.length}, points:${mesh.points.length})`);  
 }

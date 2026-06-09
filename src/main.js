@@ -1,4 +1,4 @@
-import { app, session, shell, BrowserWindow, ipcMain, dialog, protocol, net } from 'electron';
+import { app, session, shell, BrowserWindow, ipcMain, dialog, protocol, net, clipboard } from 'electron';
 import log from 'electron-log';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -11,10 +11,9 @@ import { buildAppMenu } from './lib/menu';
 import { dataCache, smoothTerrainData } from './lib/terrain';
 import { defaultSettings } from './lib/settings';
 import { createWindow } from './lib/window';
-import { createWorkerWindow } from './lib/workers';
 import { pathToFileURL, parse as parseUrl } from 'node:url';
 import './lib/ipc';
-import { PROJECT_FILE_PROTOCOL } from './constants';
+import { PROJECT_FILE_PROTOCOL, RESOURCES_FILE_PROTOCOL } from './constants';
 
 const MAX_FILESIZE = 1e6; // Anything over 1 MB probably has images in it
 
@@ -29,6 +28,16 @@ protocol.registerSchemesAsPrivileged([
       standard: true, 
       secure: true, 
       supportFetchAPI: true, // This is the magic line!
+      bypassCSP: true,
+      corsEnabled: true 
+    } 
+  },
+  { 
+    scheme: RESOURCES_FILE_PROTOCOL, 
+    privileges: { 
+      standard: true, 
+      secure: true, 
+      supportFetchAPI: true,
       bypassCSP: true,
       corsEnabled: true 
     } 
@@ -59,7 +68,6 @@ app.whenReady().then(async () => {
   // }
 
   createWindow(MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY, MAIN_WINDOW_WEBPACK_ENTRY);
-  createWorkerWindow(WORKER_WINDOW_PRELOAD_WEBPACK_ENTRY, WORKER_WINDOW_WEBPACK_ENTRY);
 
   // On OS X it's common to re-create a window in the app when the
   // dock icon is clicked and there are no other windows open.
@@ -129,6 +137,13 @@ ipcMain.handle('url.open', async (_, href) => {
   log.debug(`Opening url: ${href}`);
   if (href) {
     shell.openExternal(href);
+  }
+});
+
+ipcMain.handle('clipboard.copy', async (_, text) => {
+  log.debug(`Copy text: ${text}`);
+  if (text) {
+    clipboard.writeText(text);
   }
 });
 

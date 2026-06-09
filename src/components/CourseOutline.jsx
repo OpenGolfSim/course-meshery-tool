@@ -18,7 +18,8 @@ export default function CourseOutline(props) {
       ]}
       lineWidth={4}
       color={props.color || 0x00ffaa}
-      position={[-(viewBoxSize/2), 0, -(viewBoxSize/2)]}
+      position={[0, 0, 0]}
+      // position={[-(viewBoxSize/2), 0, -(viewBoxSize/2)]}
     />
   );
 }

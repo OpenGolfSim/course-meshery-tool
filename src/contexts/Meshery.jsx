@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, createContext, useContext, useCallback, useMemo } from 'react';
 import logger from 'electron-log/renderer';
-import MeshWorker from '../workers/mesh.webworker.js';
+// import MeshWorker from '../workers/mesh.webworker.js';
 import pMap from 'p-map';
 import { useProject } from './Project.jsx';
 
@@ -71,31 +71,32 @@ export const MesheryProvider = ({ children }) => {
   // console.log('workerPath: ', workerPath);
   // const workerRef = useRef();
   
-  const startWorkerJob = (jobId, payload) => {
-    if (meshJobMap?.[jobId]?.promise) {
-      console.log(`cancel existing job: ${jobId}`);
-      meshJobMap[jobId].worker?.terminate();
-      meshJobMap[jobId].reject('canceled');
-      meshJobMap[jobId] = undefined;
-    }
+  const startWorkerJob = (jobId, payload) => {}
+  // const startWorkerJob = (jobId, payload) => {
+  //   if (meshJobMap?.[jobId]?.promise) {
+  //     console.log(`cancel existing job: ${jobId}`);
+  //     meshJobMap[jobId].worker?.terminate();
+  //     meshJobMap[jobId].reject('canceled');
+  //     meshJobMap[jobId] = undefined;
+  //   }
 
-    const { promise, resolve, reject } = Promise.withResolvers();
-    const worker = new MeshWorker();
+  //   const { promise, resolve, reject } = Promise.withResolvers();
+  //   const worker = new MeshWorker();
 
-    meshJobMap[jobId] = {
-      worker,
-      // data: { ...payload, jobId },
-      promise,
-      resolve,
-      reject
-    };
+  //   meshJobMap[jobId] = {
+  //     worker,
+  //     // data: { ...payload, jobId },
+  //     promise,
+  //     resolve,
+  //     reject
+  //   };
     
-    worker.addEventListener('message', handleWorkerMessage);
-    worker.addEventListener('error', handleWorkerError);
-    worker.postMessage({ ...payload, jobId });
+  //   worker.addEventListener('message', handleWorkerMessage);
+  //   worker.addEventListener('error', handleWorkerError);
+  //   worker.postMessage({ ...payload, jobId });
 
-    return promise;
-  }
+  //   return promise;
+  // }
 
   const runWorkerWob = (job, index) => {
     job.worker.addEventListener('message', handleWorkerMessage);

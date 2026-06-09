@@ -55,6 +55,7 @@ module.exports = {
     {
       name: '@electron-forge/plugin-webpack',
       config: {
+        port: 3102,
         mainConfig: './webpack.main.config.js',
         renderer: {
           config: './webpack.renderer.config.js',
@@ -66,15 +67,7 @@ module.exports = {
               preload: {
                 js: './src/preload.js',
               },
-            },
-            {
-              html: './src/workers/worker.html',
-              js: './src/workers/worker.js',
-              name: 'worker_window',
-              preload: {
-                js: './src/workers/preload.js',
-              },
-            },
+            }
           ],
         },
         devContentSecurityPolicy: [

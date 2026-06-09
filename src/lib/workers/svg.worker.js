@@ -47,15 +47,50 @@ function closeRing(points) {
   return points.concat([points[0]]);
 }
 
+function cleanPolygonOutput(polygon, holes, epsilon = 0.01) {
+  function clean(ring) {
+    // Strip closing point if ring is closed (polygon-clipping outputs closed rings)
+    if (ring.length > 1) {
+      const [fx, fy] = ring[0];
+      const [lx, ly] = ring[ring.length - 1];
+      if (Math.abs(fx - lx) < 1e-8 && Math.abs(fy - ly) < 1e-8) {
+        ring = ring.slice(0, -1);
+      }
+    }
+
+    // Remove near-duplicate consecutive points
+    const epsSq = epsilon * epsilon;
+    let cleaned = [ring[0]];
+    for (let i = 1; i < ring.length; i++) {
+      const [x, y] = ring[i];
+      const [px, py] = cleaned[cleaned.length - 1];
+      const dx = x - px, dy = y - py;
+      if (dx * dx + dy * dy > epsSq) {
+        cleaned.push(ring[i]);
+      }
+    }
+
+    return cleaned;
+  }
+
+  return {
+    polygon: clean(polygon),
+    holes: holes.map(h => clean(h)).filter(h => h.length >= 3)
+  };
+}
+
+
+
 export function generateCoursePolygons(courseLayers, layerSettings) {
-  let layers = [];
+  let meshLayers = [];
   const polygonMap = new Map();
   // convert outer rings to polygons
   let current = 0;
 
   courseLayers.forEach(layer => {
   // let layers = courseLayers.map((layer) => {
-    const properties = new svgPathProperties(layer.data);
+    const { data, matrix, ...restOfLayer } = layer;
+    const properties = new svgPathProperties(data);
     const length = properties.getTotalLength();
     // at least 100 points
     // then based on line length (every 2 units)
@@ -68,8 +103,8 @@ export function generateCoursePolygons(courseLayers, layerSettings) {
       const length = properties.getTotalLength();
       const pct = i / numPoints;
       const pos = properties.getPointAtLength(length * pct);
-      if (layer.matrix) {
-        const transformed = applyToPoint(layer.matrix, { x: pos.x, y: pos.y });
+      if (matrix) {
+        const transformed = applyToPoint(matrix, { x: pos.x, y: pos.y });
         polygon.push([transformed.x, transformed.y]);
       } else {
         polygon.push([pos.x, pos.y]);
@@ -92,9 +127,11 @@ export function generateCoursePolygons(courseLayers, layerSettings) {
     // layers.push({ ...layer, ...settings });
     // polygons.push({ id: layer.id, ...settings, polygon, holes: [] });
     polygonMap.set(layer.id, { polygon, holes: [] });
-    layers.push({
-      ...layer,
-      ...settings,
+    
+    meshLayers.push({
+      // ...layer,
+      ...restOfLayer,
+      ...settings
       // polygon,
       // holes: [],
     });
@@ -115,66 +152,109 @@ export function generateCoursePolygons(courseLayers, layerSettings) {
     // }
   })
 
-  if (!layers?.length) {
+  if (!meshLayers?.length) {
     log.error('No valid paths found in course layer');
     throw new Error('No valid paths found in course layer');
   }
   
   // Cut-out any layers above
-  // layers = layers.map((layer, index) => {
-  layers.forEach((layer, index) => {
+  meshLayers.forEach((layer, index) => {
     try {
-      const layersAbove = (layers.slice(index + 1) || []);
+      const layersAbove = (meshLayers.slice(index + 1) || []);
       const layersToCut = layersAbove.map(l => [polygonMap.get(l.id)?.polygon]);
-      // let polygon = [...layer.polygon];
       let polygon = polygonMap.get(layer.id)?.polygon || [];
 
       let holes = [];
-      if (layersToCut?.length > 0) {
-        for (const cl of layersToCut) {
-          const result = polygonClipping.difference([polygon], [cl]);
+      if (layersToCut.length > 0) {
+        // Single combined difference avoids accumulating floating-point errors
+        const result = polygonClipping.difference([polygon], ...layersToCut);
+        if (result.length > 0) {
           const rings = result[0];
           polygon = rings[0];
-          holes = [...holes, ...rings.slice(1)];
+          holes = rings.slice(1);
         }
       }
-      polygonMap.set(layer.id, { polygon, holes });
-      // return {
-      //   ...layer,
-      //   polygon,
-      //   holes
-      // }
+
+      // Clean geometry before it reaches the mesh worker
+      const cleaned = cleanPolygonOutput(polygon, holes);
+
+      polygonMap.set(layer.id, cleaned);
     } catch (error) {
       log.error('Cut error', error);
       layer.error = 'Cut Error: Unable to cut holes in shape';
-      // return {
-      //   ...layer,
-      //   error: 'Cut Error: Unable to cut holes in shape'
-      // }
     }
   });
 
+  // Cut-out any layers above
+  // layers = layers.map((layer, index) => {
+  // layers.forEach((layer, index) => {
+  //   try {
+  //     const layersAbove = (layers.slice(index + 1) || []);
+  //     const layersToCut = layersAbove.map(l => [polygonMap.get(l.id)?.polygon]);
+  //     // let polygon = [...layer.polygon];
+  //     let polygon = polygonMap.get(layer.id)?.polygon || [];
+
+  //     let holes = [];
+  //     if (layersToCut?.length > 0) {
+  //       for (const cl of layersToCut) {
+  //         const result = polygonClipping.difference([polygon], [cl]);
+  //         const rings = result[0];
+  //         polygon = rings[0];
+  //         holes = [...holes, ...rings.slice(1)];
+  //       }
+  //     }
+  //     polygonMap.set(layer.id, { polygon, holes });
+  //     // return {
+  //     //   ...layer,
+  //     //   polygon,
+  //     //   holes
+  //     // }
+  //   } catch (error) {
+  //     log.error('Cut error', error);
+  //     layer.error = 'Cut Error: Unable to cut holes in shape';
+  //     // return {
+  //     //   ...layer,
+  //     //   error: 'Cut Error: Unable to cut holes in shape'
+  //     // }
+  //   }
+  // });
+
   // adds an extra water plane after cutting
-  for (const layer of layers) {
-    if (layer.surface === 'water') {
+  for (const layer of meshLayers) {
+    if (layer.surface === 'water' || layer.surface === 'river') {
       const existingPoly = polygonMap.get(layer.id);
-      const newlayer = {
-        ...layerSettings && layerSettings?.lake_surface,
-        id: `lake_surface_${layer.id}`,
-        name: `lake_surface_${layer.id}`,
-        hidden: true,
-        surface: 'lake_surface',
-        color: '0088AA',
-        data: layer.data,
-        // polygon: layer.polygon,
-        // holes: layer.holes
-      };
-      layers.push(newlayer);
-      polygonMap.set(newlayer.id, { ...existingPoly });
+      let newlayer = null;
+      if (layer.surface === 'river' && layerSettings?.plane_river) {
+        newlayer = {
+          ...layerSettings.river_plane,
+          id: `plane_river_${layer.id}`,
+          riverId: layer.id,
+          name: `plane_river_${layer.id}`,
+          hidden: false,
+          surface: 'plane_river',
+          color: '0088AA',
+          // data: layer.data,
+        };
+      } else if (layer.surface === 'water' && layerSettings?.plane_lake) {
+        newlayer = {
+          ...layerSettings.plane_lake,
+          id: `plane_lake_${layer.id}`,
+          lakeId: layer.id,
+          name: `plane_lake_${layer.id}`,
+          hidden: false,
+          surface: 'plane_lake',
+          color: '0088AA',
+          // data: layer.data,
+        };
+      }
+      if (newlayer) {
+        meshLayers.push(newlayer);
+        polygonMap.set(newlayer.id, { ...existingPoly });
+      }
     }
   }
 
-  return { layers, polygonMap };
+  return { meshLayers, polygonMap };
 }
 
 function progress() {

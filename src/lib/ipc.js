@@ -6,7 +6,7 @@ import * as imagery from './imagery';
 import * as tools from './tools';
 import * as colors from './colors';
 import { exportMeshes } from './export';
-import { getRecentProjects } from './app';
+import { changeToolsPath, getRecentProjects, getToolsPath } from './app';
 
 
 ipcMain.handle('app.exit', async (_event, options) => {
@@ -38,7 +38,24 @@ ipcMain.handle('project.generateMeshes', (_event, layerSettings, terrainSettings
 ipcMain.handle('project.getMeshDataState', () => project.getMeshDataState());
 ipcMain.handle('project.getMeshDataForLayer', (_event, layerId) => project.getMeshDataForLayer(layerId));
 ipcMain.handle('project.updateLayerById', (_event, layerId, update) => project.updateLayerById(layerId, update));
-ipcMain.handle('project.exportMeshes', (_event, exportSettings) => exportMeshes(exportSettings));
+ipcMain.handle('project.exportMeshes', (_event, exportSettings, data) => exportMeshes(exportSettings, data));
+
+
+ipcMain.handle('project.updateHoleByNumber', (_event, holeNumber, update) => project.updateHoleByNumber(holeNumber, update));
+ipcMain.handle('project.updateScene', (_event, update) => project.updateScene(update));
+
+ipcMain.handle('project.updateTrees', (_event, trees) => project.updateTrees(trees));
+
+ipcMain.handle('trees.updateLayer', (_event, layerId, layerUpdate) => project.updateTreeLayer(layerId, layerUpdate));
+ipcMain.handle('trees.addLayer', (_event) => project.addTreeLayer());
+ipcMain.handle('trees.removeLayer', (_event, layerId) => project.removeTreeLayer(layerId));
+
+ipcMain.handle('trees.import', (_event, treeLayerId) => project.importTree(treeLayerId));
+ipcMain.handle('trees.postImport', (_event, treeLayerId, treeConfigId, imageData) => project.postImportTree(treeLayerId, treeConfigId, imageData));
+ipcMain.handle('trees.remove', (_event, treeLayerId, treeConfigId) => project.removeTreeConfig(treeLayerId, treeConfigId));
+
+
+// ipcMain.handle('project.save', (_event) => project.saveProjectSettings());
 
 ipcMain.handle('colors.palette', (_event) => colors.parsePalette());
 // ipcMain.handle('project.reloadSVG', (_event) => project.reloadSVG());
@@ -54,11 +71,17 @@ ipcMain.handle('map.listEndpoints', (_event) => map.listEndpoints());
 ipcMain.handle('lidar.downloadCourse', (_event, lidarGeoJson, courseBounds) => lidar.downloadCourse(lidarGeoJson, courseBounds));
 ipcMain.handle('lidar.readOpenFile', (_event) => lidar.readOpenFile());
 
+ipcMain.handle('terrain.applySmoothing', (_event, data, radius) => project.smoothRaw(data, radius));
+ipcMain.handle('terrain.saveHeightMap', (_event, data) => project.saveHeightMap(data));
+
+ipcMain.handle('imagery.downloadDEM', (_event, courseBounds) => imagery.downloadCourseDEM(courseBounds));
 ipcMain.handle('imagery.raw', (_event) => imagery.generateRAWFile());
 ipcMain.handle('imagery.hillShade', (_event) => imagery.generateHillShade());
 ipcMain.handle('imagery.satellite', (_event, wmsSource) => imagery.generateSatelliteImage(wmsSource));
 
 
+ipcMain.handle('tools.getToolsPath', (event) => getToolsPath());
+ipcMain.handle('tools.changeToolsPath', (event) => changeToolsPath());
 ipcMain.handle('tools.checkInstallState', () => tools.checkInstallState());
 ipcMain.handle('tools.installStart', () => tools.installStart());
 ipcMain.handle('tools.installCancel', () => tools.installCancel());

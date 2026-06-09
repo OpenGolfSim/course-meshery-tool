@@ -9,6 +9,9 @@ export default function Welcome() {
   const handleNewProject = async () => {
     await createProject();
   }
+  const handleOpenProject = async () => {
+    await window.meshery.project.openExisting();
+  }
   const handleOpenRecentProject = async (project) => {
     window.meshery.project.openRecent(project);
   }
@@ -41,7 +44,12 @@ export default function Welcome() {
               New Project
             </Button>
 
-            <Button fullWidth>Open Project...</Button>
+            <Button
+              fullWidth
+              onClick={handleOpenProject}
+            >
+              Open Project...
+            </Button>
 
           </Stack>
         </Grid>

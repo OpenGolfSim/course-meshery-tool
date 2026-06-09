@@ -4,7 +4,7 @@ import { openProject, meshData } from '../project';
 import { write as writeGLTF } from './gltf';
 import { write as writeOBJ } from './obj';
 
-export async function exportMeshes(exportSettings) {
+export async function exportMeshes(exportSettings, imageData) {
 
   const { filePath, canceled } = await dialog.showSaveDialog({
     title: 'Save SVG',
@@ -14,7 +14,7 @@ export async function exportMeshes(exportSettings) {
     buttonLabel: `Save ${exportSettings.format}`,
   });
   if (!filePath || canceled) {
-    log.warn('No file was selected');
+    console.log('No file was selected');
     return;
   }
   console.log('save all layers to ', filePath);
@@ -23,11 +23,11 @@ export async function exportMeshes(exportSettings) {
 
   switch (exportSettings.format) {
     case 'obj':
-      await writeOBJ(filePath, openProject._layers, meshData);
+      await writeOBJ(filePath, openProject._meshes, meshData);
       break;
     case 'gltf':
     case 'glb':
-      await writeGLTF(filePath, openProject._layers, meshData);
+      await writeGLTF(filePath, openProject, meshData, imageData);
       break;
     default:
       throw new Error(`Unknown format ${exportSettings.format}`);

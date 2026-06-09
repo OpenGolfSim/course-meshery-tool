@@ -56,7 +56,7 @@ function CustomTabPanel(props) {
 export default function Workarea() {
   const { installState } = useInstaller();
   const { project } = useProject();
-  const [currentTab, setCurrentTab] = useState(0);
+  const [currentTab, setCurrentTab] = useState(1);
   const handleChange = (event, newValue) => {
     setCurrentTab(newValue);
   };
@@ -99,11 +99,9 @@ export default function Workarea() {
         <Map />
       </CustomTabPanel>
       
-      {/* <MesheryProvider> */}
-        <CustomTabPanel value={currentTab} index={1}>
-          <Course />
-        </CustomTabPanel>
-      {/* </MesheryProvider> */}
+      <CustomTabPanel value={currentTab} index={1}>
+        <Course />
+      </CustomTabPanel>
     </Box>
   )
 }

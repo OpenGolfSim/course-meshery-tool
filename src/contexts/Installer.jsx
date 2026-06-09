@@ -21,7 +21,7 @@ export const InstallerProvider = ({ children }) => {
 
   useEffect(() => {
     window.meshery.tools.checkInstallState().then(res => {
-      console.log('state', res);
+      console.log('DALTools', res);
       setInstallState(res);
     }).catch(error => {
       setInstallState({ error });

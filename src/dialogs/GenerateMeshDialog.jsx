@@ -25,7 +25,6 @@ import CheckIcon from '@mui/icons-material/CheckCircle';
 
 import MenuBookIcon from '@mui/icons-material/MenuBook';
 import ClearIcon from '@mui/icons-material/Clear';
-import { useMeshery } from '../contexts/Meshery.jsx';
 import SurfaceSettings from '../components/SurfaceSettings.jsx';
 import { useProject } from '../contexts/Project.jsx';
 import { defaultSettings } from '../lib/settings.js';
@@ -33,7 +32,6 @@ import NumberField from '../components/NumberField.jsx';
 
 export default function GenerateMeshDialog(props) {
   const { project, palette } = useProject();
-  // const { settings, layerSettings, layers, setLayerSettings } = useMeshery();
   const { onClose, open } = props;
   const [expanded, setExpanded] = React.useState(false);
   const [layerSettings, setLayerSettings] = React.useState({ ...defaultSettings });
@@ -154,7 +152,7 @@ export default function GenerateMeshDialog(props) {
     setTerrainSettings(old => ({ ...old, [setting]: change }));
   }
   const handleSaveChanges = (setting, changes) => {
-    console.log('setting, changes', setting, changes);
+    // console.log('setting, changes', setting, changes);
     setLayerSettings(old => ({
       ...old,
       [setting.surface]: {
@@ -209,7 +207,7 @@ export default function GenerateMeshDialog(props) {
           <Stack spacing={3}>
             {/* <Alert sx={{ mb: 5 }}>Detected {project._layers?.length || 0} layers</Alert> */}
 
-            <Box>
+            {/* <Box>
               <Typography sx={{ mb: 3 }} variant="h3">Terrain Smoothing</Typography>
               <Box>
                 <NumberField
@@ -223,10 +221,10 @@ export default function GenerateMeshDialog(props) {
                 />
                 <Typography color="textSecondary" variant="caption">Apply smoothing to the raw lidar terrain</Typography>
               </Box>
-            </Box>
+            </Box> */}
 
             <Box>
-              <Typography sx={{ mb: 3 }} variant="h3">Global Settings</Typography>
+              {/* <Typography sx={{ mb: 3 }} variant="h3">Global Settings</Typography> */}
               {settingGroups.map(setting => (
                 <Accordion key={setting.surface} expanded={expanded === setting.surface} onChange={handleChange(setting.surface)}>
                   <AccordionSummary
@@ -277,10 +275,11 @@ export default function GenerateMeshDialog(props) {
                   </AccordionSummary>
                   <AccordionDetails>
                     <SurfaceSettings
-                      surface={setting.surface}
-                      spacing={setting.spacing}
+                      layer={setting}
+                      // surface={setting.surface}
+                      // spacing={setting.spacing}
                       // blending={setting.blending}
-                      dig={setting.dig}
+                      // dig={setting.dig}
                       onChange={(changes) => handleSaveChanges(setting, changes)}
                       // onSpacingChange={(value) => handleSpacingChange(setting, value)}
                       // onBlendChange={(key, value) => handleBlendChange(setting, key, value)}
@@ -300,7 +299,7 @@ export default function GenerateMeshDialog(props) {
       
         {jobState.phase === 'generate' ? (
           <Stack spacing={3} sx={{ justifyItems: 'center', alignItems: 'center' }}>
-            <CircularProgress variant="determinate" value={jobState.progress} />
+            <CircularProgress enableTrackSlot={true} variant="determinate" value={jobState.progress} />
             {jobState.status ? (
               <Typography>{jobState.status}</Typography>
             ) : (

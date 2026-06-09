@@ -5,6 +5,7 @@ import osmtogeojson from 'osmtogeojson';
 import { resourceRoot } from "./app";
 import { geoJSONToSvgPaths } from './svg';
 import { openProject, saveProjectSettings } from './project';
+import { broadcast } from './window';
 
 
 let cachedOverpass = {};
@@ -102,6 +103,7 @@ export async function searchShapes(bbox) {
     console.log('coursePaths', coursePaths);
     openProject.coursePaths = coursePaths;
     await saveProjectSettings();
+    broadcast('project.opened', openProject);
 
     return { coursePaths };
   }

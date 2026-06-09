@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Typography, Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField, Box, Stack, CircularProgress, Alert } from '@mui/material';
 import CheckIcon from '@mui/icons-material/CheckCircle';
 import NumericInput from '../components/NumericInput.jsx';
@@ -6,7 +6,7 @@ import NumberField from '../components/NumberField.jsx';
 import { useProject } from '../contexts/Project.jsx';
 
 export default function TerrainDownloadDialog(props) {
-  const { handleDownloadCourse } = useProject();
+  const { handleDownloadCourse, project } = useProject();
   const downloadStates = {
     init: 0,
     downloading: 1,
@@ -38,18 +38,13 @@ export default function TerrainDownloadDialog(props) {
       console.error('No feature data!');
       return;
     }
-    const bounds = layerRef.current.getBounds();
-    const coords = {
-      south: bounds.getSouth(),
-      west: bounds.getWest(),
-      north: bounds.getNorth(),
-      east: bounds.getEast()
-    };
-    console.log('coords', data, coords);
     
     setDownloadState(downloadStates.downloading);
     try {
-      await handleDownloadCourse(data, coords);
+      if (!project.settings.bounds) {
+        throw new Error('Project bounds not set');
+      }
+      await handleDownloadCourse(data, project.settings.bounds);
       setDownloadState(downloadStates.complete);
     } catch (error) {
       setDownloadState(downloadStates.error);
@@ -63,12 +58,25 @@ export default function TerrainDownloadDialog(props) {
     // });
   }, [data]);
 
+  const handleClose = (event, reason) => {
+    if (reason && ['escapeKeyDown', 'backdropClick'].includes(reason)) return;
+    // Otherwise, proceed with closing the dialog
+    onClose();
+  }
+
+  useEffect(() => {
+    if (!open) {
+      setResolution(1);
+      setDownloadState(downloadStates.init);
+      setDownloadError(null);
+    }
+  }, [open]);
 
   return (
     <Dialog
       fullWidth={true}
       maxWidth="sm"
-      onClose={() => onClose()}
+      onClose={handleClose}
       open={open}
     >
       <DialogTitle>
@@ -79,13 +87,14 @@ export default function TerrainDownloadDialog(props) {
           <Stack spacing={5} sx={{ py: 4 }}>
             <TextField
               label="Data Set"
-              defaultValue={data?.properties?.name}
+              defaultValue={data?.properties?.name || data?.name}
               slotProps={{ input: { readOnly: true } }}
             />
             
             <NumberField
               label="Resolution"
               value={resolution}
+              disabled={data?.type === 'dem'}
               min={0.1}
               max={5}
               step={0.1}
@@ -99,8 +108,8 @@ export default function TerrainDownloadDialog(props) {
       {downloadState === downloadStates.downloading ? (
         <DialogContent>
           <Stack spacing={3} sx={{ justifyItems: 'center', alignItems: 'center' }}>
-            <CircularProgress />
-            <Typography color="textSecondary">Downloading and processing lidar...</Typography>
+            <CircularProgress enableTrackSlot={true} />
+            <Typography color="textSecondary">Downloading and processing terrain data...</Typography>
           </Stack>
         </DialogContent>
       ) : null}

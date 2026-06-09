@@ -13,15 +13,14 @@ import {
   MenuItem
 } from '@mui/material';
 import CheckIcon from '@mui/icons-material/CheckCircle';
-
 import { useProject } from '../contexts/Project.jsx';
 
 export default function ExportCourseDialog(props) {
   const { project, palette } = useProject();
-  // const { settings, layerSettings, layers, setLayerSettings } = useMeshery();
-  const { onClose, open } = props;
+  const { onClose, open, data } = props;
+  console.log('data', data);
   const [jobState, setJobState] = useState({ phase: 'settings', count: 0, progress: 0 });
-  const [exportSettings, setExportSettings] = useState({ format: 'obj' });
+  const [exportSettings, setExportSettings] = useState({ format: 'glb' });
 
   const handleFormatChange = (event) => {
     setExportSettings(old => ({ ...old, format: event.target.value }));
@@ -31,11 +30,11 @@ export default function ExportCourseDialog(props) {
     
     setJobState(old => ({ ...old, phase: 'generate' }));
 
-    const result = await window.meshery.project.exportMeshes(exportSettings);
+    const result = await window.meshery.project.exportMeshes(exportSettings, data);
     console.log('result', result);
     
     setJobState(old => ({ ...old, phase: 'complete' }));
-  }, [exportSettings]);
+  }, [exportSettings, data]);
 
   const handleClose = () => {
     if (onClose) onClose();
@@ -73,6 +72,10 @@ export default function ExportCourseDialog(props) {
 
       <DialogContent>
 
+        {data.mapImage ? (
+          <img src={data.mapImage} height={200} />
+        ) : null}
+
         {jobState.phase === 'settings' ? (
           <Stack spacing={3} sx={{ py: 2 }}>
             <TextField
@@ -82,8 +85,8 @@ export default function ExportCourseDialog(props) {
               onChange={handleFormatChange}
               value={exportSettings.format}
             >
-              <MenuItem value="obj">.OBJ (Unity)</MenuItem>
-              <MenuItem value="glb">.GLB (WebGL)</MenuItem>
+              <MenuItem value="glb">.GLB (Fuse)</MenuItem>
+              {/* <MenuItem value="obj">.OBJ (Unity)</MenuItem> */}
             </TextField>
           </Stack>
         ) : null}        
@@ -114,12 +117,15 @@ export default function ExportCourseDialog(props) {
         >
           {jobState.phase === 'complete' ? 'Done' : 'Cancel'}
         </Button>
+        
         <Button
           onClick={handleConfirm}
           color="primary"
           variant="contained"
           disabled={jobState.phase !== 'settings'}
-        >Export Course</Button>
+        >
+          Export Course
+        </Button>
       </DialogActions>
     </Dialog>
   );

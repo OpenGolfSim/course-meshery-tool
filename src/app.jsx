@@ -4,7 +4,6 @@ import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import Workarea from './components/Workarea.jsx';
 import { ProjectProvider } from './contexts/Project.jsx';
-import { MesheryProvider } from './contexts/Meshery.jsx';
 import { InstallerProvider } from './contexts/Installer.jsx';
 
 const palette = {
@@ -67,9 +66,7 @@ root.render(
     <CssBaseline />
     <InstallerProvider>
       <ProjectProvider>
-        <MesheryProvider>
-          <Workarea />
-        </MesheryProvider>
+        <Workarea />
       </ProjectProvider>
     </InstallerProvider>
   </ThemeProvider>

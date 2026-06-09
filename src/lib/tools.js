@@ -10,6 +10,7 @@ import { resourceRoot } from './utils.js';
 import { broadcast } from './window.js';
 import * as tar from 'tar';
 import extractZip from 'extract-zip';
+import { getToolsPath } from './app.js';
 
 const pipelineAsync = promisify(pipeline)
 
@@ -209,7 +210,8 @@ export async function installStart() {
       throw new Error('Unable to find tools package in release');
     }
     tmpArchive = path.join(app.getPath('temp'), release.asset.name);
-    const baseDir = getToolsDir();
+    // const baseDir = getToolsDir();
+    const baseDir = getToolsPath();
     abortSignal = new AbortController();
     // await sleep(2000);
     await downloadAsset(release.asset, tmpArchive, abortSignal.signal, (update) => {
@@ -298,7 +300,8 @@ async function condaUnpack(baseDir, signal) {
 }
 
 export function getBin(name) {
-  const dir = getToolsDir();
+  // const dir = getToolsDir();
+  const dir = getToolsPath();
   
   const pref = REQUIRED_BINARIES?.[name];
   let binDir = 'bin';
@@ -310,7 +313,8 @@ export function getBin(name) {
 }
 
 export function getSpawnEnv() {
-  const dir = getToolsDir()
+  // const dir = getToolsDir()
+  const dir = getToolsPath()
   return {
     ...process.env,
     ...(process.platform === 'win32' ? {

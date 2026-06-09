@@ -32,7 +32,18 @@ export default function GenerateSatelliteDialog(props) {
     console.log('update progress', update);
     setJob(old => ({ ...old, progress: update.progress }));
   }, []);
-
+  
+  const handleClose = (event, reason) => {
+    if (reason && ['escapeKeyDown', 'backdropClick'].includes(reason)) return;
+    // Otherwise, proceed with closing the dialog
+    onClose();
+  }
+  
+  useEffect(() => {
+    if (!open) {
+      setJob({ progress: 0, state: 0 });
+    }
+  }, [open]);
   useEffect(() => {
     window.meshery.on('imagery.progress', handleProgressUpdate);
     return () => {
@@ -43,7 +54,7 @@ export default function GenerateSatelliteDialog(props) {
     <Dialog
       fullWidth={true}
       maxWidth="sm"
-      onClose={onClose}
+      onClose={handleClose}
       open={open}
     >
       <DialogTitle>
@@ -64,7 +75,7 @@ export default function GenerateSatelliteDialog(props) {
         ) : null}
         {job.state === 1 ? (
           <Stack spacing={3} sx={{ justifyItems: 'center', alignItems: 'center' }}>
-            <CircularProgress variant="determinate" value={job.progress} />
+            <CircularProgress enableTrackSlot={true} variant="determinate" value={job.progress} />
             <Typography>Downloading satellite imagery...</Typography>
           </Stack>
         ) : null}

@@ -11,6 +11,7 @@ import { openProject, refreshRawData, saveProjectSettings } from './project.js';
 import { getBin, getSpawnEnv } from './tools.js';
 import { TERRAIN_DIR } from '../constants.js';
 import { fillData, generateRAWFile } from './imagery.js';
+import { broadcast } from './window.js';
 
 const log = logger.scope('TERRAIN');
 
@@ -254,8 +255,18 @@ export async function downloadCourse(geoJSON, bounds) {
         mean_k: 8,
         multiplier: 3.0,
       },
+      // make sure to assign missing data before SMRF filter
       {
-        type: 'filters.smrf'
+        type: 'filters.assign',
+        value: [
+          'ReturnNumber = 1 WHERE ReturnNumber == 0',
+          'NumberOfReturns = 1 WHERE NumberOfReturns == 0'
+        ]
+      },
+      // Classify ground, but preserve existing classifications
+      {
+        type: 'filters.smrf',
+        ignore: 'Classification[2:2],Classification[6:6],Classification[9:9],Classification[10:11]'
       },
       {
         type: 'filters.range',
@@ -268,9 +279,9 @@ export async function downloadCourse(geoJSON, bounds) {
         // Source: https://desktop.arcgis.com/en/arcmap/latest/manage-data/las-dataset/lidar-point-classification.htm
         limits: [
           // 'Classification[1:1]', // Unclassified
-          'Classification[1.1:2.1]', // Ground
-          'Classification[8.1:9.1]', // Water
-          'Classification[10.1:11.1]', // Road
+          'Classification[2:2]', // Ground
+          'Classification[9:9]', // Water
+          'Classification[10:11]', // Road
         ].join(',')
       },
 
@@ -315,52 +326,58 @@ export async function downloadCourse(geoJSON, bounds) {
     // });
     child.on('close', async (code) => {
       log.debug(`code: ${code}`);
-      if (code === 0) {
-        const stats = fs.statSync(lazOutput);
-        
-        let points = 0;
-        const matched = output.match(/wrote (\d+) points to the LAS file/i);
-        if (matched?.[1]) {
-          points = parseInt(matched[1], 10);
-        }
-
-        // const lazStats = await getStatsStats(lazOutput);
-        const lazStats = await getHeightStatsInMeters(lazOutput);
-        log.info('lazStats', lazStats);
-
-        const lidar = {
-          filePath: lazOutput,
-          fileName: path.basename(lazOutput),
-          size: stats.size,
-          points: points,
-          srs: nativeSrs,
-          stats: lazStats
-        };
-
-        const tiffOutputFinal = await fillData(tiffOutput);
-        
-        const tiffStats = fs.statSync(tiffOutputFinal);
-
-        const dem = {
-          filePath: tiffOutputFinal,
-          fileName: path.basename(tiffOutputFinal),
-          size: tiffStats.size,
-        };
-        
-        openProject.lidar = lidar;
-        openProject.dem = dem;
-
-        const raw = await generateRAWFile();
-        openProject.raw = raw;
-
-        
-        await saveProjectSettings();
-        
-        resolve({ lidar, dem, raw });
-
-        refreshRawData(true);
+      if (code !== 0) {
+        log.debug(`${output}`);
+        return reject('An error occurred during lidar processing. Please check the logs.');
       }
-      reject('An error occurred during lidar processing. Please check the logs.');
+
+      const stats = fs.statSync(lazOutput);
+      
+      let points = 0;
+      const matched = output.match(/wrote (\d+) points to the LAS file/i);
+      if (matched?.[1]) {
+        points = parseInt(matched[1], 10);
+      }
+
+      // const lazStats = await getStatsStats(lazOutput);
+      const lazStats = await getHeightStatsInMeters(lazOutput);
+      log.info('lazStats', lazStats);
+      openProject.stats = lazStats;
+
+      const lidar = {
+        filePath: lazOutput,
+        fileName: path.basename(lazOutput),
+        size: stats.size,
+        points: points,
+        srs: nativeSrs
+      };
+
+
+      const tiffOutputFinal = await fillData(tiffOutput);
+      
+      const tiffStats = fs.statSync(tiffOutputFinal);
+
+      const dem = {
+        filePath: tiffOutputFinal,
+        fileName: path.basename(tiffOutputFinal),
+        size: tiffStats.size,
+      };
+      
+      openProject.lidar = lidar;
+      openProject.dem = dem;
+
+      const raw = await generateRAWFile();
+      openProject.raw = raw;
+
+      
+      await saveProjectSettings();
+      broadcast('project.opened', openProject); 
+
+      resolve({ lidar, dem, raw });
+
+      refreshRawData(true);
+    
+
     });
     
     log.debug(`Running pipeline: ${JSON.stringify(pipeline, null, 1)}`);

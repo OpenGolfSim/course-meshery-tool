@@ -30,16 +30,23 @@ export function buildAppMenu() {
       submenu: [
         {
           label: 'Open Project',
-          click: project.open,
+          click: () => project.open(),
           enabled: isInstalled(),
           accelerator: 'CommandOrControl+O'
         },
         {
-          label: 'Save Project',
-          click: project.save,
-          enabled: isInstalled(),
-          accelerator: 'CommandOrControl+S'
+          label: 'Close Project',
+          click: () => project.close(),
+          enabled: project.isOpen(),
+          accelerator: 'CommandOrControl+O'
         },
+        // {
+        //   label: 'Save Project',
+        //   click: project.save,
+        //   enabled: isInstalled(),
+        //   accelerator: 'CommandOrControl+S'
+        // },
+
         // { type: 'separator' },
         // {
         //   id: 'export-raw',

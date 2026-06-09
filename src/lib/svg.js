@@ -455,17 +455,17 @@ export async function parseSVG(svgData, palette = null) {
   }
 
   if (!courseLayers?.length) {
-    throw new Error('No course shapes found in course layer');
+    log.warn('No course shapes found in course layer');
+  } else {
+    courseLayers.unshift({
+      id: 'base',
+      name: 'base',
+      visible: true,
+      surface: 'base',
+      color: 'CCCCCC',
+      data: `M 0,0 H ${width} V ${height} H 0 Z`
+    });    
   }
-
-  courseLayers.unshift({
-    id: 'base',
-    name: 'base',
-    visible: true,
-    surface: 'base',
-    color: 'CCCCCC',
-    data: `M 0,0 H ${width} V ${height} H 0 Z`
-  });
 
   return {
     treeLayers,

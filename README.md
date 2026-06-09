@@ -52,3 +52,20 @@ tar -xf example.tar.gz -C myenv
 cd myenv
 ./bin/conda-unpack 
 ```
+
+
+## Scripts
+
+### Trees
+
+We recommend creating trees with LODs and billboards in SpeedTree, exporting as OBJ, and then using the below script to convert to a single GLB that can be used with Meshery tree planting.
+
+```
+Usage:
+
+npm run generate-tree -- \
+/path/to/tree/Oak_LOD1.obj \
+/path/to/tree/Oak_LOD2.obj \
+/path/to/tree/Oak_LOD3.obj \
+/path/to/tree/OakTree.glb
+ ```

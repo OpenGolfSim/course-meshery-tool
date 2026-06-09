@@ -114,6 +114,33 @@ canvas {
 .popup-button#remove_btn {
   background-image: url("data:image/svg+xml,<?xml%20version=%221.0%22%20encoding=%22UTF-8%22?%3E%0A%3Csvg%20width=%2224px%22%20height=%2224px%22%20viewBox=%220%200%2024%2024%22%20version=%221.1%22%20xmlns=%22http://www.w3.org/2000/svg%22%20xmlns:xlink=%22http://www.w3.org/1999/xlink%22%3E%0A%20%20%20%20%3C%21--%20Generator:%20Sketch%2052.5%20%2867469%29%20-%20http://www.bohemiancoding.com/sketch%20--%3E%0A%20%20%20%20%3Ctitle%3EAtoms/Icons/Tools/Eraser%3C/title%3E%0A%20%20%20%20%3Cdesc%3ECreated%20with%20Sketch.%3C/desc%3E%0A%20%20%20%20%3Cdefs%3E%0A%20%20%20%20%20%20%20%20%3Cpath%20d=%22M17.7874219,18.4812552%20L11.6480079,13.3498184%20L6.40466009,19.3816001%20L10.5539156,22.9884929%20L13.86934,22.9884929%20L17.7874219,18.4812552%20Z%20M16.5074252,22.9884929%20L26.0000002,22.9884929%20L26.0000002,24.9884929%20L10.0000002,24.9884929%20L9.80708313,24.9884929%20L5.09254204,20.8910192%20C4.25891285,20.1663564%204.17057814,18.9031112%204.89524093,18.069482%20L16.0482444,5.23941916%20C16.7729072,4.40578998%2018.0361525,4.31745526%2018.8697816,5.04211806%20L24.9074583,10.2905903%20C25.7410875,11.0152531%2025.8294222,12.2784983%2025.1047594,13.1121275%20L16.5074252,22.9884929%20Z%22%20id=%22path-1%22%3E%3C/path%3E%0A%20%20%20%20%3C/defs%3E%0A%20%20%20%20%3Cg%20id=%22Symbols%22%20stroke=%22none%22%20stroke-width=%221%22%20fill=%22none%22%20fill-rule=%22evenodd%22%3E%0A%20%20%20%20%20%20%20%20%3Cg%20id=%22Atoms/Icons/Tools/Eraser%22%20transform=%22translate%28-3.000000,%20-3.000000%29%22%3E%0A%20%20%20%20%20%20%20%20%20%20%20%20%3Cmask%20id=%22mask-2%22%20fill=%22white%22%3E%0A%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%3Cuse%20xlink:href=%22%23path-1%22%3E%3C/use%3E%0A%20%20%20%20%20%20%20%20%20%20%20%20%3C/mask%3E%0A%20%20%20%20%20%20%20%20%20%20%20%20%3Cuse%20id=%22Combined-Shape%22%20fill=%22%235B5B5B%22%20fill-rule=%22nonzero%22%20xlink:href=%22%23path-1%22%3E%3C/use%3E%0A%20%20%20%20%20%20%20%20%3C/g%3E%0A%20%20%20%20%3C/g%3E%0A%3C/svg%3E");
 }
+.course-label {
+  background: rgba(255, 255, 255, 0.8) !important;
+  font-size: 10px !important;
+  font-weight: bold !important;
+  padding: 3px !important;
+  left: 10px;
+}
+.distance-label {
+  background: none;
+  border: none;
+  white-space: nowrap;
+}
+.distance-label span {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  color: #FFF;
+  background-color: rgba(0, 0, 0, 0.5);
+  border-radius: 4px;
+  padding: 0 5px;
+  text-shadow:
+    -1px -1px 0 #000,
+     1px -1px 0 #000,
+    -1px  1px 0 #000,
+     1px  1px 0 #000;
+  transform-origin: center center;
+}
 
 
 svg#course path {
@@ -129,4 +156,81 @@ svg#course path {
 svg#course path.fairway {
   fill: #87b97b;
   stroke: #26e11c;
+}
+
+.hole-edit-popup {
+  /* font-size: 10px !important;
+  font-weight: bold !important;
+  padding: 3px !important;
+  left: 10px;   */
+  /* padding: 7px; */
+}
+.hole-edit-popup .leaflet-popup-content-wrapper {
+  background: rgba(24, 25, 25, 0.9) !important;
+  /* backdrop-filter: blur(5px); */
+  border-radius: 7px;
+  padding: 4px 0px;
+}
+.hole-edit-popup .leaflet-popup-content {
+ margin: 10px 15px; 
+}
+.hole-edit-popup .leaflet-popup-tip {
+  background: rgba(24, 25, 25, 0.9) !important;
+  box-shadow: none;
+  /* backdrop-filter: blur(5px); */
+}
+.hole-edit-popup button {
+  background-color: #3f4241;
+  border: none;
+  color: #fff;
+  padding: 6px 12px;
+  border-radius: 3px;
+  font-family: var(--base-font);
+  font-size: 10px;
+  font-weight: bold;
+  text-transform: uppercase;
+  flex: 1;
+  /* display: block;
+  flex: 1 0 100%; */
+}
+.hole-edit-popup button:hover {
+  background-color: #222;
+  cursor: pointer;
+}
+.hole-edit-popup .hole-edit-content {
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.hole-edit-popup .hole-edit-header {
+  font-weight: bold;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+.hole-edit-popup .leaflet-popup-content .hole-buttons {
+  display: flex;
+  flex-direction: row;
+  gap: 5px;
+  width: 100%;
+  /* flex-wrap: nowrap;
+  width: 200px;
+  gap: 10px;
+  justify-content: stretch; */
+}
+
+.hole-marker-edit {
+  /* display: none !important; */
+  border: 2px solid var(--secondary);
+  /* background-color: lime; */
+  border-radius: 50%;
+  padding: 4px;
+}
+
+input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0
+}
+input[type="color"]::-webkit-color-swatch {
+  border: none;
+  border-radius: 50%;
 }

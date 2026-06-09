@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('meshery', {
   generateTerrain: (options) => ipcRenderer.invoke('raw.generate', options),
   // getCurrentState: () => ipcRenderer.invoke('state.get'),
   openExternalUrl: (href) => ipcRenderer.invoke('url.open', href),
+  copyToClipboard: (text) => ipcRenderer.invoke('clipboard.copy', text),
   on: (event, callback) => ipcRenderer.on(event, callback),
   off: (event, callback) => ipcRenderer.off(event, callback),
   // onError: (callback) => ipcRenderer.on('error', callback),
@@ -41,15 +42,34 @@ contextBridge.exposeInMainWorld('meshery', {
     getMeshDataState: () => ipcRenderer.invoke('project.getMeshDataState'),
     getMeshDataForLayer: (layerId) => ipcRenderer.invoke('project.getMeshDataForLayer', layerId),
     updateLayerById: (layerId, update) => ipcRenderer.invoke('project.updateLayerById', layerId, update),
-    exportMeshes: (exportSettings) => ipcRenderer.invoke('project.exportMeshes', exportSettings),
+    exportMeshes: (exportSettings, data) => ipcRenderer.invoke('project.exportMeshes', exportSettings, data),
+    updateTrees: (trees) => ipcRenderer.invoke('project.updateTrees', trees),
+    updateHoleByNumber: (holeNumber, update) => ipcRenderer.invoke('project.updateHoleByNumber', holeNumber, update),
+
+    updateScene: (update) => ipcRenderer.invoke('project.updateScene', update),
     // saveWrite: (settings) => ipcRenderer.invoke('project.saveWrite', settings),
+
+    // saveProject: (trees) => ipcRenderer.invoke('project.updateTrees', trees)
+  },
+  trees: {
+    import: (treeLayerId) => ipcRenderer.invoke('trees.import', treeLayerId),
+    postImport: (treeLayerId, treeConfigId, imageData) => ipcRenderer.invoke('trees.postImport', treeLayerId, treeConfigId, imageData),
+    remove: (treeLayerId, treeConfigId) => ipcRenderer.invoke('trees.remove', treeLayerId, treeConfigId),
+
+    addLayer: () => ipcRenderer.invoke('trees.addLayer'),
+    updateLayer: (layerId, layerUpdate) => ipcRenderer.invoke('trees.updateLayer', layerId, layerUpdate),
+    removeLayer: (layerId) => ipcRenderer.invoke('trees.removeLayer', layerId)
+
   },
   terrain: {
-    getToken: () => ipcRenderer.invoke('terrain.token')
+    getToken: () => ipcRenderer.invoke('terrain.token'),
+    applySmoothing: (data, radius) => ipcRenderer.invoke('terrain.applySmoothing', data, radius),
+    saveHeightMap: (data) => ipcRenderer.invoke('terrain.saveHeightMap', data)
   },
   imagery: {
     hillShade: () => ipcRenderer.invoke('imagery.hillShade'),
     satellite: (wmsSource) => ipcRenderer.invoke('imagery.satellite', wmsSource),
+    downloadDEM: (bounds) => ipcRenderer.invoke('imagery.downloadDEM', bounds)
   },
   svg: {
     export: () => ipcRenderer.invoke('svg.export'),
@@ -67,6 +87,8 @@ contextBridge.exposeInMainWorld('meshery', {
     readOpenFile: () => ipcRenderer.invoke('lidar.readOpenFile')
   },
   tools: {
+    getToolsPath: () => ipcRenderer.invoke('tools.getToolsPath'),
+    changeToolsPath: () => ipcRenderer.invoke('tools.changeToolsPath'),
     checkInstallState: () => ipcRenderer.invoke('tools.checkInstallState'),
     installStart: () => ipcRenderer.invoke('tools.installStart'),
     installCancel: () => ipcRenderer.invoke('tools.installCancel'),
