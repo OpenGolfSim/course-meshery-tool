@@ -3,22 +3,9 @@ import path from 'path';
 import { app, dialog } from 'electron';
 import Store from 'electron-store';
 
-const store = new Store({
-  defaults: {
-    toolsPath: getDefaultInstallPath()
-  }
-});
-
 const APP_NAME = 'ogs-meshery';
-export const EXTRA_RESOURCE_PATH = path.join(resourceRoot(), 'extra-resources');
-export const TEXTURES_PATH = path.join(EXTRA_RESOURCE_PATH, 'textures');
 
-export function resourceRoot() {
-  return app.isPackaged ? process.resourcesPath : app.getAppPath();
-}
-
-function getDefaultInstallPath() {
-
+const getDefaultInstallPath = () => {
   switch (process.platform) {
     case 'win32':
       return path.join(app.getPath('home'), `.${APP_NAME}`, 'tools');
@@ -30,6 +17,19 @@ function getDefaultInstallPath() {
     default:
       throw new Error('Unsupported platform');
   }
+}
+
+const store = new Store({
+  defaults: {
+    toolsPath: getDefaultInstallPath()
+  }
+});
+
+export const EXTRA_RESOURCE_PATH = path.join(resourceRoot(), 'extra-resources');
+export const TEXTURES_PATH = path.join(EXTRA_RESOURCE_PATH, 'textures');
+
+export function resourceRoot() {
+  return app.isPackaged ? process.resourcesPath : app.getAppPath();
 }
 
 export async function changeToolsPath() {
