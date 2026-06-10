@@ -67,15 +67,15 @@ function sleep(wait) {
 }
 
 function selectAsset(assets) {
-  const assetMap = {
-    win32: 'windows',
-    darwin: 'macos-arm64',
-  };
-  const assetMatch = assetMap?.[process.platform];
-  if (!assetMatch) {
+  if (process.platform === 'win32') {
+    return assets.find(asset => asset.name.includes('python-env-windows'));
+  } else if (process.platform === 'darwin' && process.arch === 'x64') {
+    return assets.find(asset => asset.name.includes('python-env-x64'));
+  } else if (process.platform === 'darwin' && process.arch === 'arm64') {
+    return assets.find(asset => asset.name.includes('python-env-arm64'));
+  } else {
     throw new Error('Unsupported platform');
   }
-  return assets.find(asset => asset.name.includes(assetMatch));
 }
 
 async function getLatestRelease() {
