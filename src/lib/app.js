@@ -3,7 +3,11 @@ import path from 'path';
 import { app, dialog } from 'electron';
 import Store from 'electron-store';
 
-const store = new Store();
+const store = new Store({
+  defaults: {
+    toolsPath: getDefaultInstallPath()
+  }
+});
 
 const APP_NAME = 'ogs-meshery';
 export const EXTRA_RESOURCE_PATH = path.join(resourceRoot(), 'extra-resources');
@@ -43,11 +47,10 @@ export async function changeToolsPath() {
 }
 
 export function getToolsPath() {
-  const legacyPath = path.join(resourceRoot(), 'python', 'tools');
-  if (fs.existsSync(legacyPath)) {
-    return legacyPath;
-  }
-  
+  // const legacyPath = path.join(resourceRoot(), 'python', 'tools');
+  // if (fs.existsSync(legacyPath)) {
+  //   return legacyPath;
+  // }
   const existing = store.get('toolsPath');
   if (existing) {
     return existing;
@@ -62,6 +65,7 @@ export function getToolsPath() {
 export function setInstallPath(newPath) {
   store.set('toolsPath', newPath);
 }
+
 export function getRecentProjects() {
   const projects = store.get('recentProjects', []);
   const filtered = sortByOpened(filterRemoved(projects));
