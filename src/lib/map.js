@@ -101,9 +101,9 @@ export async function searchShapes(bbox) {
     const geojson = osmtogeojson(results);
     const coursePaths = geoJSONToSvgPaths(geojson);
     console.log('coursePaths', coursePaths);
-    openProject.coursePaths = coursePaths;
-    await saveProjectSettings();
-    broadcast('project.opened', openProject);
+    // openProject.coursePaths = coursePaths;
+    // await saveProjectSettings();
+    // broadcast('project.opened', openProject);
 
     return { coursePaths };
   }

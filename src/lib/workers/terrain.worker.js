@@ -117,8 +117,6 @@ export function smoothTerrainData(heightMap, terrainSmoothingRadius = 0) {
  * Modify the raw heightmap around lake boundaries so both the lake mesh
  * and the surrounding grass mesh pick up a smooth, natural shoreline.
  *
- * Call ONCE after loading/smoothing the heightmap, before any
- * generateMesh / conformMeshToTerrain calls.
  *
  * @param {Uint16Array|Float32Array} heightData - the heightmap (mutated in place or copied)
  * @param {number} terrainSize - e.g. 4097

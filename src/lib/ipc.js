@@ -6,6 +6,7 @@ import * as imagery from './imagery';
 import * as tools from './tools';
 import * as colors from './colors';
 import { exportMeshes } from './export';
+import { generateTerrain } from './terrain';
 import { changeToolsPath, getRecentProjects, getToolsPath } from './app';
 
 
@@ -28,7 +29,7 @@ ipcMain.handle('dialog.confirm', async (_event, options) => {
 ipcMain.handle('project.getOpenProject', (_event) => project.getOpenProject());
 ipcMain.handle('project.createProject', (_event) => project.createProject());
 ipcMain.handle('project.openExisting', (_event) => project.openExisting());
-ipcMain.handle('project.saveSVG', (_event) => project.saveSVG());
+ipcMain.handle('project.saveSVG', (_event, options) => project.saveSVG(options));
 ipcMain.handle('project.openRecent', (_event, p) => project.openRecent(p));
 ipcMain.handle('project.storeSettings', (_event, settings) => project.storeSettings(settings));
 ipcMain.handle('project.getSettings', (_event) => project.getSettings());
@@ -39,7 +40,7 @@ ipcMain.handle('project.getMeshDataState', () => project.getMeshDataState());
 ipcMain.handle('project.getMeshDataForLayer', (_event, layerId) => project.getMeshDataForLayer(layerId));
 ipcMain.handle('project.updateLayerById', (_event, layerId, update) => project.updateLayerById(layerId, update));
 ipcMain.handle('project.exportMeshes', (_event, exportSettings, data) => exportMeshes(exportSettings, data));
-
+ipcMain.handle('project.getHeightMap', (_event) => project._heightMapCache);
 
 ipcMain.handle('project.updateHoleByNumber', (_event, holeNumber, update) => project.updateHoleByNumber(holeNumber, update));
 ipcMain.handle('project.updateScene', (_event, update) => project.updateScene(update));
@@ -72,10 +73,11 @@ ipcMain.handle('lidar.downloadCourse', (_event, lidarGeoJson, courseBounds) => l
 ipcMain.handle('lidar.readOpenFile', (_event) => lidar.readOpenFile());
 
 ipcMain.handle('terrain.applySmoothing', (_event, data, radius) => project.smoothRaw(data, radius));
-ipcMain.handle('terrain.saveHeightMap', (_event, data) => project.saveHeightMap(data));
+ipcMain.handle('terrain.saveHeightMap', (_event, data, heightScale) => project.saveHeightMap(data, heightScale));
+ipcMain.handle('terrain.generate', (_event, type) => generateTerrain(type));
 
 ipcMain.handle('imagery.downloadDEM', (_event, courseBounds) => imagery.downloadCourseDEM(courseBounds));
-ipcMain.handle('imagery.raw', (_event) => imagery.generateRAWFile());
+// ipcMain.handle('imagery.raw', (_event) => imagery.generateRAWFile());
 ipcMain.handle('imagery.hillShade', (_event) => imagery.generateHillShade());
 ipcMain.handle('imagery.satellite', (_event, wmsSource) => imagery.generateSatelliteImage(wmsSource));
 

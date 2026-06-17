@@ -2,7 +2,6 @@ import { expose } from 'threads/worker';
 import PoissonDiskSampling from 'poisson-disk-sampling';
 import { Delaunay } from 'd3-delaunay';
 import poly2tri from 'poly2tri';
-// import { conformMeshToTerrain, smoothTerrainData, smoothLakeShores } from '../terrain';
 import { lerp, smootherstep, smoothstep } from '../utils';
 
 const MIN_DISTANCE = 1e-8; // or whatever small threshold
@@ -525,9 +524,8 @@ export function generateMesh(layer, shape) {
 
 /**
  * Smooth/level the terrain around a lake shore to remove lidar ridges and
- * unnatural rim artifacts. Run AFTER conformMeshToTerrain, BEFORE digMesh.
+ * unnatural rim artifacts.
  *
- * Pipeline: generateMesh → conformMeshToTerrain → smoothLakeShore → digMesh
  */
 function smoothLakeShore(mesh, shape, options = {}) {
   const {
@@ -628,15 +626,18 @@ function smoothFalloff(x, power = 1) {
   return smootherstep(x);
 }
 
-export function conformMeshToTerrain(layer, mesh, project) {
+export function conformMeshToTerrain(layer, mesh, project, heightMap) {
   let svgSize = Math.round(project.settings.distance * 1000);
-  let heightScale = project?.stats?.relief || 1;
+  let heightScale = project?.stats?.heightScale || project?.stats?.relief || 1;
   if (!(svgSize > 0)) {
     throw new Error('SVG size is invalid');
   }
+  if (!heightMap) {
+    throw new Error('heightMap is missing or invalid');
+  }
   const positions = [];
-  const heightData = project._heightMap?.smoothData || project._heightMap?.data;
-  const heightSize = project._heightMap?.size;
+  const heightData = heightMap?.data;
+  const heightSize = heightMap?.size;
 
   if (!heightData) {
     throw new Error('No heightmap data');
@@ -644,7 +645,6 @@ export function conformMeshToTerrain(layer, mesh, project) {
     throw new Error('No heightmap size');
   }
 
-  // const hasHeightMap = !!(project._heightMap?.data && project._heightMap?.size);
   const isLakeSurface = layer.surface === 'plane_lake';
   const isRiverSurface = layer.surface === 'plane_river';
 

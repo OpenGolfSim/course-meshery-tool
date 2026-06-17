@@ -34,20 +34,20 @@ const SURFACE_MAP = {
   water_hazard: 'water',
 };
 
-export function generateSVG() {
+export function generateSVG(coursePaths, included = {}) {
   let svgPaths = '';
   const distance = Math.round(openProject.settings.distance * 1000);
-  if (openProject.coursePaths && openProject.settings?.bounds) {
-    svgPaths = storedPathsToSVG(openProject.coursePaths);
+  if (coursePaths?.length) {
+    svgPaths = coursePathsToSVG(coursePaths);
   }
 
   const trimLength = openProject._workingDir.length + 1;
 
   const images = [
-    openProject.hillShade?.filePath && 
+    included.hillShade && openProject.hillShade?.filePath && 
       `<image width="${distance}" height="${distance}" id="HillShade" preserveAspectRatio="none" xlink:href="${openProject.hillShade.filePath.slice(trimLength)}" style="display:inline" />`,
 
-    ...openProject.satellite && Object.values(openProject.satellite).map(satellite => {
+    ...included.satellite && openProject.satellite && Object.values(openProject.satellite).map(satellite => {
       return `<image width="${distance}" height="${distance}" id="Satellite-${satellite.source}" preserveAspectRatio="none" xlink:href="${satellite.filePath.slice(trimLength)}" style="display:inline" />`;
     })
 
@@ -100,7 +100,7 @@ function ringArea(ring) {
   return Math.abs(area / 2);
 }
 
-export function storedPathsToSVG(paths) {
+export function coursePathsToSVG(paths) {
   return paths
     .map((p, idx) => `<path id="${p.surface}_${idx}" d="${p.d}" style="fill:#${p.color ?? '115B13'}" />`)
     .join('\n  ');
@@ -121,14 +121,6 @@ export function geoJSONToSvgPaths(geojson) {
     ((maxLat - lat) / latRange) * size,   // flip Y: SVG y grows downward
   ];
 
-  // const ringToPath = (ring) => {
-  //   const pts = ring.map(project);
-  //   const [x0, y0] = pts[0];
-  //   const rest = pts.slice(1)
-  //     .map(([x, y]) => `L${x.toFixed(2)} ${y.toFixed(2)}`)
-  //     .join(' ');
-  //   return `M${x0.toFixed(2)} ${y0.toFixed(2)} ${rest} Z`;
-  // };
   const mid = ([x1, y1], [x2, y2]) => [(x1 + x2) / 2, (y1 + y2) / 2];
   const fmt = n => n.toFixed(2);
 

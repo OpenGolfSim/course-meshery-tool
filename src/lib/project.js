@@ -5,9 +5,9 @@ import { dialog, ipcMain, shell } from 'electron';
 import logger from 'electron-log';
 import { broadcast, mainWindow } from './window';
 import { ensureRecent } from './app';
-import { generateSVG, geoJSONToSvgPaths, parseSVG, storedPathsToSVG } from './svg';
+import { generateSVG, geoJSONToSvgPaths, parseSVG } from './svg';
 import { parseRaw } from './heightmap';
-import { conformMesh, layerToMesh, smoothTerrain, svgToCourseLayers } from './workers';
+import { layerToMesh, smoothTerrain, svgToCourseLayers } from './workers';
 import { IMAGERY_DIR, PROJECT_FILE_PROTOCOL, TERRAIN_DIR, TREE_IMPORT_PREFIX } from '../constants';
 import { getDateId } from './utils';
 import { randomUUID } from 'crypto';
@@ -20,6 +20,7 @@ const defaultProjectSettings = {
   centerPoint: null,
   distance: 1,
   terrainSmooth: 4,
+  terrainType: 'real',
 };
 
 const defaultProjectTemplate = {
@@ -27,7 +28,6 @@ const defaultProjectTemplate = {
   _workingDir: null,
   _dirty: true,
   _svgBuffer: null,
-  _heightMap: null,
   name: 'Untitled',
   lidar: null,
   dem: null,
@@ -65,6 +65,8 @@ export const meshData = {
   shapes: new Map(),
   state: { running: false }
 }
+
+export let _heightMapCache;
 
 function setDirty() {
   openProject._dirty = true;
@@ -125,7 +127,7 @@ async function parseRawData() {
 }
 
 
-export async function saveHeightMap(heightMapData) {
+export async function saveHeightMap(heightMapData, heightScale) {
   const { filePath, canceled } = await dialog.showSaveDialog({
     title: 'Save RAW',
     defaultPath: path.join(
@@ -150,10 +152,13 @@ export async function saveHeightMap(heightMapData) {
 
   openProject.raw = raw;
   // shell.showItemInFolder(filePath);
-  
+
+  // recalculate stats
+  openProject.stats = { ...openProject.stats, ...getHeightMapStats(heightMapData, heightScale) };
   await saveProjectSettings();
 
-  openProject._heightMap = { data: heightMapData, size: heightMapData.byteLength };
+  _heightMapCache = { data: heightMapData, size: heightMapData.byteLength };
+  return openProject;
 }
 
 export async function smoothRaw(data, radius) {
@@ -166,11 +171,11 @@ export async function smoothRaw(data, radius) {
   return smoothTerrain(data, radius, openProject, waterShapes);
 }
 
-export async function refreshRawData(emitEvent = false) {
-  openProject._heightMap = await parseRawData();
-  if (emitEvent) {
-    broadcast('project.opened', openProject);
-  }
+export async function refreshRawData() {
+  _heightMapCache = await parseRawData();
+  // if (emitEvent) {
+  //   broadcast('project.opened', openProject);
+  // }
 }
 
 export async function refreshSVG() {
@@ -181,7 +186,10 @@ export async function refreshSVG() {
   broadcast('project.opened', openProject);
 }
 
-export async function saveSVG() {
+export async function saveSVG(options) {
+  // options.included
+  // options.paths
+
   const { filePath, canceled } = await dialog.showSaveDialog({
     title: 'Save SVG',
     defaultPath: path.join(openProject._workingDir, 'course.svg'),
@@ -194,6 +202,7 @@ export async function saveSVG() {
     return;
   }
   // create a simple SVG to start
+  // openProject.paths
   openProject.svg = { filePath, fileName: path.basename(filePath) };
   await saveProjectSettings();
 
@@ -203,7 +212,7 @@ export async function saveSVG() {
   }
 
   log.info(`Generating SVG...`);
-  openProject._svgBuffer = generateSVG();
+  openProject._svgBuffer = generateSVG(options.paths, options.included);
 
   // openProject._layers = generateCoursePolygons(openProject._svgBuffer);
   
@@ -412,6 +421,7 @@ export function getMeshLayers() {
 
 async function generateCourseShapes(layerSettings, terrainSettings) {
   meshData.shapes.clear();
+
   const result = await svgToCourseLayers({
     layers: openProject._layers,
     settings: openProject.settings,
@@ -424,6 +434,7 @@ async function generateCourseShapes(layerSettings, terrainSettings) {
       status: `Generating ${update.current+1} of ${update.total} polygons`
     });
   });
+
   if (!result.meshLayers?.length) {
     throw new Error('No course layers were generated');
   }
@@ -452,24 +463,15 @@ export async function generateMeshes(layerSettings, terrainSettings) {
 
     await generateCourseShapes(layerSettings, terrainSettings)
 
-    broadcast('project.opened', openProject);
+    // broadcast('mesh.update', openProject);
+    // broadcast('mesh.data', meshData.state);
+    // broadcast('project.opened', openProject);
 
     // meshData.courseLayers = courseLayers;
   
     // console.log(`Generated ${result.layers.length} layers, ${meshData.shapes.size} polygons`);
 
     broadcast('mesh.progress', { progress, count: 0, status: `Starting ${openProject._meshes.length} meshes` });
-
-    // if (terrainSettings.smoothing && openProject._heightMap?.data) {
-    //   log.info(`Smoothing terrain ${terrainSettings.smoothing}`);
-    //   broadcast('mesh.progress', {
-    //     progress,
-    //     status: `Smoothing terrain with radius of ${terrainSettings.smoothing}`
-    //   });  
-    //   openProject._heightMap.smoothData = await smoothTerrain(openProject._heightMap.data, terrainSettings.smoothing);
-    // } else {
-    //   openProject._heightMap.smoothData = null;
-    // }
 
     let index = 0;
     for (const layer of openProject._meshes) {
@@ -482,10 +484,9 @@ export async function generateMeshes(layerSettings, terrainSettings) {
         count: (index + 1),
         status: `Meshing ${layer.name} (${index+1} of ${openProject._meshes.length})`
       });
-      const mesh = await layerToMesh(layer, shape, openProject);
+      const mesh = await layerToMesh(layer, shape, openProject, _heightMapCache);
       // layer.mesh = mesh;
       // meshMap.set(layer.id, mesh);
-      // const conformedMesh = await conformMesh(layer, mesh, openProject);
       // console.log(`Meshing ${index} of ${result.layers.length} (triangles:${mesh.triangles.length}, points:${mesh.points.length})`);
       meshData.meshes.set(layer.id, { name: layer.name, mesh });
       // console.log(`Conformed (${layer.id}) ${index} of ${result.layers.length} (triangles:${mesh.triangles.length}, points:${mesh.points.length})`);
@@ -536,7 +537,7 @@ export async function updateLayerById(layerId, update) {
     // layer._pending = true;
 
     const shape = meshData.shapes.get(layerId);    
-    const mesh = await layerToMesh(layer, shape, openProject);
+    const mesh = await layerToMesh(layer, shape, openProject, _heightMapCache);
     meshData.meshes.set(layer.id, { name: layer.name, mesh });
     broadcast('mesh.data', meshData.state);
     // layer._pending = false;
@@ -705,4 +706,3 @@ export async function updateScene(update) {
   }
   return openProject;
 }
-

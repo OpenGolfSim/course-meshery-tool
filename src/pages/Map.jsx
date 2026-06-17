@@ -3,6 +3,7 @@ import {
   Avatar,
   Box,
   Button,
+  ButtonGroup,
   Chip,
   CircularProgress,
   Grid,
@@ -79,10 +80,14 @@ import ElevationStats from '../components/ElevationStats';
 import ElevationDataDownload, { ElevationDataDownloadHeader } from '../components/ElevationDataDownload';
 import { holeDataToGeoJSON } from '../utils/geojson';
 import HolesList from '../components/HolesList';
+import GenerateTerrainDialog from '../dialogs/GenerateTerrainDialog';
 
 
 const LOCAL_STORAGE_BASE_LAYER = 'ogs-map-base';
 const MIN_LABEL_ZOOM = 17;
+
+const DEFAULT_CENTER = [41.2165937, -97.872955];
+const DEFAULT_ZOOM = 5;
 
 const worldBounds = [
   [-180, -90],
@@ -91,6 +96,7 @@ const worldBounds = [
   [-180, 90],
   [-180, -90]
 ];
+
 
 // Delete the internal '_getIconUrl' so Leaflet doesn't try to guess
 delete L.Icon.Default.prototype._getIconUrl;
@@ -193,6 +199,41 @@ const availableTileLayers = [
   },
 ];
 
+function getInitialLayer() {
+  const stored = window.localStorage.getItem(LOCAL_STORAGE_BASE_LAYER);
+  let initialLayer = availableTileLayers[0].key;
+  if (stored) {
+    const savedLayer = availableTileLayers.find(tl => tl.key === stored);
+    if (savedLayer?.key) {
+      initialLayer = savedLayer.key;
+    }
+  }
+  return initialLayer;
+}
+
+const tileLayers = availableTileLayers.reduce((prev, tile) => {
+  if (tile.quadKey) {
+    const { quadKey, ...rest } = tile;
+    return {
+      ...prev,
+      [tile.key]: L.tileLayer.quadKey(tile.url, {
+        // maxNativeZoom: 19,
+        // maxZoom: 22,
+        subdomains: ['0', '1', '2', '3'],
+        ...rest,
+      }),
+    }
+  }
+  return {
+    ...prev,
+    [tile.key]: L.tileLayer(tile.url, {
+      maxNativeZoom: 19,
+      maxZoom: 22,
+      // pmIgnore: true,
+      ...tile,
+    }),
+  }
+}, {});
 
 const surfaceStyles = {
   tee: { color: '#0f8440' },
@@ -265,6 +306,7 @@ export default function Map() {
   const [satelliteDialogOpen, setSatelliteDialogOpen] = useState(false);
   const [elevationDialogOpen, setElevationDialogOpen] = useState(false);
   const [terrainEditDialogOpen, setTerrainEditDialogOpen] = useState(false);
+  const [terrainGenerateDialogOpen, setTerrainGenerateDialogOpen] = useState(false);
   const [lidarDialogData, setLidarDialogData] = useState(null);
   
   const [isLidarDownloading, setIsLidarDownloading] = useState(false);
@@ -274,6 +316,13 @@ export default function Map() {
   const [treeLayers, setTreeLayers] = useState([]);
   // const [holes, setHoles] = useState([]);
 
+    // Add a tile layer (e.g., OpenStreetMap)
+    // const tileUrl = 'http://mt.google.com/vt/lyrs=s&x={x}&y={y}&z={z}';
+    // const tileUrl = 'https://server.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+    // const tileUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+    
+
+  
   const holeData = useMemo(() => {
     return Array.from(project?.holes?.values()).filter(Boolean).sort((a,b) => a.number < b.number ? -1 : 1) || [];
   }, [project?.holes]);
@@ -297,6 +346,26 @@ export default function Map() {
     ];    
   };
 
+  const handleTerrainTypeChange = useCallback((newTerrainType) => {
+    
+    const update = { terrainType: newTerrainType };
+    const initialLayer = getInitialLayer();
+    if (newTerrainType === 'real') {
+      update.centerPoint = null;
+      update.bounds = null;
+      mapRef.current?.addLayer(tileLayers[initialLayer]);
+      mapRef.current?.setView(DEFAULT_CENTER, DEFAULT_ZOOM);
+    } else {
+      update.centerPoint = { lat: 0, lng: 0 };
+      const [west, south, east, north] = turfPointToBBox(update.centerPoint.lng, update.centerPoint.lat, project.settings.distance);
+      update.bounds = { west, south, east, north };
+      mapRef.current?.removeLayer(tileLayers[initialLayer]);
+      mapRef.current.fitBounds([[north, west], [south, east]]);
+    }
+    
+    setProjectSettings(update);
+
+  }, [tileLayers]);
   // const addSatelliteImageLayer = useCallback(async (item) => {
   //   if (!item.uri) {
   //     return;
@@ -414,9 +483,8 @@ export default function Map() {
 
   const handleGenerateHillShade = async () => {
     setIsPending('hill');
-    const result = await generateHillShade();
+    await generateHillShade();
     setIsPending(null);
-    console.log('result', result);
   }
 
   const handleGenerateSatellite = async () => {
@@ -559,7 +627,14 @@ export default function Map() {
 
 
   const updateOutlineBox = useCallback(() => {
-    if (!outlineLayer.current || !project?.settings?.bounds) {
+    if (!outlineLayer.current) {
+      console.log('dont update');
+      return;
+    }
+
+    outlineLayer.current.clearLayers();
+
+    if (!project?.settings?.bounds) {
       return;
     }
     // if (!outlineLayer.current || !project.settings.centerPoint?.lat || !project.settings.centerPoint?.lng) {
@@ -581,7 +656,7 @@ export default function Map() {
         coordinates: [worldBounds, bboxPolygon.geometry.coordinates[0]] // second ring = hole
       }
     };
-    outlineLayer.current.clearLayers();
+    // outlineLayer.current.clearLayers();
     outlineLayer.current.addData(outlineMask);
 
 
@@ -641,7 +716,7 @@ export default function Map() {
 
   const handleZoomToCenter = () => {
     // mapRef.current
-    if (!project.settings.centerPoint?.lat){
+    if (typeof project.settings.centerPoint?.lat !== 'number'){
       return;
     }
     // const bounds = outlineLayer.current.getBounds();
@@ -832,51 +907,17 @@ export default function Map() {
     console.log('create map...', project.settings);
 
     
-    // Add a tile layer (e.g., OpenStreetMap)
-    // const tileUrl = 'http://mt.google.com/vt/lyrs=s&x={x}&y={y}&z={z}';
-    // const tileUrl = 'https://server.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
-    // const tileUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-    const tileLayers = availableTileLayers.reduce((prev, tile) => {
-      if (tile.quadKey) {
-        const { quadKey, ...rest } = tile;
-        return {
-          ...prev,
-          [tile.key]: L.tileLayer.quadKey(tile.url, {
-            // maxNativeZoom: 19,
-            // maxZoom: 22,
-            subdomains: ['0', '1', '2', '3'],
-            ...rest,
-          }),
-        }
-      }
-      return {
-        ...prev,
-        [tile.key]: L.tileLayer(tile.url, {
-          maxNativeZoom: 19,
-          maxZoom: 22,
-          // pmIgnore: true,
-          ...tile,
-        }),
-      }
-    }, {});
+    // const blankLayer = L.layerGroup(null);
+    // console.log('blankLayer', blankLayer);
 
-    const stored = window.localStorage.getItem(LOCAL_STORAGE_BASE_LAYER);
-    let initialLayer = availableTileLayers[0].key;
-    if (stored) {
-      const savedLayer = availableTileLayers.find(tl => tl.key === stored);
-      if (savedLayer?.key) {
-        initialLayer = savedLayer.key;
-      }
-    }
+    const initialLayer = getInitialLayer();
 
     mapRef.current = L.map(containerRef.current, {
-        center: project.settings.centerPoint?.lat ? [project.settings.centerPoint.lat, project.settings.centerPoint.lng] : [41.2165937, -97.872955],
+        center: project.settings.centerPoint?.lat ? [project.settings.centerPoint.lat, project.settings.centerPoint.lng] : DEFAULT_CENTER,
         zoom: project.settings.centerPoint?.lat ? 15 : 5,
         minZoom: 3,
         maxZoom: 22,
-        layers: [
-          tileLayers[initialLayer]
-        ]
+        layers: project.settings.terrainType === 'real' ? [tileLayers[initialLayer]] : undefined
     });
     
     mapRef.current.on('zoomend', handleZoomChange);
@@ -885,6 +926,8 @@ export default function Map() {
     L.control.layers(tileLayers).addTo(mapRef.current);
 
     drawnItems.current.addTo(mapRef.current);
+
+    handleZoomToCenter();
 
     
     outlineLayer.current = L.geoJSON(null, {
@@ -1082,46 +1125,22 @@ export default function Map() {
               </AccordionSummary>
               <AccordionDetails>
                 <Stack sx={{ p: 2 }} spacing={4}>
+                  <ButtonGroup fullWidth color="primary" size="small">
+                    <Button
+                      onClick={() => handleTerrainTypeChange('real')}
+                      variant={project.settings.terrainType === 'real' ? 'contained' : 'outlined'}
+                    >
+                      Real World
+                    </Button>
+                    <Button
+                      onClick={() => handleTerrainTypeChange('generate')}
+                      variant={project.settings.terrainType === 'generate' ? 'contained' : 'outlined'}
+                    >
+                      Generate
+                    </Button>
+                  </ButtonGroup>
                   
-                  <Stack direction="row" alignItems="center">
-                    <Box flex={1}>
-                      {project.settings.centerPoint?.lat ? (
-                        <Button
-                          color="inherit"
-                          sx={{ fontSize: 10, letterSpacing: 0, p: 1, display: 'inline-block' }}
-                          onClick={() => window.meshery.copyToClipboard(`${project.settings.centerPoint.lat},${project.settings.centerPoint.lng}`)}
-                          // component={Paper}
-                        >
-                          <code>{project.settings.centerPoint.lat.toFixed(4)}, {project.settings.centerPoint.lng.toFixed(4)}</code>
-                        </Button>
-                      ) : (
-                        <Typography color="textSecondary">Not Set</Typography>
-                      )}
-                    </Box>
-                    <Tooltip title="Set Center">
-                      <span>
-                        <IconButton
-                          size="small"
-                          disabled={project.dem}
-                          color={isEditingCenter ? 'primary' : 'inherit'}
-                          onClick={handleCenterClick}
-                        >
-                          <FocusIcon />
-                        </IconButton>
-                      </span>
-                    </Tooltip>
-                    <Tooltip title="Zoom to Area">
-                      <span>
-                        <IconButton
-                          size="small"
-                          disabled={!project.settings.centerPoint?.lat}
-                          onClick={handleZoomToCenter}
-                        >
-                          <ZoomIcon />
-                        </IconButton>
-                      </span>
-                    </Tooltip>
-                  </Stack>
+
                   <Box>
                     <NumberField
                       label="Course Size (km)"
@@ -1134,7 +1153,50 @@ export default function Map() {
                       size="small"
                       onChange={handleDistanceChanged}
                     />
-                  </Box>
+                  </Box>                  
+
+                  {project?.settings.terrainType === 'real' ? (
+                    <Stack direction="row" alignItems="center">
+                      <Box flex={1}>
+                        {project.settings.centerPoint?.lat ? (
+                          <Button
+                            color="inherit"
+                            sx={{ fontSize: 10, letterSpacing: 0, p: 1, display: 'inline-block' }}
+                            onClick={() => window.meshery.copyToClipboard(`${project.settings.centerPoint.lat},${project.settings.centerPoint.lng}`)}
+                            // component={Paper}
+                          >
+                            <code>{project.settings.centerPoint.lat.toFixed(4)}, {project.settings.centerPoint.lng.toFixed(4)}</code>
+                          </Button>
+                        ) : (
+                          <Typography color="textSecondary">Not Set</Typography>
+                        )}
+                      </Box>
+                      <Tooltip title="Set Center">
+                        <span>
+                          <IconButton
+                            size="small"
+                            disabled={project.dem}
+                            color={isEditingCenter ? 'primary' : 'inherit'}
+                            onClick={handleCenterClick}
+                          >
+                            <FocusIcon />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                      <Tooltip title="Zoom to Area">
+                        <span>
+                          <IconButton
+                            size="small"
+                            disabled={!project.settings.centerPoint?.lat}
+                            onClick={handleZoomToCenter}
+                          >
+                            <ZoomIcon />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                    </Stack>
+                  ) : null}
+                  
 
                   {/* <Stack direction="row" alignItems="center" spacing={2}>
                     <Typography sx={{ flexShrink: 0 }}>{settings.distance} km</Typography>
@@ -1147,7 +1209,7 @@ export default function Map() {
 
             <Accordion
               expanded={panelExpanded === 'elevation'}
-              disabled={!project?.settings?.centerPoint}
+              disabled={project?.settings.terrainType === 'real' && !project?.settings?.centerPoint}
               onChange={handlePanelChange('elevation')}
             >
               <AccordionSummary id="elevation-header">
@@ -1157,81 +1219,84 @@ export default function Map() {
                 {/* {project.lidar ? (<CheckIcon />) : null} */}
               </AccordionSummary>
               <AccordionDetails>
-                  {project.stats ? (
-                    <Stack sx={{ p: 2 }} spacing={2}>
-                      <ElevationStats
-                        source={project?.lidar?.points ? `LAZ` : 'Mapzen DSM'}
-                        size={(project?.settings?.distance || 0) * 1000}
-                        height={project?.stats?.relief}
-                        min={project?.stats?.min}
-                        max={project?.stats?.max}
-                        heightMapSize={project._heightMap?.size}
-                      />
-                      <Button
-                        fullWidth
-                        onClick={handleOpenTerrainEdit}
-                        variant="contained"
-                        color="secondary"
-                      >
-                        Edit Terrain
-                      </Button>
-                      {/* <Button fullWidth>Import RAW</Button> */}
-                    </Stack>
+                {project.stats ? (
+                  <Stack sx={{ p: 2 }} spacing={2}>
+                    <ElevationStats
+                      source={project?.lidar?.points ? `LAZ` : 'Mapzen DSM'}
+                      size={(project?.settings?.distance ?? 0) * 1000}
+                      height={project?.stats?.relief ?? 0}
+                      min={project?.stats?.min ?? 0}
+                      max={project?.stats?.max ?? 0}
+                      // heightMapSize={project._heightMap?.size}
+                    />
+                    <Button
+                      fullWidth
+                      onClick={handleOpenTerrainEdit}
+                      variant="contained"
+                      color="secondary"
+                    >
+                      Edit Terrain
+                    </Button>
+                  </Stack>
+                ) : (
+                  project.settings.terrainType === 'generate' ? (
+                    <Box sx={{ p: 2 }}>
+                      <Button onClick={() => setTerrainGenerateDialogOpen(true)} fullWidth color="secondary" variant="contained">Generate Terrain</Button>
+                    </Box>
                   ) : (
-                    <List disablePadding={true} sx={{ p: 2 }}>
-                      {availableLidar?.features.length > 0 ? (
-                        [
-                          <ElevationDataDownloadHeader
-                            key={'lidar-header'}
-                            title="Lidar Sources"
-                            infoText="Lidar is higher resolution elevation data that is usually around 0.5 - 1m in resolution"
-                          />,
-                          ...availableLidar.features.map(feature => (
-                            <ElevationDataDownload
-                              key={feature.properties.name}
-                              name={feature.properties.name}
-                              onDownload={() => processLidar(feature)}
-                            />
-                          ))
-                        ]
-                      ): null}
-                      
-                      <ElevationDataDownloadHeader
-                        title="DSM/DEM Sources"
-                        infoText="Lower resolution digital elevation models range from 5 - 30m in resolution"
-                      />
-                      
-                      {
-                        [
-                          { type: 'dem', name: 'Mapzen DEM' },
-                        ].map((dem) => (
+                  <List disablePadding={true} sx={{ p: 2 }}>
+                    {availableLidar?.features.length > 0 ? (
+                      [
+                        <ElevationDataDownloadHeader
+                          key={'lidar-header'}
+                          title="Lidar Sources"
+                          infoText="Lidar is higher resolution elevation data that is usually around 0.5 - 1m in resolution"
+                        />,
+                        ...availableLidar.features.map(feature => (
                           <ElevationDataDownload
-                            key={dem.name}
-                            name={dem.name}
-                            onDownload={() => processLidar(dem)}
+                            key={feature.properties.name}
+                            name={feature.properties.name}
+                            onDownload={() => processLidar(feature)}
                           />
                         ))
-                      }
+                      ]
+                    ): null}
+                    
+                    <ElevationDataDownloadHeader
+                      title="DSM/DEM Sources"
+                      infoText="Lower resolution digital elevation models range from 5 - 30m in resolution"
+                    />
+                    
+                    {
+                      [
+                        { type: 'dem', name: 'Mapzen DEM' },
+                      ].map((dem) => (
+                        <ElevationDataDownload
+                          key={dem.name}
+                          name={dem.name}
+                          onDownload={() => processLidar(dem)}
+                        />
+                      ))
+                    }
 
-                        {/* <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', p: 2 }}>
-                          <Typography component="div" variant="caption" color="textSecondary" sx={{ textAlign: 'center' }}>
-                            {`No lidar exists for this course yet :(`}
-                          </Typography>
-                          <Button onClick={() => processLidar({ type: 'dem', name: 'Copernicus 30m DSM' })}>
-                            Use 30m DEM
-                          </Button>
-                        </Box> */}
+                      {/* <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', p: 2 }}>
+                        <Typography component="div" variant="caption" color="textSecondary" sx={{ textAlign: 'center' }}>
+                          {`No lidar exists for this course yet :(`}
+                        </Typography>
+                        <Button onClick={() => processLidar({ type: 'dem', name: 'Copernicus 30m DSM' })}>
+                          Use 30m DEM
+                        </Button>
+                      </Box> */}
 
-                    </List>
-                  )}
-                
-
+                  </List>
+                  )
+                )}
               </AccordionDetails>
 
             </Accordion>
             <Accordion
               expanded={panelExpanded === 'layers'}
-              disabled={!project?.settings?.centerPoint || !project?._heightMap}
+              disabled={!project?.settings?.centerPoint || !project?.raw}
               onChange={handlePanelChange('layers')}
             >
               <AccordionSummary id="layers-header">
@@ -1269,57 +1334,47 @@ export default function Map() {
                         </IconButton>
                       )
                     )}
-                    // menuItems={project.hillShade && [
-                    //   {
-                    //     label: layerVisibility.hillshade ? 'Hide Layer' : 'Show Layer',
-                    //     icon: layerVisibility.hillshade ? <Visibility /> : <VisibilityOff />,
-                    //     onClick: () => handleShowHideLayer('hillshade', hillshadeLayer)
-                    //   },
-                    //   {
-                    //     label: 'Generate Hillshade',
-                    //     icon: <MagicIcon />,
-                    //     disabled: !!project.hillShade,
-                    //     onClick: handleGenerateHillShade
-                    //   }
-                    // ]}
                   />
 
-                  {satelliteLayers.map(satellite => (
-                    <CustomListItem
-                      key={satellite.source}
-                      icon={<SatelliteIcon />}
-                      endAction={
-                        satellite.source === 'none' && (
-                          <Button
-                            size="small"
-                            disabled={isPending === 'sat'}
-                            variant="contained"
-                            color="secondary"
-                            onClick={handleGenerateSatellite}
-                          >
-                            {isPending === 'sat' ? <CircularProgress size={14} color="inherit" /> : 'Generate'}
-                          </Button>
-                        )
-                      }        
-                      // endIcon={<CheckIcon color={satellite.source !== 'none' ? 'success' : 'secondary'} />}
-                      // hidden={layerVisibility.satellite !== satellite.source}
-                      label={'Satellite'}
-                      secondary={satellite.source}
-                      menuItems={[
-                        // satellite.source !== 'none' && {
-                        //   label: layerVisibility.satellite === satellite.source ? 'Hide Layer' : 'Show Layer',
-                        //   icon: layerVisibility.satellite === satellite.source ? <Visibility /> : <VisibilityOff />,
-                        //   onClick: () => handleShowHideSatelliteLayer(satellite.source)
-                        // },
-                        {
-                          label: 'Add Satellite',
-                          icon: <SatelliteIcon />,
-                          disabled: satelliteLayers.length === 3,
-                          onClick: handleGenerateSatellite
-                        }
-                      ].filter(Boolean)}
-                    />
-                  ))}
+                  {project.settings.terrainType === 'real' ? (
+                    satelliteLayers.map(satellite => (
+                      <CustomListItem
+                        key={satellite.source}
+                        icon={<SatelliteIcon />}
+                        endAction={
+                          satellite.source === 'none' && (
+                            <Button
+                              size="small"
+                              disabled={isPending === 'sat'}
+                              variant="contained"
+                              color="secondary"
+                              onClick={handleGenerateSatellite}
+                            >
+                              {isPending === 'sat' ? <CircularProgress size={14} color="inherit" /> : 'Generate'}
+                            </Button>
+                          )
+                        }        
+                        // endIcon={<CheckIcon color={satellite.source !== 'none' ? 'success' : 'secondary'} />}
+                        // hidden={layerVisibility.satellite !== satellite.source}
+                        label={'Satellite'}
+                        secondary={satellite.source}
+                        menuItems={[
+                          // satellite.source !== 'none' && {
+                          //   label: layerVisibility.satellite === satellite.source ? 'Hide Layer' : 'Show Layer',
+                          //   icon: layerVisibility.satellite === satellite.source ? <Visibility /> : <VisibilityOff />,
+                          //   onClick: () => handleShowHideSatelliteLayer(satellite.source)
+                          // },
+                          {
+                            label: 'Add Satellite',
+                            icon: <SatelliteIcon />,
+                            disabled: satelliteLayers.length === 3,
+                            onClick: handleGenerateSatellite
+                          }
+                        ].filter(Boolean)}
+                      />
+                    ))
+                  ) : null}
+
 
                   
                   <CustomListItem
@@ -1386,7 +1441,7 @@ export default function Map() {
 
             <Accordion
               expanded={panelExpanded === 'holes'}
-              disabled={!project?.settings?.centerPoint}
+              disabled={!project?.settings?.centerPoint || !project?.raw}
               onChange={handlePanelChange('holes')}
             >
               <AccordionSummary id="holes-header">
@@ -1440,6 +1495,10 @@ export default function Map() {
         data={lidarDialogData}
         layerRef={outlineLayer}
         onClose={() => setLidarDialogData(null)}
+      />
+      <GenerateTerrainDialog
+        open={terrainGenerateDialogOpen}
+        onClose={() => setTerrainGenerateDialogOpen(false)}
       />
       <EditTerrainDialog
         open={terrainEditDialogOpen}

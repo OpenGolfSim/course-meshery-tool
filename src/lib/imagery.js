@@ -77,6 +77,7 @@ async function getElevationRange(tifPath) {
     min: clampedMin,
     max: clampedMax,
     mean,
+    heightScale: relief,
     relief,
     stddev,
   };
@@ -205,11 +206,13 @@ export async function downloadCourseDEM(bounds) {
   openProject.raw = raw;
 
   await saveProjectSettings();
-  refreshRawData(true);
-  broadcast('project.opened', openProject); 
 
-  return { dem, raw };
+  refreshRawData(true);
+  // broadcast('project.opened', openProject); 
+
+  return { dem, raw, stats };
 }
+
 export async function generateSatelliteImage(wmsSource) {
   // const { lidarSRS, bounds, wmsSource, outputFile } = options;
   const wmsPath = path.join(WMS_FOLDER, `${wmsSource || 'google'}.xml`);
@@ -281,7 +284,7 @@ export async function generateSatelliteImage(wmsSource) {
   openProject.satellite = satellite;
 
   await saveProjectSettings();
-  broadcast('project.opened', openProject); 
+  // broadcast('project.opened', openProject); 
   
   return { satellite };
 }
@@ -352,7 +355,7 @@ export async function generateHillShade() {
 
   openProject.hillShade = hillShade;
   await saveProjectSettings();
-  broadcast('project.opened', openProject); 
+  // broadcast('project.opened', openProject); 
 
   return { hillShade };
 }
@@ -395,7 +398,7 @@ export async function generateRAWFile() {
 
   openProject.raw = raw;
   await saveProjectSettings();
-  broadcast('project.opened', openProject); 
+  // broadcast('project.opened', openProject); 
 
   return raw;
 }

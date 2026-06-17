@@ -1,4 +1,4 @@
-import React, { Fragment, useState, useRef, useCallback, useEffect } from 'react';
+import React, { Fragment, useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { Dialog, DialogTitle, DialogContent, DialogActions, Button, Box, Typography, CircularProgress, Alert, Grid, List, ListItem, Checkbox, ListItemIcon, Stack, ListItemText, Link, Chip, FormControlLabel, FormControl, Tooltip } from '@mui/material';
 import CheckIcon from '@mui/icons-material/Check';
 import InfoIcon from '@mui/icons-material/Info';
@@ -13,8 +13,17 @@ export default function SearchShapesDialog(props) {
   const [endpoints, setEndpoints] = useState([]);
   const [results, setResults] = useState(null);
   const [error, setError] = useState();
-  const [included, setIncluded] = useState({ hillShade: true, satellite: true, shapes: false });
   
+  const hasSatellite = useMemo(() => {
+    return Object.keys(project?.satellite || {}).length > 0;
+  }, [project?.satellite]);
+
+  const [included, setIncluded] = useState({
+    hillShade: !!project?.hillShade,
+    satellite: hasSatellite,
+    shapes: false
+  });
+
   const handleSkip = useCallback(async () => {
     setExportState(old => ({ ...old, phase: 'export' }));
   }, []);
@@ -47,11 +56,11 @@ export default function SearchShapesDialog(props) {
 
   const handleSave = useCallback(async () => {
     console.log('save it', results);
-    const file = await window.meshery.project.saveSVG();
+    const file = await window.meshery.project.saveSVG({ paths: results.paths, included });
     if (props.onSave) {
       props.onSave();
     }
-  }, [results]);
+  }, [results, included]);
 
   useEffect(() => {
     if (!props.open || !project.settings.centerPoint || !project.settings.distance) {
@@ -77,7 +86,7 @@ export default function SearchShapesDialog(props) {
       <DialogContent>
 
         <Stack spacing={3} sx={{ alignItems: 'center', justifyItems: 'center', textAlign: 'center' }}>
-          <Typography variant="h4">Export SVG</Typography>
+          <Typography variant="h4">Generate SVG</Typography>
         </Stack>
 
         <Stack sx={{ p: 5 }} spacing={3}>
@@ -99,7 +108,7 @@ export default function SearchShapesDialog(props) {
           
           <FormControl>
             <FormControlLabel
-              disabled={!project?.satellite}
+              disabled={!hasSatellite}
               control={(
                 <Checkbox
                   checked={included.satellite}
@@ -133,7 +142,7 @@ export default function SearchShapesDialog(props) {
                 </Stack>
               )}
             />
-                        
+
             <Box>
               {results ? (
                 <Box>
@@ -150,7 +159,7 @@ export default function SearchShapesDialog(props) {
                   variant="contained"
                   color="secondary"
                   startIcon={isPending && <CircularProgress size={18} />}
-                  disabled={isPending}
+                  disabled={project.settings.terrainType !== 'real' || isPending}
                   onClick={handleSearch}
                 >
                   Search OSM Shapes

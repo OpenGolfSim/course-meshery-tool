@@ -36,7 +36,7 @@ contextBridge.exposeInMainWorld('meshery', {
     storeSettings: (settings) => ipcRenderer.invoke('project.storeSettings', settings),
     getSettings: () => ipcRenderer.invoke('project.getSettings'),
     recent: () => ipcRenderer.invoke('project.recent'),
-    saveSVG: () => ipcRenderer.invoke('project.saveSVG'),
+    saveSVG: (options) => ipcRenderer.invoke('project.saveSVG', options),
     // meshes
     generateMeshes: (layerSettings, terrainSettings) => ipcRenderer.invoke('project.generateMeshes', layerSettings, terrainSettings),
     getMeshDataState: () => ipcRenderer.invoke('project.getMeshDataState'),
@@ -47,6 +47,7 @@ contextBridge.exposeInMainWorld('meshery', {
     updateHoleByNumber: (holeNumber, update) => ipcRenderer.invoke('project.updateHoleByNumber', holeNumber, update),
 
     updateScene: (update) => ipcRenderer.invoke('project.updateScene', update),
+    getHeightMap: () => ipcRenderer.invoke('project.getHeightMap'),
     // saveWrite: (settings) => ipcRenderer.invoke('project.saveWrite', settings),
 
     // saveProject: (trees) => ipcRenderer.invoke('project.updateTrees', trees)
@@ -64,7 +65,8 @@ contextBridge.exposeInMainWorld('meshery', {
   terrain: {
     getToken: () => ipcRenderer.invoke('terrain.token'),
     applySmoothing: (data, radius) => ipcRenderer.invoke('terrain.applySmoothing', data, radius),
-    saveHeightMap: (data) => ipcRenderer.invoke('terrain.saveHeightMap', data)
+    saveHeightMap: (data, heightScale) => ipcRenderer.invoke('terrain.saveHeightMap', data, heightScale),
+    generate: (type) => ipcRenderer.invoke('terrain.generate', type),
   },
   imagery: {
     hillShade: () => ipcRenderer.invoke('imagery.hillShade'),

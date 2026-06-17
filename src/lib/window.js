@@ -18,6 +18,7 @@ export async function createWindow(preloadUrl, mainUrl) {
   mainWindow = new BrowserWindow({
     width,
     height,
+    backgroundColor: '#000',
     webPreferences: {
       preload: preloadUrl,
       nodeIntegrationInWorker: true
@@ -80,7 +81,7 @@ export function setupProtocolHandler() {
     const fetchFile = pathToFileURL(filePath).toString();
     return net.fetch(fetchFile);
   });
-
+  
   protocol.handle(PROJECT_FILE_PROTOCOL, (request) => {
     const key = request.url.slice(PROJECT_FILE_PROTOCOL.length + 3);
     if (key.includes(TREE_IMPORT_PREFIX)) {

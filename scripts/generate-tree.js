@@ -1,9 +1,27 @@
-import { Document, NodeIO } from "@gltf-transform/core";
-import { dedup, prune } from "@gltf-transform/functions";
+/**
+ * Usage:
+ * 
+ * 
+ * We recommend creating trees with LODs and billboards in SpeedTree, exporting as OBJ, and then using the below script to convert to a single GLB that can be used with Meshery tree planting.
+ *
+ * Usage:
+ * 
+ * npm run generate-tree -- \
+ * /path/to/tree/Oak_LOD1.obj \
+ * /path/to/tree/Oak_LOD2.obj \
+ * /path/to/tree/Oak_LOD3.obj \
+ * /output/OakTree.glb
+ 
+*/
 import fs from "node:fs";
 import path from "node:path";
-import { addOBJ } from "./obj.js";
-import { addGLB } from "./gltf.js";
+import { Document, NodeIO } from "@gltf-transform/core";
+import { dedup, prune } from "@gltf-transform/functions";
+import { KHRTextureBasisu } from "@gltf-transform/extensions";
+import { ktx2 } from "ktx2-encoder/gltf-transform";
+import sharp from "sharp";
+import { addOBJ } from "../src/trees/lib/obj.js";
+import { addGLB } from "../src/trees/lib/gltf.js";
 
 const inputFiles = process.argv.slice(2, -1);
 const output = process.argv.at(-1);
@@ -13,8 +31,11 @@ if (inputFiles.length < 1 || !output?.endsWith(".glb")) {
   process.exit(1);
 }
 
-const io = new NodeIO();
+const io = new NodeIO().registerExtensions([KHRTextureBasisu]);
+
 const doc = new Document();
+doc.createExtension(KHRTextureBasisu);
+
 const buffer = doc.createBuffer();
 const scene = doc.createScene("SpeedTree");
 const root = doc.createNode("Tree").setExtras({ lod_count: inputFiles.length });
@@ -43,6 +64,24 @@ for (let i = 0; i < inputFiles.length; i++) {
 // buffers/orphan nodes and dedupe textures shared across LODs.
 for (const a of doc.getRoot().listAccessors()) a.setBuffer(buffer);
 await doc.transform(dedup(), prune());
+
+await doc.transform(
+  dedup(),
+  prune(),
+  ktx2({
+    isUASTC: true,
+    generateMipmap: true,
+    imageDecoder: async (data) => {
+      const { info, data: raw } = await sharp(Buffer.from(data))
+        .ensureAlpha()
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+      const pixels = new Uint8Array(raw.length);
+      pixels.set(raw);
+      return { width: info.width, height: info.height, data: pixels };
+    }
+  })
+);
 
 await io.write(output, doc);
 const mb = (fs.statSync(output).size / 1024 / 1024).toFixed(2);

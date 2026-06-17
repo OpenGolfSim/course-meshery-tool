@@ -67,7 +67,15 @@ module.exports = {
               preload: {
                 js: './src/preload.js',
               },
-            }
+            },
+            {
+              html: './src/trees/tree.html',
+              js: './src/trees/tree_renderer.js',
+              name: 'tree_window',
+              preload: {
+                js: './src/trees/preload.js',
+              },
+            },
           ],
         },
         devContentSecurityPolicy: [

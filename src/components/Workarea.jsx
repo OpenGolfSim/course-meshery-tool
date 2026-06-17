@@ -3,22 +3,11 @@ import { AppBar, Box, Tab, Tabs, Typography, useTheme } from "@mui/material";
 import TerrainIcon from '@mui/icons-material/Terrain';
 import DrawIcon from '@mui/icons-material/Draw';
 import CourseIcon from '@mui/icons-material/Map';
-// import {
-//   MemoryRouter,
-//   Route,
-//   Routes,
-//   Link,
-//   matchPath,
-//   useLocation,
-//   StaticRouter,
-// } from 'react-router';
-// import Terrain from '../pages/Terrain.jsx';
 import Map from '../pages/Map.jsx';
 import Course from '../pages/Course.jsx';
 import { TopNavTab, TopNavTabs } from './Tabs.jsx';
 import { useProject } from '../contexts/Project.jsx';
 import Welcome from '../pages/Welcome.jsx';
-import { MesheryProvider } from '../contexts/Meshery.jsx';
 import { useInstaller } from '../contexts/Installer.jsx';
 import Install from '../pages/Install.jsx';
 
@@ -56,7 +45,7 @@ function CustomTabPanel(props) {
 export default function Workarea() {
   const { installState } = useInstaller();
   const { project } = useProject();
-  const [currentTab, setCurrentTab] = useState(1);
+  const [currentTab, setCurrentTab] = useState(0);
   const handleChange = (event, newValue) => {
     setCurrentTab(newValue);
   };

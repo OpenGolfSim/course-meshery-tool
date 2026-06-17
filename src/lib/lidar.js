@@ -124,12 +124,15 @@ async function getHeightStatsInMeters(lazPath) {
         ));
       }
 
+      const relief = (zStats.maximum - zStats.minimum) * factor;
+
       resolve({
         min: zStats.minimum * factor,
         max: zStats.maximum * factor,
         mean: zStats.average * factor,
         stddev: zStats.stddev * factor,
-        relief: (zStats.maximum - zStats.minimum) * factor,
+        heightScale: relief,
+        relief,
         unit: 'meters',
         _meta: {
           originalUnit: verticalUnit || horizontalUnit || 'unknown',
@@ -371,9 +374,9 @@ export async function downloadCourse(geoJSON, bounds) {
 
       
       await saveProjectSettings();
-      broadcast('project.opened', openProject); 
+      // broadcast('project.opened', openProject); 
 
-      resolve({ lidar, dem, raw });
+      resolve({ lidar, dem, raw, stats: lazStats });
 
       refreshRawData(true);
     

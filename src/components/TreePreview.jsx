@@ -3,7 +3,12 @@ import React, { useRef, useEffect, useMemo } from 'react';
 import * as THREE from 'three';
 import { useThree, useLoader, useFrame } from '@react-three/fiber';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
+import { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader';
 import { positionsToMaskData } from '../utils/treeMask';
+import { RESOURCES_FILE_PROTOCOL } from '../constants.js';
+
+// const TRANSCODER_PATH = 'https://cdn.jsdelivr.net/gh/pmndrs/drei-assets/basis/';
+const TRANSCODER_PATH = `${RESOURCES_FILE_PROTOCOL}://basis/`;
 
 function loadTree(tree) {
   const treeGroup = new THREE.Group();
@@ -86,7 +91,7 @@ function loadTree(tree) {
   treeGroup.children.forEach((child) => {
     child.position.x -= center.x;
     child.position.z -= center.z;
-    child.position.y -= box.min.y;
+    child.position.y -= Math.max(0, box.min.y);  // only shift DOWN if model floats above origin
   });
 
   return treeGroup;
@@ -164,12 +169,18 @@ function flattenGLTF(gltfScene) {
 }
 
 export function TreePreview({ worldSize, groundRef, heightMap, heightScale, positions, trees, seed = 12345 }) {
-  const scene = useThree((s) => s.scene);
+  // const scene = useThree((s) => s.scene);
+  const { scene, gl } = useThree();
+
   const planterRef = useRef(null);
 
   // Load all models in one suspended call
   const urls = useMemo(() => (trees || []).map((t) => t.url), [trees]);
-  const gltfs = useLoader(GLTFLoader, urls);
+  // const gltfs = useLoader(GLTFLoader, urls);
+  const gltfs = useLoader(GLTFLoader, urls, (loader) => {
+    const ktx2Loader = new KTX2Loader().setTranscoderPath(TRANSCODER_PATH).detectSupport(gl);
+    loader.setKTX2Loader(ktx2Loader);
+  });
 
   const resolvedTrees = useMemo(() => {
     return (trees || []).map((t, i) => ({

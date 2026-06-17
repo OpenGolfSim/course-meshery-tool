@@ -12,8 +12,9 @@ import { dataCache, smoothTerrainData } from './lib/terrain';
 import { defaultSettings } from './lib/settings';
 import { createWindow } from './lib/window';
 import { pathToFileURL, parse as parseUrl } from 'node:url';
+import { PROJECT_FILE_PROTOCOL, RESOURCES_FILE_PROTOCOL, TREE_MAKER_FILE_PROTOCOL } from './constants';
 import './lib/ipc';
-import { PROJECT_FILE_PROTOCOL, RESOURCES_FILE_PROTOCOL } from './constants';
+import './trees/main';
 
 const MAX_FILESIZE = 1e6; // Anything over 1 MB probably has images in it
 
@@ -32,7 +33,7 @@ protocol.registerSchemesAsPrivileged([
       corsEnabled: true 
     } 
   },
-  { 
+  {
     scheme: RESOURCES_FILE_PROTOCOL, 
     privileges: { 
       standard: true, 
@@ -41,7 +42,17 @@ protocol.registerSchemesAsPrivileged([
       bypassCSP: true,
       corsEnabled: true 
     } 
-  }
+  },
+  {
+    scheme: TREE_MAKER_FILE_PROTOCOL, 
+    privileges: { 
+      standard: true, 
+      secure: true, 
+      supportFetchAPI: true,
+      bypassCSP: true,
+      corsEnabled: true 
+    } 
+  },
 ]);
 
 buildAppMenu();

@@ -79,7 +79,7 @@ export default function CourseMapCapture({ worldSize, captureRef }) {
       ctx.putImageData(imageData, 0, 0);
       rt.dispose();
 
-      return canvas.toDataURL('image/png');
+      return canvas.toDataURL('image/jpeg', 90);
     }
   }), [gl, scene, camera]);
 

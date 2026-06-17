@@ -1,4 +1,9 @@
+import fs from 'fs';
+import path from 'path';
 import logger from 'electron-log';
+import { _heightMapCache, openProject, saveProjectSettings } from './project';
+import { PROJECT_FILE_PROTOCOL, TERRAIN_DIR } from '../constants';
+import { broadcast } from './window';
 
 const log = logger.scope('TERRAIN');
 
@@ -173,143 +178,6 @@ function computeSmoothNormals(points, triangles) {
   return norms;
 }
 
-export function conformMeshToTerrain(layer, mesh, project) {
-  let svgSize = Math.round(project.settings.distance * 1000);
-  let heightScale = project?.stats?.relief || 1;
-  if (!(svgSize > 0)) {
-    throw new Error('SVG size is invalid');
-  }
-  const positions = [];
-  const heightData = project._heightMap?.smoothData || project._heightMap?.data;
-  const heightSize = project._heightMap?.size;
-
-  if (!heightData) {
-    throw new Error('No heightmap data');
-  } else if (!heightSize) {
-    throw new Error('No heightmap size');
-  }
-
-  // const hasHeightMap = !!(project._heightMap?.data && project._heightMap?.size);
-  const isLakeSurface = layer.surface === 'plane_lake';
-  const isRiverSurface = layer.surface === 'plane_river';
-
-  // Pre-pass for lakes: find the lowest terrain height across the shape so
-  // the whole surface can sit flat at that elevation.
-  let lakeY = 0;
-  if (isLakeSurface) {
-    let minRaw = Infinity;
-    for (let index = 0; index < mesh.points.length; index += 3) {
-      const x = mesh.points[index];
-      const z = mesh.points[index + 2];
-      const [tx, tz] = svgToTerrain(x, z, svgSize, heightSize);
-      const h = interpHeight(heightData, tx, tz, heightSize);
-      if (h < minRaw) minRaw = h;
-    }
-    if (minRaw !== Infinity) {
-      lakeY = (minRaw / 65535) * heightScale;
-    }
-  }
-  // Pre-pass for rivers: find boundary vertices and their terrain heights
-  // so interior vertices can interpolate from the banks
-  let boundaryVerts = null;
-  let boundaryHeights = null;
-  if (isRiverSurface) {
-    const edgeCount = new Map();
-    for (let t = 0; t < mesh.triangles.length; t += 3) {
-      const tri = [mesh.triangles[t], mesh.triangles[t+1], mesh.triangles[t+2]];
-      for (let e = 0; e < 3; e++) {
-        const a = Math.min(tri[e], tri[(e+1)%3]);
-        const b = Math.max(tri[e], tri[(e+1)%3]);
-        const key = `${a},${b}`;
-        edgeCount.set(key, (edgeCount.get(key) || 0) + 1);
-      }
-    }
-
-    boundaryVerts = new Set();
-    for (const [key, count] of edgeCount) {
-      if (count === 1) {
-        const [a, b] = key.split(',').map(Number);
-        boundaryVerts.add(a);
-        boundaryVerts.add(b);
-      }
-    }
-
-    boundaryHeights = [];
-    for (const vi of boundaryVerts) {
-      const bx = mesh.points[vi * 3];
-      const bz = mesh.points[vi * 3 + 2];
-      const [tx, tz] = svgToTerrain(bx, bz, svgSize, heightSize);
-      const by = (interpHeight(heightData, tx, tz, heightSize) / 65535) * heightScale;
-      boundaryHeights.push({ x: bx, z: bz, y: by });
-    }
-  }
-
-  // const mesh = layer.mesh;
-  for (let index = 0; index < mesh.points.length; index += 3) {
-    const x = mesh.points[index];
-    let y = 0; // mesh.points[index + 1];
-    const z = mesh.points[index + 2];
-    
-    if (isLakeSurface) {
-      // make lake surface mesh flat, but at lowest point of terrain data for this area?
-      y = lakeY;
-    } else if (isRiverSurface) {
-      const vi = index / 3;
-      if (boundaryVerts.has(vi)) {
-        const [tx, tz] = svgToTerrain(x, z, svgSize, heightSize);
-        y = (interpHeight(heightData, tx, tz, heightSize) / 65535) * heightScale;
-      } else {
-        let weightSum = 0, heightSum = 0;
-        for (const bv of boundaryHeights) {
-          const dx = x - bv.x;
-          const dz = z - bv.z;
-          const w = 1 / (dx * dx + dz * dz + 0.001);
-          weightSum += w;
-          heightSum += w * bv.y;
-        }
-        y = heightSum / weightSum;
-      }
-    // } else if (isRiverSurface) {
-    //   const [tx, tz] = svgToTerrain(x, z, svgSize, heightSize);
-    //   const sampleRadius = 4;
-    //   const r2 = sampleRadius * sampleRadius;
-
-    //   let sum = 0, count = 0;
-    //   for (let dx = -sampleRadius; dx <= sampleRadius; dx++) {
-    //     for (let dz = -sampleRadius; dz <= dz <= sampleRadius; dz++) {
-    //       if (dx * dx + dz * dz <= r2) {
-    //         const sx = Math.max(0, Math.min(heightSize - 1, tx + dx));
-    //         const sz = Math.max(0, Math.min(heightSize - 1, tz + dz));
-    //         sum += interpHeight(heightData, sx, sz, heightSize);
-    //         count++;
-    //       }
-    //     }
-    //   }
-
-    //   y = ((sum / count) / 65535) * heightScale;
-    } else {
-      const [tx, tz] = svgToTerrain(x, z, svgSize, heightSize);
-      // Get/interpolate terrain height
-      y = interpHeight(heightData, tx, tz, heightSize);
-
-      // If Unity height range is [0, 65535], you might want to scale to meters
-      // For example, if your terrain in Unity is 600m tall, scale = 600/65535
-      // If not, just use the raw value.
-      y = (y / 65535) * heightScale;
-    }
-    
-    positions.push(x, y, z);
-  }
-
-  const points = new Float32Array(positions);
-  const normals = computeSmoothNormals(points, mesh.triangles);
-
-  return {
-    ...mesh,
-    normals,
-    points
-  }
-}
 
 function svgToTerrain(x, z, svgSize, terrainSize = 4097) {
   // Clamp/limit to prevent overflow on edges
@@ -340,3 +208,74 @@ function interpHeight(heights, tx, tz, terrainSize = 4097) {
   return h0 * (1 - fz) + h1 * fz;
 }
 
+export function getHeightMapStats(heightMapData, heightScale) {
+  const len = heightMapData.length;
+  let min = 65535;
+  let max = 0;
+  let sum = 0;
+
+  for (let i = 0; i < len; i++) {
+    const v = heightMapData[i];
+    if (v < min) min = v;
+    if (v > max) max = v;
+    sum += v;
+  }
+
+  const toMeters = (v) => (v / 65535) * terrainMaxHeight;
+
+  const meanRaw = sum / len;
+
+  // Second pass for stddev
+  let sqDiffSum = 0;
+  for (let i = 0; i < len; i++) {
+    const diff = heightMapData[i] - meanRaw;
+    sqDiffSum += diff * diff;
+  }
+
+  return {
+    min: toMeters(min),
+    max: toMeters(max),
+    mean: toMeters(meanRaw),
+    heightScale,
+    relief: toMeters(max - min),
+    stddev: toMeters(Math.sqrt(sqDiffSum / len)),
+  };
+}
+
+export async function generateTerrain() {
+  const height = 0;
+  const size = 4096;
+  const heightmap = new Uint16Array(size * size);
+  heightmap.fill(height);
+
+  const generatedFile = `gen_${Date.now().toString(16)}.raw`;
+  const imageryFolder = path.join(openProject._workingDir, TERRAIN_DIR);
+
+  if (!fs.existsSync(imageryFolder)) {
+    fs.mkdirSync(imageryFolder);
+  }
+
+  const outputRaw = path.join(imageryFolder, generatedFile);
+
+  await fs.promises.writeFile(outputRaw, Buffer.from(heightmap.buffer));
+
+  const raw = {
+    filePath: outputRaw,
+    uri: `${PROJECT_FILE_PROTOCOL}:///${path.join(TERRAIN_DIR, generatedFile)}`
+  };
+  const stats = {
+    min: 0,
+    max: 0,
+    mean: 0,
+    heightScale: 100,
+    relief: 0,
+    stddev: 0,
+  };
+  openProject.raw = raw;
+  openProject.stats = stats;
+  
+  await saveProjectSettings();
+
+  return { raw, stats };
+  // broadcast('project.opened', openProject);
+}

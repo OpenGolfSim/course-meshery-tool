@@ -38,12 +38,13 @@ export async function buildShapeCache() {
 
   await fs.promises.writeFile(cacheOutput, raw);
 
-  openProject.layerCache = {
+  const layerCache = {
     filename,
     filePath: cacheOutput,
     modifiedAt: Date.now()
   };
+  openProject.layerCache = layerCache;
   await saveProjectSettings();
-  broadcast('project.opened', openProject);
-  
+  // broadcast('project.opened', openProject);
+  return { layerCache };
 }

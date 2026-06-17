@@ -1,6 +1,7 @@
 import { app, dialog, Menu, Tray, shell } from 'electron';
 import * as project from './project';
 import { isInstalled } from './tools';
+import { createTreeMakerWindow } from '../trees/main';
 
 let appMenu;
 let exportRawMenu;
@@ -39,6 +40,11 @@ export function buildAppMenu() {
           click: () => project.close(),
           enabled: project.isOpen(),
           accelerator: 'CommandOrControl+O'
+        },
+        { type: 'separator' },
+        {
+          label: 'Tree Maker',
+          click: () => createTreeMakerWindow()
         },
         // {
         //   label: 'Save Project',

@@ -309,7 +309,7 @@ function TreeCanvas({ satelliteLayer, svgBuffer, positions, onStrokeEnd, brushSi
         onContextMenu={(e) => e.evt.preventDefault()}
       >
         <Layer>
-          <Rect x={0} y={0} width={SIZE} height={SIZE} fill="white" />
+          <Rect x={0} y={0} width={SIZE} height={SIZE} fill="#aaa" />
           {satImage && <KonvaImage image={satImage} width={SIZE} height={SIZE} />}
           {svgImage && <KonvaImage image={svgImage} width={SIZE} height={SIZE} />}
           <KonvaImage

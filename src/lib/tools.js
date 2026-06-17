@@ -70,9 +70,9 @@ function selectAsset(assets) {
   if (process.platform === 'win32') {
     return assets.find(asset => asset.name.includes('python-env-windows'));
   } else if (process.platform === 'darwin' && process.arch === 'x64') {
-    return assets.find(asset => asset.name.includes('python-env-x64'));
+    return assets.find(asset => asset.name.includes('python-env-macos-x64'));
   } else if (process.platform === 'darwin' && process.arch === 'arm64') {
-    return assets.find(asset => asset.name.includes('python-env-arm64'));
+    return assets.find(asset => asset.name.includes('python-env-macos-arm64'));
   } else {
     throw new Error('Unsupported platform');
   }

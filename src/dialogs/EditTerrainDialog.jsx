@@ -382,7 +382,7 @@ export default function EditTerrainDialog(props) {
   const heightMap = useRef();
   const [heightMapVersion, setHeightMapVersion] = useState(0);
   // const [heightMap, setHeightMap] = useState();
-  const [heightScale, setHeightScale] = useState(project.stats?.relief || 10);
+  const [heightScale, setHeightScale] = useState(project.stats?.heightScale || 100);
   const [brushRadius, setBrushRadius] = useState(12);
   const [brushStrength, setBrushStrength] = useState(3);
   const [smoothStrength, setSmoothStrength] = useState(2);
@@ -435,10 +435,10 @@ export default function EditTerrainDialog(props) {
   
   const handleSaveChanges = useCallback(async () => {
     // const current = meshRef.current?.exportHeightMap() || heightMap;
-    await window.meshery.terrain.saveHeightMap(heightMap.current);
+    await window.meshery.terrain.saveHeightMap(heightMap.current, heightScale);
     // console.log('heightMap', heightMap);
     onClose();
-  }, []);
+  }, [heightScale]);
 
   const handleListItemClick = (value) => {
     onClose(value);

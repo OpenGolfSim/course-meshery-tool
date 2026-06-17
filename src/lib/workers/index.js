@@ -1,6 +1,8 @@
 import { app, session, shell, BrowserWindow, ipcMain, dialog, protocol, net } from 'electron';
 import path from 'path';
 import { spawn, Thread, Worker } from 'threads';
+import { Transfer } from 'threads/worker';
+import { _heightMapCache } from '../project';
 
 function getWorker(workerFilename) {
   return spawn(new Worker(path.join(__dirname, workerFilename)));
@@ -29,13 +31,13 @@ export async function svgToCourseLayers(data, onProgress) {
   return result;
 }
 
-export async function layerToMesh(layer, shape, project) {
+export async function layerToMesh(layer, shape, project, heightMap) {
   const meshWorker = await getWorker('mesh.worker.js');
   let mesh = await meshWorker.generateMesh(layer, shape);
   if (!mesh.points.length || !mesh.triangles.length) {
     console.log(`No points or triangles generated for ${layer.id}`);
   }
-  mesh = await meshWorker.conformMeshToTerrain(layer, mesh, project);
+  mesh = await meshWorker.conformMeshToTerrain(layer, mesh, project, heightMap);
   if (layer.dig?.enabled) {
     mesh = await meshWorker.digMesh(mesh, shape, layer);
   }
@@ -49,7 +51,10 @@ export async function smoothTerrain(heightMapData, smoothingRadius, project, lak
   
   let smoothed = await smoothWorker.smoothTerrainData(heightMapData, smoothingRadius);
 
-  const heightSize = project._heightMap?.size;
+  if (!_heightMapCache) {
+    throw new Error('Invalid or missing heightMap data!');
+  }
+  const heightSize = _heightMapCache?.size;
   const svgSize = Math.round(project.settings.distance * 1000);
   // const lakeShapes = project.
 
@@ -61,13 +66,14 @@ export async function smoothTerrain(heightMapData, smoothingRadius, project, lak
   // console.log(`Mesh ${finished} of ${courseLayers.length} (triangles:${mesh.triangles.length}, points:${mesh.points.length})`);  
 }
 
-export async function conformMesh(layer, mesh, project) {
-  const conformWorker = await getWorker('mesh.worker.js');
-  const conformed = await conformWorker.conformMeshToTerrain(layer, mesh, project);
-  await Thread.terminate(conformWorker);
-  return conformed;
-  // console.log(`Mesh ${finished} of ${courseLayers.length} (triangles:${mesh.triangles.length}, points:${mesh.points.length})`);  
-}
+// export async function conformMesh(layer, mesh, project, heightMap) {
+//   const conformWorker = await getWorker('mesh.worker.js');
+//   const conformed = await conformWorker.conformMeshToTerrain(layer, mesh, project, heightMap);
+//   await Thread.terminate(conformWorker);
+//   return conformed;
+//   // console.log(`Mesh ${finished} of ${courseLayers.length} (triangles:${mesh.triangles.length}, points:${mesh.points.length})`);  
+// }
+
 export let workerWindow;
 export async function createWorkerWindow(preloadUrl, mainUrl) {
   // Create the window
@@ -90,4 +96,37 @@ export async function createWorkerWindow(preloadUrl, mainUrl) {
   // if (!app.isPackaged) {
   //   workerWindow.webContents.openDevTools();
   // }
+}
+
+export async function exportTreePackage(inputFiles, outputFile) {
+  const exportWorker = await getWorker('export.worker.js'); 
+  await exportWorker.exportTreePackage(inputFiles, outputFile);
+}
+
+export async function compressTextures(uncompressedGlb, onProgress = () => {}) {
+  const exportWorker = await getWorker('export.worker.js'); 
+  let compressedBuffer;
+  return exportWorker.compressTextures(Transfer(uncompressedGlb.buffer));
+  // return new Promise((resolve, reject) => {
+  //   exportWorker.compressTextures(Transfer(uncompressedGlb.buffer)).subscribe({
+  //     next(status) {
+  //       if (status.type === 'progress') {
+  //         console.log('export-progress', status);
+  //         onProgress(status.progress);
+  //       } else if (status.type === 'complete') {
+  //         console.log('export-done');
+  //         compressedBuffer = status.buffer;
+  //       }
+  //     },
+  //     complete() {
+  //       console.log('export-done');
+  //       resolve(compressedBuffer);
+  //       Thread.terminate(exportWorker);
+  //     },
+  //     error(err) {
+  //       console.log('export-error', err.message);
+  //       Thread.terminate(exportWorker);
+  //     }
+  //   });
+  // });
 }

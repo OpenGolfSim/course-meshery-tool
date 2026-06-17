@@ -101,6 +101,19 @@ function SceneGrabber({ setScene }) {
   return null;
 }
 
+function LayerSetup() {
+  const { camera, raycaster } = useThree()
+
+  useEffect(() => {
+    // Camera now sees default Layer 0 AND Layer 1
+    camera.layers.enable(1)
+    
+    // Raycaster can now click items on Layer 0 AND Layer 1
+    raycaster.layers.enable(1)
+  }, [camera, raycaster])
+
+  return null
+}
 
 function ImportedModel({ url, ...rest }) {
   const { scene } = useGLTF(url)
@@ -143,6 +156,7 @@ export default function Course() {
   const captureRef = useRef();
 
   const [scene, setScene] = useState();
+  const [heightMap, setHeightMap] = useState(null);
   const [visibilityMenu, setVisibilityMenu] = useState();
   const [selectedLayer, setSelectedLayer] = useState();
   const [selectedTab, setSelectedTab] = useState(0);
@@ -221,6 +235,7 @@ export default function Course() {
   }, [skySettings]);
   
   const handleExport = () => {
+    setSelectedLayer(null);
     // -- Capture course image here?
     const mapImage = captureRef.current?.capture(4096);
     setExportCourseData(old => ({ ...old, mapImage }));
@@ -283,6 +298,10 @@ export default function Course() {
   }, [skySettings]);
 
   useEffect(() => {
+    window.meshery.project.getHeightMap().then(result => {
+      console.log('getHeightMap', result);
+      setHeightMap(result);
+    });
     window.meshery.project.getMeshDataState().then(result => {
       console.log('res', result);
       handleStateUpdate(null, result);
@@ -423,7 +442,7 @@ export default function Course() {
 
               <Accordion expanded={panelExpanded === 'scene'} onChange={(e, expanded) => setPanelExpanded(expanded ? 'scene' : null)}>
                 <AccordionSummary id="course-area-header">
-                  <AccordionHeader sx={{ flex: 1, alignContent: 'center' }} variant="h5" color="textSecondary">Editor</AccordionHeader>
+                  <AccordionHeader sx={{ flex: 1, alignContent: 'center' }} variant="h5" color="textSecondary">Meshes</AccordionHeader>
                 </AccordionSummary>
                 <AccordionDetails>
                   <Stack sx={{ px: 4, py: 2 }} spacing={2}>
@@ -512,13 +531,13 @@ export default function Course() {
             })}
 
             <Suspense fallback={null}>
-              {project.trees?.length ? project.trees.map((treeLayer) => (
+              {heightMap && project.trees?.length ? project.trees.map((treeLayer) => (
                 <TreePreview
                   key={treeLayer.id}
                   worldSize={worldSize}
                   // groundRef={groundRef}
-                  heightMap={project._heightMap}
-                  heightScale={project._heightMap?.heightScale || project.stats.relief}
+                  heightMap={heightMap}
+                  heightScale={project.stats.heightScale || project.stats.relief}
                   positions={treeLayer.positions}
                   trees={treeLayer.treeConfigs}
                   seed={treeLayer.randomSeed}
@@ -542,6 +561,7 @@ export default function Course() {
               sectionColor={0x444444}
             />
 
+            <LayerSetup />
             <SceneGrabber setScene={setScene} />
             <CourseMapCapture captureRef={captureRef} worldSize={worldSize} />
           </Canvas>

@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Color } from 'three';
 import { Document, NodeIO } from '@gltf-transform/core';
-import { mergeDocuments } from '@gltf-transform/functions';
+import { mergeDocuments, dedup } from '@gltf-transform/functions';
+import { ktx2 } from 'ktx2-encoder/gltf-transform';
 import {
   // KHRDracoMeshCompression,
   KHRMaterialsUnlit,
@@ -17,6 +18,7 @@ import {
   EXTMeshGPUInstancing,
 } from '@gltf-transform/extensions';
 import { PNG } from 'pngjs';
+import sharp from 'sharp';
 
 import { hexToRGB01 } from '../colors';
 import { TEXTURE_MAP } from '../textures';
@@ -24,6 +26,7 @@ import { TEXTURES_PATH } from '../app';
 import { CACHE_DIR, PROJECT_FILE_PROTOCOL, RESOURCES_FILE_PROTOCOL } from '../../constants';
 import { openProject, saveProjectSettings } from '../project';
 import { broadcast } from '../window';
+import { compressTextures } from '../workers';
 
 
 const EXTENSIONS = [
@@ -236,7 +239,6 @@ export async function write(filePath, project, meshData, imageData) {
   
   const holesOutput = [...project.holes?.values()].filter(Boolean);
   if (holesOutput?.length > 0) {
-    // project.holes.values().filter(Boolean).forEach(hole => {
     for (const hole of holesOutput) {
       const holeNode = doc.createNode(`hole_${hole.number}`).setExtras({
         type: 'hole_group',
@@ -265,24 +267,11 @@ export async function write(filePath, project, meshData, imageData) {
   
       scene.addChild(holeNode);
     }
-      // });
   }
 
   if (project.trees?.length) {
     
     for (const tree of project.trees) {
-    // project.trees.forEach(tree => {
-      const pngBuffer = positionsToPngBuffer(tree.positions);
-      const texture = doc.createTexture(tree.id)
-        .setMimeType('image/png')
-        .setImage(new Uint8Array(pngBuffer))
-        .setExtras({
-          type: 'tree_mask',
-          id: tree.id,
-          name: tree.name
-        });
-
-        
       for (const config of tree.treeConfigs ?? []) {
         const templateId = `${tree.id}_${config.id}`;
         const node = await embedModel(io, doc, scene, {
@@ -301,19 +290,49 @@ export async function write(filePath, project, meshData, imageData) {
         node.setScale([0, 0, 0]);
       }
     }
-    // });
   }
 
 
-  // add course map
-  if (imageData.mapImage) {
-    const mapImage = Buffer.from(imageData.mapImage.split('base64,')[1], 'base64');
-    const texture = doc.createTexture('course_map')
-      .setMimeType('image/jpeg')
-      .setImage(new Uint8Array(mapImage))
-      .setExtras({ type: 'course_map' });
-  }
-    
+
+  // Deduplicate any identical textures/materials/meshes
+  await doc.transform(dedup());
+
+  // let textureCount = 0;
+  // let totalTextures = 0;
+
+  // // Count first
+  // doc.getRoot().listTextures().forEach(t => totalTextures++);
+
+  // await doc.transform(
+  //   ktx2({
+  //     // isUASTC: false,
+  //     isUASTC: true,
+  //     generateMipmap: true,  // try without mipmaps first — halves encoding time
+
+  //     imageDecoder: async (data) => {
+  //       const start = Date.now();
+  //       const { info, data: raw } = await sharp(Buffer.from(data))
+  //         .ensureAlpha()
+  //         .raw()
+  //         .toBuffer({ resolveWithObject: true });
+
+  //       console.log(`[KTX2] Decoded ${++textureCount}/${totalTextures}: ${info.width}x${info.height} (${Date.now() - start}ms)`, info);
+  //       // Copy to a clean ArrayBuffer — don't use raw.buffer which is pooled
+  //       const pixels = new Uint8Array(raw.length);
+  //       pixels.set(raw);
+        
+  //       return {
+  //         width: info.width,
+  //         height: info.height,
+  //         // channels: 4,
+  //         // channels: info.channels,
+  //         data: pixels // new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength),
+  //       };
+  //     }
+  //   })
+  // );  
+
+
   const { sky } = openProject.scene;
   
   let sceneSettings = { sky: { type: sky.type } };
@@ -330,7 +349,39 @@ export async function write(filePath, project, meshData, imageData) {
     courseSize: openProject.settings.distance * 1000,
     sceneSettings
   });
+
   consolidateBuffers(doc);
 
-  await io.write(filePath, doc);
+  const uncompressedGlb = await io.writeBinary(doc);
+  // const worker = await spawn(new Worker('./compress-worker.js'));
+  // const compressedGlb = await worker.compress(Transfer(uncompressedGlb.buffer));
+  const compressedGlb = await compressTextures(uncompressedGlb, (progress) => {
+    console.log('compress-progress', progress);
+  });
+
+  const finalDoc = await io.readBinary(new Uint8Array(compressedGlb));
+
+  if (project.trees?.length) {
+    for (const tree of project.trees) {
+      const pngBuffer = positionsToPngBuffer(tree.positions);
+      const texture = finalDoc.createTexture(tree.id)
+        .setMimeType('image/png')
+        .setImage(new Uint8Array(pngBuffer))
+        .setExtras({
+          type: 'tree_mask',
+          id: tree.id,
+          name: tree.name
+        });
+    }
+  }
+  // add course map
+  if (imageData.mapImage) {
+    const mapImage = Buffer.from(imageData.mapImage.split('base64,')[1], 'base64');
+    const texture = finalDoc.createTexture('course_map')
+      .setMimeType('image/jpeg')
+      .setImage(new Uint8Array(mapImage))
+      .setExtras({ type: 'course_map' });
+  }
+    
+  await io.write(filePath, finalDoc);
 }

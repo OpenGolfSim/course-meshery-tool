@@ -144,40 +144,51 @@ export const ProjectProvider = ({ children }) => {
 
   const handleDownloadCourse = async (feature, coords) => {
     if (feature.type === 'dem') {
-      await window.meshery.imagery.downloadDEM(coords);
+      const res = await window.meshery.imagery.downloadDEM(coords);
       // const result = await window.meshery.lidar.downloadCourse(feature, coords);
+      setProject(old => ({
+        ...old,
+        dem: res.dem,
+        raw: res.raw,
+        stats: res.stats
+      }));
       return;
     }
-    const result = await window.meshery.lidar.downloadCourse(feature, coords);
-    console.log('[PROJECT] handleDownloadCourse', result);
-    // // TODO: we can probably remove this and fire change event from server?
-    // console.log('download result', result);
-    // if (result) {
-    //   setProject(old => ({ ...old, ...result }));
-    // }
+
+    const res = await window.meshery.lidar.downloadCourse(feature, coords);
+    console.log('[PROJECT] handleDownloadCourse', res);
+    setProject(old => ({
+      ...old,
+      lidar: res.lidar,
+      dem: res.dem,
+      raw: res.raw,
+      stats: res.stats
+    }));
   }
 
   const generateHillShade = async () => {
     const result = await window.meshery.imagery.hillShade();
     console.log('[PROJECT] generateHillShade', result);
-    // if (result) {
-    //   setProject(old => ({ ...old, ...result }));
-    // }
-    return result?.hillShade;
+    if (result) {
+      setProject(old => ({ ...old, hillShade: result.hillShade }));
+    }
   }
 
   const generateSatellite = async (source) => {
     const result = await window.meshery.imagery.satellite(source);
     console.log('[PROJECT] generateSatellite', result);
-    // if (result) {
-    //   setProject(old => ({ ...old, ...result }));
-    // }
+    if (result) {
+      setProject(old => ({ ...old, ...result }));
+    }
     return result?.satellite;
   }
   
   const createProject = async () => {
     const result = await window.meshery.project.createProject();
     console.log('[PROJECT] createProject', result);
+    if (result) {
+      setProject(old => ({ ...old, ...result }));
+    }
     // project.holes = new Map(project.holes);
     // if (result) {
     //   setProject(result);
@@ -237,6 +248,14 @@ export const ProjectProvider = ({ children }) => {
 
   
 
+  const saveTerrainData = async (terrainData, heightScale) => {
+    // const res = await window.meshery.trees.addLayer();
+    const res = await window.meshery.terrain.saveHeightMap(heightMap.current, heightScale);
+    // console.log('remove-res', res);
+    if (res) {
+      setProject((old) => ({ ...old, stats: res.stats, raw: res.raw }))
+    }
+  }
   // const updateSettings = useCallback((update) => {
   //   setSettings(old => ({ ...old, ...update }));
   // }, []);

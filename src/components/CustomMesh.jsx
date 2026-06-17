@@ -61,7 +61,7 @@ function SelectedBox({ geometry }) {
   const center = useMemo(() => box.getCenter(new THREE.Vector3()), [box]);
   
   return (
-    <lineSegments position={center}>
+    <lineSegments position={center} layers={1}>
       <edgesGeometry args={[new THREE.BoxGeometry(size.x, size.y, size.z)]} />
       <lineBasicMaterial color="cyan" depthTest={false} />
     </lineSegments>
@@ -174,7 +174,18 @@ export default function CustomMesh(props) {
     });
   }, [props.meshDataState]);
 
-  
+  useEffect(() => {
+    return () => {
+      standardMaterial.dispose();
+    };
+  }, [standardMaterial]);
+
+  useEffect(() => {
+    return () => {
+      geometry.dispose();
+    };
+  }, [geometry]);
+
   return (
     <mesh
       ref={setRef}
