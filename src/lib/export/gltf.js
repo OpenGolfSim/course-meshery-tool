@@ -18,7 +18,6 @@ import {
   EXTMeshGPUInstancing,
 } from '@gltf-transform/extensions';
 import { PNG } from 'pngjs';
-import sharp from 'sharp';
 
 import { hexToRGB01 } from '../colors';
 import { TEXTURE_MAP } from '../textures';
@@ -296,41 +295,6 @@ export async function write(filePath, project, meshData, imageData) {
 
   // Deduplicate any identical textures/materials/meshes
   await doc.transform(dedup());
-
-  // let textureCount = 0;
-  // let totalTextures = 0;
-
-  // // Count first
-  // doc.getRoot().listTextures().forEach(t => totalTextures++);
-
-  // await doc.transform(
-  //   ktx2({
-  //     // isUASTC: false,
-  //     isUASTC: true,
-  //     generateMipmap: true,  // try without mipmaps first — halves encoding time
-
-  //     imageDecoder: async (data) => {
-  //       const start = Date.now();
-  //       const { info, data: raw } = await sharp(Buffer.from(data))
-  //         .ensureAlpha()
-  //         .raw()
-  //         .toBuffer({ resolveWithObject: true });
-
-  //       console.log(`[KTX2] Decoded ${++textureCount}/${totalTextures}: ${info.width}x${info.height} (${Date.now() - start}ms)`, info);
-  //       // Copy to a clean ArrayBuffer — don't use raw.buffer which is pooled
-  //       const pixels = new Uint8Array(raw.length);
-  //       pixels.set(raw);
-        
-  //       return {
-  //         width: info.width,
-  //         height: info.height,
-  //         // channels: 4,
-  //         // channels: info.channels,
-  //         data: pixels // new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength),
-  //       };
-  //     }
-  //   })
-  // );  
 
 
   const { sky } = openProject.scene;

@@ -4,7 +4,9 @@ import { Observable } from "observable-fns"
 import { Document, NodeIO } from '@gltf-transform/core';
 import { KHRTextureBasisu } from '@gltf-transform/extensions';
 import { ktx2 } from 'ktx2-encoder/gltf-transform';
-import sharp from 'sharp';
+// import sharp from 'sharp';
+import { PNG } from 'pngjs';
+import jpeg from 'jpeg-js';
 
 import fs from "node:fs";
 import path from "node:path";
@@ -12,6 +14,17 @@ import { dedup, prune } from "@gltf-transform/functions";
 import { addOBJ } from "../../trees/lib/obj.js";
 import { addGLB } from "../../trees/lib/gltf.js";
 
+
+function decodeImage(data) {
+  const buf = Buffer.from(data);
+  // JPEG magic bytes: 0xFF 0xD8
+  if (buf[0] === 0xFF && buf[1] === 0xD8) {
+    const { width, height, data: pixels } = jpeg.decode(buf, { useTArray: true });
+    return { width, height, data: new Uint8Array(pixels) };
+  }
+  const png = PNG.sync.read(buf);
+  return { width: png.width, height: png.height, data: new Uint8Array(png.data) };
+}
 
 const EXTENSIONS = [KHRTextureBasisu];
 
@@ -34,13 +47,15 @@ async function compressTextures(glbBuffer) {
       ktx2({
         isUASTC: true,
         generateMipmap: true,
-        imageDecoder: async (data) => {
-          const { info, data: raw } = await sharp(Buffer.from(data))
-            .ensureAlpha()
-            .raw()
-            .toBuffer({ resolveWithObject: true });
-          const pixels = new Uint8Array(raw.length);
-          pixels.set(raw);
+        imageDecoder: decodeImage
+        // imageDecoder: async (data) => {
+          // return decodeImage(data);
+          // const { info, data: raw } = await sharp(Buffer.from(data))
+          //   .ensureAlpha()
+          //   .raw()
+          //   .toBuffer({ resolveWithObject: true });
+          // const pixels = new Uint8Array(raw.length);
+          // pixels.set(raw);
 
           // observer.next({
           //   type: 'progress',
@@ -49,8 +64,8 @@ async function compressTextures(glbBuffer) {
           //     current: ++textureCount
           //   }
           // });
-          return { width: info.width, height: info.height, data: pixels };
-        }
+          // return { width: info.width, height: info.height, data: pixels };
+        // }
       })
     );
 
@@ -115,15 +130,16 @@ export async function exportTreePackage(inputFiles, outputFile) {
     ktx2({
       isUASTC: true,
       generateMipmap: true,
-      imageDecoder: async (data) => {
-        const { info, data: raw } = await sharp(Buffer.from(data))
-          .ensureAlpha()
-          .raw()
-          .toBuffer({ resolveWithObject: true });
-        const pixels = new Uint8Array(raw.length);
-        pixels.set(raw);
-        return { width: info.width, height: info.height, data: pixels };
-      }
+      imageDecoder: decodeImage
+      // imageDecoder: async (data) => {
+        // const { info, data: raw } = await sharp(Buffer.from(data))
+        //   .ensureAlpha()
+        //   .raw()
+        //   .toBuffer({ resolveWithObject: true });
+        // const pixels = new Uint8Array(raw.length);
+        // pixels.set(raw);
+        // return { width: info.width, height: info.height, data: pixels };
+      // }
     })
   );
   
