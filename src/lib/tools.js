@@ -220,6 +220,9 @@ export async function installStart() {
       updateInstallState({ progress: update.progress, status: update.status });
     });
   
+    if (!fs.existsSync(baseDir)) {
+      fs.mkdirSync(baseDir);
+    }
     updateInstallState({ active: true, phase: 'extract', progress: 0, status: 'Extracting tools...' })
     // await sleep(2000);
     await extractArchive(tmpArchive, baseDir, abortSignal.signal, (update) => {
