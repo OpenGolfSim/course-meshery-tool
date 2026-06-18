@@ -329,10 +329,12 @@ export function getSpawnEnv() {
     ...(process.platform === 'win32' ? {
       PROJ_LIB: path.join(dir, 'Library', 'share', 'proj'),
       GDAL_DATA: path.join(dir, 'Library', 'share', 'gdal'),
-      PATH: `${path.join(dir, 'Library', 'bin')}:${process.env.PATH}`
+      PATH: `${path.join(dir, 'Library', 'bin')}${path.delimiter}${path.join(dir, 'Scripts')}${path.delimiter}${process.env.PATH}`
+      // PATH: `${path.join(dir, 'Library', 'bin')}:${process.env.PATH}`
     } : {
       PROJ_LIB: path.join(dir, 'share', 'proj'),
       GDAL_DATA: path.join(dir, 'share', 'gdal'),
+      PATH: `${path.join(dir, 'bin')}${path.delimiter}${process.env.PATH}`
     })
     // GDAL_DATA: path.join(dir, 'gdal-data'),
     // PROJ_DATA: path.join(dir, 'proj-data'),
