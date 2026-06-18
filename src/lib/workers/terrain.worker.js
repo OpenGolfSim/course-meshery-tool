@@ -1,5 +1,5 @@
 import { expose } from 'threads/worker';
-import { lerp, smootherstep } from '../utils';
+import { lerp, smootherstep } from './utils';
 
 function generate1DGaussianKernel(radius, sigma) {
   const kernel = [];

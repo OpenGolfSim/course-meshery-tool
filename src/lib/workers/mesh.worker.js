@@ -2,7 +2,7 @@ import { expose } from 'threads/worker';
 import PoissonDiskSampling from 'poisson-disk-sampling';
 import { Delaunay } from 'd3-delaunay';
 import poly2tri from 'poly2tri';
-import { lerp, smootherstep, smoothstep } from '../utils';
+import { lerp, smootherstep, smoothstep } from './utils';
 
 const MIN_DISTANCE = 1e-8; // or whatever small threshold
 
