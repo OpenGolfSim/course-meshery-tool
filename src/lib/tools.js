@@ -270,19 +270,23 @@ function getToolsDir() {
 
 async function condaUnpack(baseDir, signal) {
   throwIfAborted(signal)
-  // conda-unpack lives in a different folder on each platform
-  const unpackBin = process.platform === 'win32'
-    ? path.join(baseDir, 'Scripts', 'conda-unpack.exe')
-    : path.join(baseDir, 'bin', 'conda-unpack')
 
-    if (!fs.existsSync(unpackBin)) {
-    throw new Error(`conda-unpack not found at ${unpackBin}`)
+  let cmd, args
+  if (process.platform === 'win32') {
+    cmd = path.join(baseDir, 'Scripts', 'conda-unpack.exe')
+    args = []
+  } else {
+    cmd = path.join(baseDir, 'bin', 'python')
+    args = [path.join(baseDir, 'bin', 'conda-unpack')]
   }
+
+  if (!fs.existsSync(cmd)) {
+    throw new Error(`${cmd} not found`)
+  }
+
   log.info('Running conda unpacking');
-  // conda-unpack rewrites shebangs and patches dylib/DLL paths to be relative
-  // so the env works regardless of where it was extracted. Can take 10-30s.
   await new Promise((resolve, reject) => {
-    const proc = spawn(unpackBin, [], { cwd: baseDir });
+    const proc = spawn(cmd, args, { cwd: baseDir });
     const onAbort = () => {
       proc.kill('SIGTERM')
       // Give it a moment, then hard-kill
