@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import logger from 'electron-log';
 import { spawn } from 'child_process';
 import { pipeline } from 'stream';
 import { promisify } from 'util';
@@ -13,6 +14,8 @@ import extractZip from 'extract-zip';
 import { getToolsPath } from './app.js';
 
 const pipelineAsync = promisify(pipeline)
+
+const log = logger.scope('INSTALL');
 
 const USER_AGENT = 'OGSMeshery';
 let abortSignal;
@@ -104,7 +107,7 @@ async function downloadAsset(asset, tmpArchive, signal, onProgress) {
   if (!asset.browser_download_url) {
     throw new Error('Unable to find valid download URL');
   }
-  console.log(`Downloading ${asset.browser_download_url} to ${tmpArchive}`);
+  log.info(`Downloading ${asset.browser_download_url} to ${tmpArchive}`);
   const downloadStream = got.stream(asset.browser_download_url, {
     headers: { 'User-Agent': USER_AGENT },
     // got auto-follows redirects by default, which matters for GitHub asset URLs
@@ -129,7 +132,7 @@ async function downloadAsset(asset, tmpArchive, signal, onProgress) {
   
   try {
     await pipelineAsync(downloadStream, fs.createWriteStream(tmpArchive));
-    console.log(`Download finished!`);
+    log.info(`Download finished!`);
   } catch (err) {
     if (signal?.aborted) throw new CancelledError();
     throw err;
@@ -142,7 +145,7 @@ async function extractArchive(archivePath, outDir, signal, onProgress) {
   throwIfAborted(signal);
   const format = path.extname(archivePath);
   
-  console.log(`Extracting ${format}...`);
+  log.info(`Extracting ${format}...`);
 
   if (format === '.gz') {
     if (onProgress) { onProgress({ progress: -1, status: 'Extracting tools' }); }    
@@ -205,7 +208,6 @@ export async function installStart() {
     // download release
     
     const release = await getLatestRelease();
-    console.log('release', release);
     if (!release?.asset?.url || !release?.asset?.name) {
       throw new Error('Unable to find tools package in release');
     }
@@ -273,7 +275,7 @@ async function condaUnpack(baseDir, signal) {
     if (!fs.existsSync(unpackBin)) {
     throw new Error(`conda-unpack not found at ${unpackBin}`)
   }
-  console.log('Running conda unpacking');
+  log.info('Running conda unpacking');
   // conda-unpack rewrites shebangs and patches dylib/DLL paths to be relative
   // so the env works regardless of where it was extracted. Can take 10-30s.
   await new Promise((resolve, reject) => {
@@ -284,13 +286,13 @@ async function condaUnpack(baseDir, signal) {
       setTimeout(() => proc.kill('SIGKILL'), 2000)
     }
     signal?.addEventListener('abort', onAbort);
-    proc.stdout.on('data', (d) => console.log('[conda-unpack]', d.toString().trim()))
-    proc.stderr.on('data', (d) => console.warn('[conda-unpack]', d.toString().trim()))
+    proc.stdout.on('data', (d) => log.info('[conda-unpack]', d.toString().trim()))
+    proc.stderr.on('data', (d) => log.warn('[conda-unpack]', d.toString().trim()))
     proc.on('close', (code) => {
       signal?.removeEventListener('abort', onAbort)
       if (signal?.aborted) return reject(new CancelledError())
       if (code === 0) resolve()
-      else reject(new Error(`conda-unpack exited with code ${code} (signal ${killSignal})`));
+      else reject(new Error(`conda-unpack exited with code ${code}`));
     })
     proc.on('error', (err) => {
       signal?.removeEventListener('abort', onAbort);

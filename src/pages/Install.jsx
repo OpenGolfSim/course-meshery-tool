@@ -127,7 +127,7 @@ export default function Install() {
     <Container
       sx={{ p: 5, alignItems: 'center', height: '100%', display: 'flex' }} maxWidth="sm"
     >
-      <Card>
+      <Card sx={{ flex: 1 }}>
         <CardHeader title="Install Required Tools" />
         {children}
       </Card>
