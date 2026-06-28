@@ -62,7 +62,7 @@ export default function TreeLayerList({
                   treeLayer.treeConfigs?.map(treeConfig => (
                     <CustomListItem
                       button={{
-                        onClick: () => onTreeSelect(treeConfig)
+                        onClick: () => onTreeSelect(treeLayer, treeConfig)
                       }}
                       size="small"
                       selected={selectedTree === treeConfig.id}
@@ -70,7 +70,7 @@ export default function TreeLayerList({
                       disablePadding={true}
                       disableGutters={false}
                       key={treeConfig.id}
-                      label={treeConfig.filePath.split(/[\/\\]/g).pop()}
+                      label={treeConfig.name || treeConfig.filePath.split(/[\/\\]/g).pop()}
                       icon={<TreeIcon />}
                       menuItems={[
                         {

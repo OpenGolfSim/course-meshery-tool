@@ -54,7 +54,7 @@ contextBridge.exposeInMainWorld('meshery', {
   },
   trees: {
     import: (treeLayerId) => ipcRenderer.invoke('trees.import', treeLayerId),
-    postImport: (treeLayerId, treeConfigId, imageData) => ipcRenderer.invoke('trees.postImport', treeLayerId, treeConfigId, imageData),
+    // postImport: (treeLayerId, treeConfigId, imageData) => ipcRenderer.invoke('trees.postImport', treeLayerId, treeConfigId, imageData),
     remove: (treeLayerId, treeConfigId) => ipcRenderer.invoke('trees.remove', treeLayerId, treeConfigId),
 
     addLayer: () => ipcRenderer.invoke('trees.addLayer'),

@@ -93,8 +93,8 @@ export const TEXTURE_MAP = {
   },
   pine_straw: {
     tileSize: 1.5,
-    baseColor: 'pine_straw_map.jpg',
-    normal:    'pine_straw_normal.jpg',
+    baseColor: 'pine_straw_map.png',
+    normal:    'pine_straw_normal.png',
     roughnessFactor: 1.0,
   },
   // Fallback for layers whose surface isn't textured yet — uses layer.color.

@@ -356,6 +356,7 @@ export default function Map() {
       mapRef.current?.addLayer(tileLayers[initialLayer]);
       mapRef.current?.setView(DEFAULT_CENTER, DEFAULT_ZOOM);
     } else {
+      console.log('Set initialLayer', initialLayer);
       update.centerPoint = { lat: 0, lng: 0 };
       const [west, south, east, north] = turfPointToBBox(update.centerPoint.lng, update.centerPoint.lat, project.settings.distance);
       update.bounds = { west, south, east, north };
@@ -912,12 +913,14 @@ export default function Map() {
 
     const initialLayer = getInitialLayer();
 
+    const mapLayers = project.settings.terrainType === 'real' ? [tileLayers[initialLayer]] : undefined;
+    console.log('mapLayers', mapLayers);
     mapRef.current = L.map(containerRef.current, {
         center: project.settings.centerPoint?.lat ? [project.settings.centerPoint.lat, project.settings.centerPoint.lng] : DEFAULT_CENTER,
         zoom: project.settings.centerPoint?.lat ? 15 : 5,
         minZoom: 3,
         maxZoom: 22,
-        layers: project.settings.terrainType === 'real' ? [tileLayers[initialLayer]] : undefined
+        layers: mapLayers
     });
     
     mapRef.current.on('zoomend', handleZoomChange);
@@ -1078,10 +1081,10 @@ export default function Map() {
     return () => {
       console.log('clean up map...');
       // mapRef.current.off('zoomend', handleZoomChange);
-      // if (mapInstance && mapInstance.remove) {
-      //   mapInstance.off();
-      //   mapInstance.remove();
-      // }
+      if (mapRef.current && mapRef.current.remove) {
+        mapRef.current.off();
+        mapRef.current.remove();
+      }
 
     }
 
@@ -1125,7 +1128,7 @@ export default function Map() {
               </AccordionSummary>
               <AccordionDetails>
                 <Stack sx={{ p: 2 }} spacing={4}>
-                  <ButtonGroup fullWidth color="primary" size="small">
+                  <ButtonGroup fullWidth color="primary" size="small" disabled={!!project.dem}>
                     <Button
                       onClick={() => handleTerrainTypeChange('real')}
                       variant={project.settings.terrainType === 'real' ? 'contained' : 'outlined'}
@@ -1148,7 +1151,7 @@ export default function Map() {
                       min={0.2}
                       max={3}
                       step={0.05}
-                      disabled={project.dem}
+                      disabled={!!project.dem}
                       value={project.settings.distance}
                       size="small"
                       onChange={handleDistanceChanged}

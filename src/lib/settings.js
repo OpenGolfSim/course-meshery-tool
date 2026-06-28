@@ -93,7 +93,7 @@ export const defaultSettings = {
     blend: 0.5,
     // blending: { enabled: true, distance: 0.2, spacing: 0.5 },
     blending: { ...defaultBlend },
-    dig: { enabled: true, depth: 5, distance: 0.3, curve: 'bezier', curvePoints: [[0, 1], [0.05, 1], [0.5, 0], [1, 0]] }
+    dig: { enabled: true, depth: 6, distance: 0.1, curve: 'bezier', curvePoints: [[0, 1], [0.05, 1], [0.5, 0], [1, 0]] }
   },
   river: {
     spacing: 0.25,
@@ -133,10 +133,12 @@ export const defaultSettings = {
     dig: { ...defaultDig }
   },
   pine_straw: {
-    spacing: 5,
+    spacing: 1,
     // spacingEdge: 0,
-    blend: 0,
-    blending: { ...defaultBlend },
+    // blend: 0,
+    // blending: { ...defaultBlend },
+    blend: 0.5,
+    blending: { enabled: true, distance: 2, spacing: 0.5 },
     dig: { ...defaultDig }
   }
 }

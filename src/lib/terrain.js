@@ -221,7 +221,7 @@ export function getHeightMapStats(heightMapData, heightScale) {
     sum += v;
   }
 
-  const toMeters = (v) => (v / 65535) * terrainMaxHeight;
+  const toMeters = (v) => (v / 65535) * heightScale;
 
   const meanRaw = sum / len;
 

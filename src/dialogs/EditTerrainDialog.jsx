@@ -22,7 +22,7 @@ function Terrain({
   size = 100
 }) {
   const internalRef = useRef();
-  const maxSegments = 2048;
+  const maxSegments = 1024;
   const brushPos = useRef(new THREE.Vector3());
   
   const strength = useMemo(() => {
@@ -382,7 +382,8 @@ export default function EditTerrainDialog(props) {
   const heightMap = useRef();
   const [heightMapVersion, setHeightMapVersion] = useState(0);
   // const [heightMap, setHeightMap] = useState();
-  const [heightScale, setHeightScale] = useState(project.stats?.heightScale || 100);
+  
+  const [heightScale, setHeightScale] = useState(project.stats?.heightScale || project.stats?.relief);
   const [brushRadius, setBrushRadius] = useState(12);
   const [brushStrength, setBrushStrength] = useState(3);
   const [smoothStrength, setSmoothStrength] = useState(2);
@@ -456,6 +457,16 @@ export default function EditTerrainDialog(props) {
   }
 
   useEffect(() => {
+    const hs = project.stats?.heightScale || project.stats?.relief;
+    if (typeof hs === 'undefined') {
+      console.warn('No heightscale on stats!');
+      return;
+    }
+    console.log(`Setting height scale to: ${hs}`);
+    setHeightScale(hs);
+  }, [project.stats]);
+
+  useEffect(() => {
     if (!open) {
       return;
     }
@@ -508,6 +519,12 @@ export default function EditTerrainDialog(props) {
         >
           <SidebarAccordionGroup>
             <Accordion expanded={panelExpanded === 'brush'} onChange={handlePanelChange('brush')}>
+              <AccordionSummary id="brush-header">
+                <AccordionHeader>Info</AccordionHeader>
+              </AccordionSummary>
+              <AccordionDetails sx={{ p: 2 }}>
+                <Typography>heightScale: {heightScale?.toFixed(3)}</Typography>
+              </AccordionDetails>
               <AccordionSummary id="brush-header">
                 <AccordionHeader>Brush</AccordionHeader>
               </AccordionSummary>

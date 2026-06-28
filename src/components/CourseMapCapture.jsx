@@ -20,6 +20,7 @@ export default function CourseMapCapture({ worldSize, captureRef }) {
 
       const rt = new THREE.WebGLRenderTarget(size, size, {
         colorSpace: THREE.SRGBColorSpace,
+        samples: 4,
       });
 
       const prevFog = scene.fog;

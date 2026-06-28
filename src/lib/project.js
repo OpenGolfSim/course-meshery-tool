@@ -7,6 +7,7 @@ import { broadcast, mainWindow } from './window';
 import { ensureRecent } from './app';
 import { generateSVG, geoJSONToSvgPaths, parseSVG } from './svg';
 import { parseRaw } from './heightmap';
+import { getHeightMapStats } from './terrain';
 import { layerToMesh, smoothTerrain, svgToCourseLayers } from './workers';
 import { IMAGERY_DIR, PROJECT_FILE_PROTOCOL, TERRAIN_DIR, TREE_IMPORT_PREFIX } from '../constants';
 import { getDateId } from './utils';
@@ -156,8 +157,8 @@ export async function saveHeightMap(heightMapData, heightScale) {
   // recalculate stats
   openProject.stats = { ...openProject.stats, ...getHeightMapStats(heightMapData, heightScale) };
   await saveProjectSettings();
-
-  _heightMapCache = { data: heightMapData, size: heightMapData.byteLength };
+  await refreshRawData();
+  // _heightMapCache = { data: heightMapData, size: heightMapData.byteLength };
   return openProject;
 }
 
@@ -307,6 +308,15 @@ export async function loadProjectFile(filePath) {
     _workingDir: filePathInfo.dir,
     ...stored,
     holes
+  });
+
+  // migrate tree configs to have filenames
+  openProject.trees.forEach(treeLayer => {
+    treeLayer.treeConfigs.forEach(config => {
+      if (!config.name) {
+        config.name = path.basename(config.filePath);
+      }
+    });
   });
   // openProject = {
   //   name: filePathInfo.name,
@@ -489,7 +499,7 @@ export async function generateMeshes(layerSettings, terrainSettings) {
       // meshMap.set(layer.id, mesh);
       // console.log(`Meshing ${index} of ${result.layers.length} (triangles:${mesh.triangles.length}, points:${mesh.points.length})`);
       meshData.meshes.set(layer.id, { name: layer.name, mesh });
-      // console.log(`Conformed (${layer.id}) ${index} of ${result.layers.length} (triangles:${mesh.triangles.length}, points:${mesh.points.length})`);
+      console.log(`Conformed (${layer.id}) ${index} of ${openProject._meshes.length} (triangles:${mesh.triangles.length}, points:${mesh.points.length})`);
       
       progress = (index / openProject._meshes.length) * 100;
       index++;
@@ -604,32 +614,32 @@ export async function removeTreeConfig(treeLayerId, treeConfigId) {
   return openProject;
 }
 
-export async function postImportTree(treeLayerId, treeConfigId, billboardData) {
-  const foundLayer = openProject.trees.find(tl => tl.id === treeLayerId);
-  const foundConfig = foundLayer.treeConfigs.find(cfg => cfg.id === treeConfigId);
-  // write file data to disk
-  const imageryFolder = path.join(openProject._workingDir, IMAGERY_DIR);
-  // if (!fs.existsSync(imageryFolder)) {
-  //   fs.mkdirSync(imageryFolder);
-  // }
-  const billboardFilename = `tree-${treeConfigId}.png`;
-  const outputTexture = path.join(imageryFolder, billboardFilename);
-  let outputData;
-  if (typeof billboardData.buffer === 'string') {
-    outputData = Buffer.from(billboardData.buffer.split('base64,')[1], 'base64');
-  }
-  if (outputData) {
-    console.log(`Writing file: ${outputTexture}`, outputData);
-    await fs.promises.writeFile(outputTexture, outputData);
-    foundConfig.billboard = {
-      size: billboardData.size,
-      filePath: outputTexture,
-      uri: `${PROJECT_FILE_PROTOCOL}:///${path.join(IMAGERY_DIR, billboardFilename)}`
-    };
-  }
-  await saveProjectSettings();  
-  return openProject.trees;
-}
+// export async function postImportTree(treeLayerId, treeConfigId, billboardData) {
+//   const foundLayer = openProject.trees.find(tl => tl.id === treeLayerId);
+//   const foundConfig = foundLayer.treeConfigs.find(cfg => cfg.id === treeConfigId);
+//   // write file data to disk
+//   const imageryFolder = path.join(openProject._workingDir, IMAGERY_DIR);
+//   // if (!fs.existsSync(imageryFolder)) {
+//   //   fs.mkdirSync(imageryFolder);
+//   // }
+//   const billboardFilename = `tree-${treeConfigId}.png`;
+//   const outputTexture = path.join(imageryFolder, billboardFilename);
+//   let outputData;
+//   if (typeof billboardData.buffer === 'string') {
+//     outputData = Buffer.from(billboardData.buffer.split('base64,')[1], 'base64');
+//   }
+//   if (outputData) {
+//     console.log(`Writing file: ${outputTexture}`, outputData);
+//     await fs.promises.writeFile(outputTexture, outputData);
+//     foundConfig.billboard = {
+//       size: billboardData.size,
+//       filePath: outputTexture,
+//       uri: `${PROJECT_FILE_PROTOCOL}:///${path.join(IMAGERY_DIR, billboardFilename)}`
+//     };
+//   }
+//   await saveProjectSettings();  
+//   return openProject.trees;
+// }
 
 export async function importTree(treeLayerId) {
   const { canceled, filePaths } = await dialog.showOpenDialog({
@@ -643,6 +653,7 @@ export async function importTree(treeLayerId) {
   const config = {
     url: `${PROJECT_FILE_PROTOCOL}://${TREE_IMPORT_PREFIX}/${treeConfigId}.glb`,
     filePath: filePaths[0],
+    name: path.basename(filePaths[0]),
     id: treeConfigId,
     randomSeed: 12345,
     scaleRange: { min: 0.6, max: 1.8 },

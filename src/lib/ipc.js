@@ -52,7 +52,7 @@ ipcMain.handle('trees.addLayer', (_event) => project.addTreeLayer());
 ipcMain.handle('trees.removeLayer', (_event, layerId) => project.removeTreeLayer(layerId));
 
 ipcMain.handle('trees.import', (_event, treeLayerId) => project.importTree(treeLayerId));
-ipcMain.handle('trees.postImport', (_event, treeLayerId, treeConfigId, imageData) => project.postImportTree(treeLayerId, treeConfigId, imageData));
+// ipcMain.handle('trees.postImport', (_event, treeLayerId, treeConfigId, imageData) => project.postImportTree(treeLayerId, treeConfigId, imageData));
 ipcMain.handle('trees.remove', (_event, treeLayerId, treeConfigId) => project.removeTreeConfig(treeLayerId, treeConfigId));
 
 

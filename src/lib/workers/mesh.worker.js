@@ -420,10 +420,82 @@ function generateEdgeBufferPoints(polygon, holes, spacing) {
   return buffer;
 }
 
+function isTooCloseToConstraintEdge(pt, rings, minDist) {
+  for (const ring of rings) {
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length];
+      if (pointToSegmentDist(pt[0], pt[1], a[0], a[1], b[0], b[1]) < minDist) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function tryTriangulate(boundaryPts, holes, steinerPts) {
+  const allPoints = [...boundaryPts, ...holes.flat(), ...steinerPts];
+
+  const p2tPoints = allPoints.map(([x, y], i) => {
+    const p = new poly2tri.Point(x, y);
+    p._idx = i;
+    return p;
+  });
+
+  const contour = p2tPoints.slice(0, boundaryPts.length);
+  const ctx = new poly2tri.SweepContext(contour);
+
+  let offset = boundaryPts.length;
+  for (const hole of holes) {
+    ctx.addHole(p2tPoints.slice(offset, offset + hole.length));
+    offset += hole.length;
+  }
+
+  for (let i = offset; i < p2tPoints.length; i++) {
+    ctx.addPoint(p2tPoints[i]);
+  }
+
+  ctx.triangulate();
+
+  const finalTriangles = [];
+  for (const tri of ctx.getTriangles()) {
+    const pts = tri.getPoints();
+    finalTriangles.push(pts[0]._idx, pts[2]._idx, pts[1]._idx);
+  }
+
+  return { allPoints, finalTriangles };
+}
+
+function removeCollinearPoints(ring, threshold = 1e-6) {
+  if (ring.length < 3) return ring;
+  const result = [];
+  const n = ring.length;
+  for (let i = 0; i < n; i++) {
+    const prev = ring[(i - 1 + n) % n];
+    const curr = ring[i];
+    const next = ring[(i + 1) % n];
+    const cross =
+      (curr[0] - prev[0]) * (next[1] - prev[1]) -
+      (curr[1] - prev[1]) * (next[0] - prev[0]);
+    const lenA = Math.hypot(curr[0] - prev[0], curr[1] - prev[1]);
+    const lenB = Math.hypot(next[0] - curr[0], next[1] - curr[1]);
+    const denom = lenA * lenB;
+    if (denom > 1e-12 && Math.abs(cross) / denom < threshold) {
+      continue; // collinear — skip
+    }
+    result.push(curr);
+  }
+  return result.length >= 3 ? result : ring;
+}
+
 export function generateMesh(layer, shape) {
   if (layer.error) {
     return;
   }
+  shape = {
+    ...shape,
+    polygon: removeCollinearPoints(shape.polygon),
+    holes: shape.holes.map(h => removeCollinearPoints(h)),
+  };
 
   const boundaryPts = shape.polygon;
   const holePts = shape.holes?.flat() || [];
@@ -462,44 +534,70 @@ export function generateMesh(layer, shape) {
   // }
 
   const minDist = 0.04;
-  const allPoints = preserveBoundaryAndDedupe(boundaryPts, holePts, extraPts, minDist);
+  // const allPoints = preserveBoundaryAndDedupe(boundaryPts, holePts, extraPts, minDist);
 
-  // const allPoints = preserveBoundaryAndDedupe(boundaryPts, holePts, interiorSamples);
+  // // --- poly2tri triangulation ---
+  // // Create Point objects with back-references to allPoints indices
+  // const p2tPoints = allPoints.map(([x, y], i) => {
+  //   const p = new poly2tri.Point(x, y);
+  //   p._idx = i;
+  //   return p;
+  // });
 
-  // --- poly2tri triangulation ---
-  // Create Point objects with back-references to allPoints indices
-  const p2tPoints = allPoints.map(([x, y], i) => {
-    const p = new poly2tri.Point(x, y);
-    p._idx = i;
-    return p;
-  });
+  // // Contour = boundary points (first boundaryPts.length entries in allPoints)
+  // const contour = p2tPoints.slice(0, boundaryPts.length);
+  // const ctx = new poly2tri.SweepContext(contour);
 
-  // Contour = boundary points (first boundaryPts.length entries in allPoints)
-  const contour = p2tPoints.slice(0, boundaryPts.length);
-  const ctx = new poly2tri.SweepContext(contour);
+  // // Add holes using their index ranges in allPoints
+  // let offset = boundaryPts.length;
+  // for (const hole of shape.holes) {
+  //   ctx.addHole(p2tPoints.slice(offset, offset + hole.length));
+  //   offset += hole.length;
+  // }
 
-  // Add holes using their index ranges in allPoints
-  let offset = boundaryPts.length;
-  for (const hole of shape.holes) {
-    ctx.addHole(p2tPoints.slice(offset, offset + hole.length));
-    offset += hole.length;
+  // // Everything after boundary+hole points are interior Steiner points
+  // for (let i = offset; i < p2tPoints.length; i++) {
+  //   ctx.addPoint(p2tPoints[i]);
+  // }
+
+  // ctx.triangulate();
+  // const p2tTriangles = ctx.getTriangles();
+
+  // // Map back to flat index array using the _idx we attached
+  // const finalTriangles = [];
+  // for (const tri of p2tTriangles) {
+  //   const pts = tri.getPoints();
+  //   // swap so rendering is on top
+  //   finalTriangles.push(pts[0]._idx, pts[2]._idx, pts[1]._idx);
+  // }
+
+  const constraintRings = [shape.polygon, ...shape.holes];
+  let steinerPts = preserveBoundaryAndDedupe([], [], extraPts, minDist)
+    .filter(pt => !isTooCloseToConstraintEdge(pt, constraintRings, minDist));
+
+  let allPoints, finalTriangles;
+  const MAX_RETRIES = 3;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      ({ allPoints, finalTriangles } = tryTriangulate(boundaryPts, shape.holes, steinerPts));
+      break;
+    } catch (e) {
+      if (attempt === MAX_RETRIES) {
+        const name = layer.name || layer.id || 'unknown';
+        throw new Error(
+          `Triangulation failed on layer "${name}" after ${MAX_RETRIES} retries: ${e.message}. ` +
+          `Boundary: ${boundaryPts.length} pts, ${shape.holes.length} holes, ` +
+          `${steinerPts.length} Steiner pts remaining.`
+        );
+      }
+      const widenedDist = minDist * Math.pow(2, attempt + 1);
+      steinerPts = steinerPts.filter(
+        pt => !isTooCloseToConstraintEdge(pt, constraintRings, widenedDist)
+      );
+    }
   }
 
-  // Everything after boundary+hole points are interior Steiner points
-  for (let i = offset; i < p2tPoints.length; i++) {
-    ctx.addPoint(p2tPoints[i]);
-  }
-
-  ctx.triangulate();
-  const p2tTriangles = ctx.getTriangles();
-
-  // Map back to flat index array using the _idx we attached
-  const finalTriangles = [];
-  for (const tri of p2tTriangles) {
-    const pts = tri.getPoints();
-    // swap so rendering is on top
-    finalTriangles.push(pts[0]._idx, pts[2]._idx, pts[1]._idx);
-  }
 
   // --- Everything below is unchanged ---
 

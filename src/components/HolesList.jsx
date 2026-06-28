@@ -168,8 +168,9 @@ export default function HolesList({
     <List>
       {holeData.map((hole, index) =>
         [
-          hole.number === 10 && <ListSubheader disablePadding>Back Nine</ListSubheader>,
+          hole.number === 10 && <ListSubheader key={`${hole.number}head`} disablePadding>Back Nine</ListSubheader>,
           <HolesListItem
+            key={hole.number}
             hole={hole}
             editState={editState}
             onSet={onSet}

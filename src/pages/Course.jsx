@@ -11,6 +11,7 @@ import {
   ListItemText,
   MenuItem,
   Paper,
+  Slider,
   Stack,
   styled,
   Switch,
@@ -257,9 +258,9 @@ export default function Course() {
   const handleTreeEdit = (treeLayer) => {
     setTreeEditDialog(treeLayer);
   }
-  const handleTreeSave = useCallback((treeLayer) => {
+  const handleTreeSave = useCallback(async (treeLayer) => {
     if (treeEditDialog?.id) {
-      updateTreeLayer(treeEditDialog.id, treeLayer);
+      await updateTreeLayer(treeEditDialog.id, treeLayer);
     }
     setTreeEditDialog(null);
   }, [treeEditDialog]);
@@ -271,13 +272,42 @@ export default function Course() {
   const handleTreeAdd = useCallback(async () => {
     await addTreeLayer();
   }, [project.trees]);  
-  const handleTreeConfigChange = useCallback((val) => {
-    console.log('change', val, selectedLayer);
+
+  const handleTreeConfigChange = useCallback((key, value) => {
+    if (key === 'scaleRange') {
+      value = { min: value[0], max: value[1] };
+      console.log('scale change', value);
+    }
+    setSelectedLayer(prev => {
+      return {
+        ...prev,
+        config: {
+          ...prev.config,
+          [key]: value
+        }
+      }
+    });
+    console.log('change', key, value);
   }, [selectedLayer]);
 
-  const handleSaveChanges = (changes) => {
-    console.log('changes', changes);
-  }
+  const handleSaveTreeConfig = useCallback(async () => {
+    console.log('tree-changes', selectedLayer);
+    const updatedLayer = { ...selectedLayer.layer };
+    updatedLayer.treeConfigs = updatedLayer.treeConfigs.map(config => {
+      if (config.id === selectedLayer.config.id) {
+        return { ...config, ...selectedLayer.config };
+      }
+      return config;
+    });
+    console.log('updatedLayer', updatedLayer);
+    await updateTreeLayer(selectedLayer.layer.id, updatedLayer);
+
+    // updateTreeLayer
+  }, [selectedLayer]);
+
+  const handleSaveSurface = useCallback(() => {
+    console.log('surface-changes', selectedLayer);
+  }, [selectedLayer]);
 
   const handleStateUpdate = (event, result) => {
     console.log('handleStateUpdate', result);
@@ -374,7 +404,7 @@ export default function Course() {
                     onRemove={handleTreeRemove}
                     onImportModel={handleTreeModelImport}
                     onRemoveModel={handleTreeModelRemove}
-                    onTreeSelect={(config) => setSelectedLayer({ type: 'tree', config })}
+                    onTreeSelect={(layer, config) => setSelectedLayer({ type: 'tree', layer, config })}
                   />
                   <Box sx={{ p: 2 }}>
                     <Button fullWidth onClick={handleTreeAdd} color="secondary" variant="contained">Add Layer</Button>
@@ -586,9 +616,38 @@ export default function Course() {
                     </MiniTabs>
                   </Box>
                   <MiniTabPanel value={selectedTab} index={0}>
-                    <Box>
-                      <NumberField min={0.01} max={1} step={0.01} onChange={(event, val) => handleTreeConfigChange(val)} />
-                    </Box>
+                    <Stack spacing={3}>
+                      <Typography sx={{ mb: 3 }}>{selectedLayer.config.name}</Typography>
+
+                      <NumberField
+                        label="Density"
+                        size="small"
+                        min={0.01}
+                        max={1}
+                        step={0.01}
+                        value={selectedLayer.config.density}
+                        onChange={(event, val) => handleTreeConfigChange('density', event)}
+                      />
+                      {/* <NumberField label="Scale Range" size="small" min={0.01} max={1} step={0.01} onChange={(event, val) => handleTreeConfigChange(val)} /> */}
+                      <Box>
+                        <Typography variant="caption">Scale Range</Typography>
+                        <Slider
+                          label={'Scale Range'}
+                          min={0.05}
+                          max={5}
+                          step={0.05}
+                          valueLabelDisplay="auto"
+                          marks={[{ value: 0.05, label: '0x' }, { value: 5, label: '5x' }]}
+                          // marks={true}
+                          value={[selectedLayer.config.scaleRange.min, selectedLayer.config.scaleRange.max]}
+                          onChange={(event, val) => handleTreeConfigChange('scaleRange', val)}
+                          // onChange={handleChange}
+                          // valueLabelDisplay="auto"
+                          // getAriaValueText={valuetext}
+                        />    
+                      </Box>
+                      <Button variant="contained" onClick={handleSaveTreeConfig}>Save Changes</Button>                    
+                    </Stack>
                   </MiniTabPanel>
                 </>
               ) : null}
@@ -625,7 +684,7 @@ export default function Course() {
                         key={selectedLayer?.layer.id}
                         layer={selectedLayer?.layer}
                         visible={!hiddenLayers?.[selectedLayer?.layer?.id]}
-                        onSave={handleSaveChanges}
+                        onSave={handleSaveSurface}
                       />
                     </Box>
                   </MiniTabPanel>
