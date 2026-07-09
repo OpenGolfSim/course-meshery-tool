@@ -9,9 +9,11 @@ module.exports = {
     'mesh.worker': './src/lib/workers/mesh.worker.js',
     'export.worker': './src/lib/workers/export.worker.js',
   },
-  plugins: [
-    new webpack.IgnorePlugin({ resourceRegExp: /^sharp$/ })
-  ],
+  resolve: {
+    alias: {
+      sharp: false
+    }
+  },
   target: 'electron-main',
   output: {
     filename: '[name].js',
