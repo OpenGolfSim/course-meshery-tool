@@ -21,6 +21,7 @@ export default function ExportCourseDialog(props) {
   const { onClose, open, data } = props;
 
   const [jobState, setJobState] = useState({ phase: 'settings', count: 0, progress: 0 });
+  const [exportProgress, setExportProgress] = useState({ status: 'Initializing...', percent: -1 });
   const [exportSettings, setExportSettings] = useState({ format: 'glb' });
 
   const handleFormatChange = (event) => {
@@ -40,23 +41,26 @@ export default function ExportCourseDialog(props) {
   const handleClose = () => {
     if (onClose) onClose();
   }
-  // const handleProgressUpdate = useCallback(async (evt, update) => {
-  //   console.log('update progress', update);
-  //   setJobState(old => ({ ...old, ...update }));
-  // }, []);
+  const handleProgressUpdate = useCallback(async (evt, update) => {
+    console.log('update progress', update);
+    setExportProgress(update);
+    // setJobState(old => ({ ...old, ...update }));
+  }, []);
 
-  // useEffect(() => {
-  //   window.meshery.on('export.progress', handleProgressUpdate);
-  //   return () => {
-  //     window.meshery.off('export.progress', handleProgressUpdate);
-  //   }
-  // }, []);
+  useEffect(() => {
+    window.meshery.on('export.progress', handleProgressUpdate);
+    return () => {
+      window.meshery.off('export.progress', handleProgressUpdate);
+    }
+  }, []);
+
   useEffect(() => {
     if (!open) {
       setJobState({ phase: 'settings', count: 0, progress: 0 });
     }
   }, [open]);
 
+  
   return (
     <Dialog
       onClose={handleClose}
@@ -75,9 +79,9 @@ export default function ExportCourseDialog(props) {
 
         {jobState.phase === 'settings' ? (
           <Grid container={true} spacing={3}>
-            <Grid>
+            <Grid sx={{ width: 200 }}>
               {data.mapImage ? (
-                <img src={data.mapImage} height={200} />
+                <img src={data.mapImage} width={200} />
               ) : null}
             </Grid>
             <Grid flex={1}>
@@ -100,8 +104,8 @@ export default function ExportCourseDialog(props) {
       
         {jobState.phase === 'generate' ? (
           <Stack spacing={3} sx={{ justifyItems: 'center', alignItems: 'center' }}>
-            <CircularProgress variant="indeterminate" />
-            <Typography>Exporting...</Typography>
+            <CircularProgress variant={exportProgress.percent >= 0 ? 'determinate' : 'indeterminate'} value={exportProgress.percent} />
+            <Typography>{exportProgress.status || 'Exporting...'}</Typography>
           </Stack>
         ) : null}
         

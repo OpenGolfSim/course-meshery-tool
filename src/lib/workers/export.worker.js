@@ -16,6 +16,7 @@ import {
   KHRMaterialsIOR,
   EXTMeshGPUInstancing,
 } from '@gltf-transform/extensions';
+import { encodeToKTX2 } from 'ktx2-encoder';
 import { ktx2 } from 'ktx2-encoder/gltf-transform';
 import { PNG } from 'pngjs';
 import jpeg from 'jpeg-js';
@@ -26,7 +27,6 @@ import { dedup, prune } from "@gltf-transform/functions";
 import { addOBJ } from "../../trees/lib/obj.js";
 import { addGLB } from "../../trees/lib/gltf.js";
 import { generateFlowMap } from '../flowmap.js';
-import { EXTRA_RESOURCE_PATH } from '../app.js';
 
 
 function decodeImage(data) {
@@ -53,59 +53,44 @@ const EXTENSIONS = [
   EXTMeshGPUInstancing,
 ];
 
-async function compressTextures(glbBuffer) {
-  // return new Observable(async observer => {
+async function compressTextures(glbBuffer, ktx2Options = {}) {
+  const io = new NodeIO().registerExtensions(EXTENSIONS);
+  const doc = await io.readBinary(new Uint8Array(glbBuffer));
 
-    const io = new NodeIO().registerExtensions(EXTENSIONS);
-    const doc = await io.readBinary(new Uint8Array(glbBuffer));
+  let textureCount = 0;
+  let totalTextures = 0;
 
-    let textureCount = 0;
-    let totalTextures = 0;
+  // Count first
+  doc.getRoot().listTextures().forEach(t => {
+    totalTextures++;
+    console.log(t.getName());
+  });
 
-    // Count first
-    doc.getRoot().listTextures().forEach(t => {
-      totalTextures++;
-      console.log(t.getName());
-    });
+  await doc.transform(
+    ktx2({
+      isUASTC: true,
+      generateMipmap: true,
+      imageDecoder: decodeImage,
+      ...ktx2Options
+    })
+  );
 
-    await doc.transform(
-      ktx2({
-        isUASTC: true,
-        generateMipmap: true,
-        imageDecoder: decodeImage,
-        wasmUrl: path.join(EXTRA_RESOURCE_PATH, 'basis/basis_encoder.wasm'),
-        // imageDecoder: async (data) => {
-          // return decodeImage(data);
-          // const { info, data: raw } = await sharp(Buffer.from(data))
-          //   .ensureAlpha()
-          //   .raw()
-          //   .toBuffer({ resolveWithObject: true });
-          // const pixels = new Uint8Array(raw.length);
-          // pixels.set(raw);
-
-          // observer.next({
-          //   type: 'progress',
-          //   progress: {
-          //     total: totalTextures,
-          //     current: ++textureCount
-          //   }
-          // });
-          // return { width: info.width, height: info.height, data: pixels };
-        // }
-      })
-    );
-
-    const result = await io.writeBinary(doc);
-    return Transfer(result.buffer);
-    // observer.next({
-    //   type: 'complete',
-    //   buffer: Transfer(result.buffer)
-    // });
-    // observer.complete();
-  // });
+  const result = await io.writeBinary(doc);
+  return Transfer(result.buffer);
 }
 
-export async function exportTreePackage(inputFiles, outputFile) {
+async function compressTexture(rawImageBuffer, ktx2Options = {}) {
+  const decoded = decodeImage(rawImageBuffer);
+  const result = await encodeToKTX2(decoded.data, {
+    isUASTC: true,
+    generateMipmap: true,
+    imageDecoder: () => decoded,
+    ...ktx2Options
+  });
+  return Transfer(result.buffer);
+}
+
+export async function exportTreePackage(inputFiles, outputFile, ktx2Options = {}) {
 
   // const inputFiles = process.argv.slice(2, -1);
   // const output = process.argv.at(-1);
@@ -160,7 +145,7 @@ export async function exportTreePackage(inputFiles, outputFile) {
       isUASTC: true,
       generateMipmap: true,
       imageDecoder: decodeImage,
-      wasmUrl: path.join(EXTRA_RESOURCE_PATH, 'basis/basis_encoder.wasm'),
+      ...ktx2Options
       // imageDecoder: async (data) => {
       // const { info, data: raw } = await sharp(Buffer.from(data))
       //   .ensureAlpha()
@@ -187,4 +172,4 @@ export async function generateFlowMapPNG(polygon, spine) {
   return PNG.sync.write(png);
 }
 
-expose({ compressTextures, exportTreePackage, generateFlowMapPNG });
+expose({ compressTextures, compressTexture, exportTreePackage, generateFlowMapPNG });

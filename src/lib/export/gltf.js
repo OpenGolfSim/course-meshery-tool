@@ -18,6 +18,7 @@ import {
   EXTMeshGPUInstancing,
 } from '@gltf-transform/extensions';
 import { PNG } from 'pngjs';
+import { EXTRA_RESOURCE_PATH } from '../app.js';
 
 import { hexToRGB01 } from '../colors';
 import { TEXTURE_MAP } from '../textures';
@@ -213,6 +214,7 @@ export async function write(filePath, project, meshData, imageData) {
 
   let materialMap = new Map();
 
+  broadcast('export.progress', { type: 'progress', percent: -1, status: 'Building final materials...' });
   for (const layer of project._meshes) {
     const mesh = meshData.meshes.get(layer.id)?.mesh;
     if (!mesh) {
@@ -271,6 +273,7 @@ export async function write(filePath, project, meshData, imageData) {
   }
 
   if (project.trees?.length) {
+    broadcast('export.progress', { type: 'progress', percent: -1, status: 'Adding planted assets' });      
     
     for (const tree of project.trees) {
       for (const config of tree.treeConfigs ?? []) {
@@ -318,19 +321,41 @@ export async function write(filePath, project, meshData, imageData) {
 
   consolidateBuffers(doc);
 
-  const uncompressedGlb = await io.writeBinary(doc);
-  // const worker = await spawn(new Worker('./compress-worker.js'));
-  // const compressedGlb = await worker.compress(Transfer(uncompressedGlb.buffer));
-  const compressedGlb = await compressTextures(uncompressedGlb, (progress) => {
-    console.log('compress-progress', progress);
-  });
+  // const uncompressedGlb = await io.writeBinary(doc);
+  // // const worker = await spawn(new Worker('./compress-worker.js'));
+  // // const compressedGlb = await worker.compress(Transfer(uncompressedGlb.buffer));
+  // const compressedGlb = await compressTextures(
+  //   uncompressedGlb,
+  //   { wasmUrl: path.join(EXTRA_RESOURCE_PATH, 'basis/basis_encoder.wasm') },
+  //   (progress) => {
+  //     console.log('compress-progress', progress);
+  //   }
+  // );
+  // const finalDoc = await io.readBinary(new Uint8Array(compressedGlb));
+  broadcast('export.progress', { type: 'progress', percent: -1, status: 'Compressing textures to KTX2 format' });
 
-  const finalDoc = await io.readBinary(new Uint8Array(compressedGlb));
+  await compressTextures(
+    doc,
+    (progress) => {
+      console.log('compress-progress', progress);
+      broadcast('export.progress', {
+        type: 'progress',
+        status: `Compressing texture ${progress.current} of ${progress.total}`,
+        percent: ((progress.current - 1) / progress.total) * 100,
+        current: progress.current,
+        total: progress.total
+      });
+    }
+  );
+
+  broadcast('export.progress', { type: 'progress', percent: -1, status: 'Building tree masks...' });
+  // TODO: refactor all back to doc
+  // const finalDoc = doc;
 
   if (project.trees?.length) {
     for (const tree of project.trees) {
       const pngBuffer = positionsToPngBuffer(tree.positions);
-      const texture = finalDoc.createTexture(tree.id)
+      const texture = doc.createTexture(tree.id)
         .setMimeType('image/png')
         .setImage(new Uint8Array(pngBuffer))
         .setExtras({
@@ -340,15 +365,18 @@ export async function write(filePath, project, meshData, imageData) {
         });
     }
   }
+
+  broadcast('export.progress', { type: 'progress', percent: -1, status: 'Embedding 2D course map...' });
   // add course map
   if (imageData.mapImage) {
     const mapImage = Buffer.from(imageData.mapImage.split('base64,')[1], 'base64');
-    const texture = finalDoc.createTexture('course_map')
+    const texture = doc.createTexture('course_map')
       .setMimeType('image/jpeg')
       .setImage(new Uint8Array(mapImage))
       .setExtras({ type: 'course_map' });
   }
   
+  broadcast('export.progress', { type: 'progress', percent: -1, status: 'Embedding blend maps...' });
   // add flow/blend maps (uncompressed)
   for (const layer of project._meshes) {
     // Add blend maps (uncompressed — must not be KTX2 compressed)
@@ -374,7 +402,7 @@ export async function write(filePath, project, meshData, imageData) {
       }
       const pngBuffer = PNG.sync.write(png);
 
-      finalDoc.createTexture(`blend_map_${layer.id}`)
+      doc.createTexture(`blend_map_${layer.id}`)
         .setMimeType('image/png')
         .setImage(new Uint8Array(pngBuffer))
         .setExtras({
@@ -387,6 +415,7 @@ export async function write(filePath, project, meshData, imageData) {
     }
     
     if (layer.surface === 'plane_river' && layer.flowMap) {
+      broadcast('export.progress', { type: 'progress', percent: -1, status: 'Embedding river flow maps...' });      
       console.log('Adding river plane...');
       const { width, height, bounds, data } = layer.flowMap;
 
@@ -394,7 +423,7 @@ export async function write(filePath, project, meshData, imageData) {
       png.data = Buffer.from(data);
       const pngBuffer = PNG.sync.write(png);
 
-      finalDoc.createTexture(`flow_map_${layer.id}`)
+      doc.createTexture(`flow_map_${layer.id}`)
           .setMimeType('image/png')
           .setImage(new Uint8Array(pngBuffer))
           .setExtras({
@@ -430,5 +459,5 @@ export async function write(filePath, project, meshData, imageData) {
     }
 
   }
-  await io.write(filePath, finalDoc);
+  await io.write(filePath, doc);
 }

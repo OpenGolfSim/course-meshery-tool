@@ -1,8 +1,11 @@
-import { dialog, shell } from 'electron';
 import path from 'path';
+import { dialog, shell } from 'electron';
+import logger from 'electron-log';
 import { openProject, meshData } from '../project';
 import { write as writeGLTF } from './gltf';
 import { write as writeOBJ } from './obj';
+
+const log = logger.scope('EXPORT');
 
 export async function exportMeshes(exportSettings, imageData) {
 
@@ -17,7 +20,7 @@ export async function exportMeshes(exportSettings, imageData) {
     console.log('No file was selected');
     return;
   }
-  console.log('save all layers to ', filePath);
+  log.info(`Export final course (as ${exportSettings.format}) to: ${filePath}`);
   // console.log('save all layers to ', openProject._layers);
   // console.log('save all layers to ', meshData);
 

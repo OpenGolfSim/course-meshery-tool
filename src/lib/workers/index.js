@@ -1,8 +1,10 @@
 import { app, session, shell, BrowserWindow, ipcMain, dialog, protocol, net } from 'electron';
 import path from 'path';
-import { spawn, Thread, Worker } from 'threads';
+import pMap from 'p-map';
+import { spawn, Thread, Worker, Pool } from 'threads';
 import { Transfer } from 'threads/worker';
 import { _heightMapCache } from '../project';
+import { EXTRA_RESOURCE_PATH } from '../app';
 
 function getWorker(workerFilename) {
   return spawn(new Worker(path.join(__dirname, workerFilename)));
@@ -137,7 +139,9 @@ export async function createWorkerWindow(preloadUrl, mainUrl) {
 
 export async function exportTreePackage(inputFiles, outputFile) {
   const exportWorker = await getWorker('export.worker.js'); 
-  await exportWorker.exportTreePackage(inputFiles, outputFile);
+  await exportWorker.exportTreePackage(inputFiles, outputFile, {
+    wasmUrl: path.join(EXTRA_RESOURCE_PATH, 'basis/basis_encoder.wasm'),    
+  });
 }
 
 export async function generateFlowMapPNG(polygon, spine) {
@@ -145,30 +149,33 @@ export async function generateFlowMapPNG(polygon, spine) {
   return exportWorker.generateFlowMapPNG(polygon, spine);
 }
 
-export async function compressTextures(uncompressedGlb, onProgress = () => {}) {
-  const exportWorker = await getWorker('export.worker.js'); 
-  let compressedBuffer;
-  return exportWorker.compressTextures(Transfer(uncompressedGlb.buffer));
-  // return new Promise((resolve, reject) => {
-  //   exportWorker.compressTextures(Transfer(uncompressedGlb.buffer)).subscribe({
-  //     next(status) {
-  //       if (status.type === 'progress') {
-  //         console.log('export-progress', status);
-  //         onProgress(status.progress);
-  //       } else if (status.type === 'complete') {
-  //         console.log('export-done');
-  //         compressedBuffer = status.buffer;
-  //       }
-  //     },
-  //     complete() {
-  //       console.log('export-done');
-  //       resolve(compressedBuffer);
-  //       Thread.terminate(exportWorker);
-  //     },
-  //     error(err) {
-  //       console.log('export-error', err.message);
-  //       Thread.terminate(exportWorker);
-  //     }
-  //   });
-  // });
+// export async function compressTextures(uncompressedGlb, ktx2Options = {}, onProgress = () => {}) {
+//   const exportWorker = await getWorker('export.worker.js'); 
+//   return exportWorker.compressTextures(Transfer(uncompressedGlb.buffer), ktx2Options);
+// }
+
+export async function compressTextures(doc, onProgress = () => {}) {
+  // const pool = Pool(() => spawn(new Worker(path.join(__dirname, 'export.worker.js'))), 4);
+  const pool = Pool(() => getWorker('export.worker.js'), 4);
+
+  const textures = doc.getRoot().listTextures()
+    .filter(t => t.getMimeType() !== 'image/ktx2');
+  const total = textures.length;
+  let completed = 0;
+
+  await pMap(textures, async (texture) => {
+    const rawImage = texture.getImage();
+
+    const ktx2Buffer = await pool.queue(worker =>
+      worker.compressTexture(Transfer(rawImage.buffer), {
+        wasmUrl: path.join(EXTRA_RESOURCE_PATH, 'basis/basis_encoder.wasm'), 
+      })
+    );
+
+    texture.setImage(new Uint8Array(ktx2Buffer));
+    texture.setMimeType('image/ktx2');
+    onProgress({ current: ++completed, total });
+  }, { concurrency: 4 });
+
+  await pool.terminate();
 }
