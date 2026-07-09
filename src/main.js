@@ -4,7 +4,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import { parseSVG } from './lib/svg';
-import { parsePalette } from './lib/colors';
+// import { parsePalette } from './lib/colors';
 import { parseRaw } from './lib/heightmap';
 import { resourceRoot } from './lib/app';
 import { buildAppMenu } from './lib/menu';
@@ -22,6 +22,7 @@ const MAX_FILESIZE = 1e6; // Anything over 1 MB probably has images in it
 if (require('electron-squirrel-startup')) {
   app.quit();
 }
+
 protocol.registerSchemesAsPrivileged([
   { 
     scheme: PROJECT_FILE_PROTOCOL, 
@@ -55,11 +56,15 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 
+// app.commandLine.appendSwitch('use-angle', 'metal');
+// if (process.platform === 'darwin') {
+// }
+
 buildAppMenu();
 
 app.whenReady().then(async () => {
   // load color palette into memory
-  await parsePalette();
+  // await parsePalette();
 
   const filter = { urls: ['https://*.tile.openstreetmap.org/*'] };
 
@@ -105,44 +110,44 @@ app.on('window-all-closed', () => {
 // });
 
 // TODO: move and reorganize
-ipcMain.handle('svg.select', async (event) => {
-  const result = await dialog.showOpenDialog({
-    title: 'Select SVG File',
-    filters: [
-      { name: 'SVG Files', extensions: ['svg'] },
-    ]
-  });
+// ipcMain.handle('svg.select', async (event) => {
+//   const result = await dialog.showOpenDialog({
+//     title: 'Select SVG File',
+//     filters: [
+//       { name: 'SVG Files', extensions: ['svg'] },
+//     ]
+//   });
 
-  const [svgPath] = result.filePaths;
-  if (result.canceled || !svgPath) {
-    return;
-  }
+//   const [svgPath] = result.filePaths;
+//   if (result.canceled || !svgPath) {
+//     return;
+//   }
 
-  try {
+//   try {
 
-    log.info(`Parsing SVG (${svgPath})`);
-    const palette = await parsePalette();
+//     log.info(`Parsing SVG (${svgPath})`);
+//     const palette = await parsePalette();
 
-    const stats = await fs.promises.stat(svgPath);
-    if (stats.size > MAX_FILESIZE) {
-      throw new Error(`SVG file should not be larger than 1MB. Make sure you link any image layers rather than embedding them.`);
-    }
-    const svgData = await fs.promises.readFile(svgPath, 'utf-8');
+//     const stats = await fs.promises.stat(svgPath);
+//     if (stats.size > MAX_FILESIZE) {
+//       throw new Error(`SVG file should not be larger than 1MB. Make sure you link any image layers rather than embedding them.`);
+//     }
+//     const svgData = await fs.promises.readFile(svgPath, 'utf-8');
 
-    const { layers, width, height } = await parseSVG(svgData, palette);
-    log.info('got svg info', { width, height });
-    return {
-      path: svgPath,
-      palette,
-      layers,
-      svgSize: [width, height],
-      layerSettings: { ...defaultSettings }
-    };
-  } catch (error) {
-    log.error('SVG error', error);
-    event.sender.send('error', error.message);
-  }
-});
+//     const { layers, width, height } = await parseSVG(svgData, palette);
+//     log.info('got svg info', { width, height });
+//     return {
+//       path: svgPath,
+//       palette,
+//       layers,
+//       svgSize: [width, height],
+//       layerSettings: { ...defaultSettings }
+//     };
+//   } catch (error) {
+//     log.error('SVG error', error);
+//     event.sender.send('error', error.message);
+//   }
+// });
 
 ipcMain.handle('url.open', async (_, href) => {
   log.debug(`Opening url: ${href}`);

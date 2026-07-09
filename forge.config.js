@@ -75,7 +75,7 @@ module.exports = {
               preload: {
                 js: './src/trees/preload.js',
               },
-            },
+            }
           ],
         },
         devContentSecurityPolicy: [
@@ -83,7 +83,7 @@ module.exports = {
           "style-src 'self' 'unsafe-inline' blob: data: gap:",
           "script-src 'self' 'unsafe-eval' 'unsafe-inline' blob: data: gap:",
           "object-src 'self' blob: data: gap:",
-          "img-src 'self' blob: data: gap: *.openstreetmap.org *.arcgisonline.com mt.google.com *.virtualearth.net",
+          "img-src 'self' blob: data: gap: *.opengolfsim.com *.openstreetmap.org *.arcgisonline.com mt.google.com *.virtualearth.net",
           "connect-src 'self' https://*.mapbox.com blob: data: gap: project: laz:",
           "frame-src 'self' blob: data: gap:",
           "worker-src 'self' blob: data: gap:"

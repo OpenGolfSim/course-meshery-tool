@@ -38,11 +38,11 @@ export default function TreeLayerList({
             label={treeLayer.name}
             icon={<LayerIcon />}
             menuItems={[
-              {
-                label: 'Import Model',
-                icon: <ImportIcon />,
-                onClick: () => onImportModel(treeLayer.id)
-              },
+              // {
+              //   label: 'Plant',
+              //   icon: <ImportIcon />,
+              //   onClick: () => onImportModel(treeLayer.id)
+              // },
               {
                 label: 'Edit Layer',
                 icon: <EditIcon />,
@@ -55,39 +55,37 @@ export default function TreeLayerList({
               },
             ]}
           />
-          <Collapse in={panelOpen === treeLayer.id}>
-            {treeLayer.treeConfigs?.length ? (
-              <List sx={{ backgroundColor: '#000' }} disablePadding={true}>
-                {
-                  treeLayer.treeConfigs?.map(treeConfig => (
-                    <CustomListItem
-                      button={{
-                        onClick: () => onTreeSelect(treeLayer, treeConfig)
-                      }}
-                      size="small"
-                      selected={selectedTree === treeConfig.id}
-                      // sx={{ p: 1, pl: 3 }}
-                      disablePadding={true}
-                      disableGutters={false}
-                      key={treeConfig.id}
-                      label={treeConfig.name || treeConfig.filePath.split(/[\/\\]/g).pop()}
-                      icon={<TreeIcon />}
-                      menuItems={[
-                        {
-                          label: 'Remove Model',
-                          icon: <DeleteIcon />,
-                          onClick: () => onRemoveModel(treeLayer.id, treeConfig.id)
-                        }
-                      ]}
-                    />
-                  ))
-                }
-              </List>
-            ) : (
-              <Box sx={{ textAlign: 'center', pt: 3, pb: 4 }}>
-                <Button onClick={() => onImportModel(treeLayer.id)} size="small" variant="contained" color="secondary">Add Tree Model</Button>
-              </Box>
-            )}
+          <Collapse in={panelOpen === treeLayer.id} sx={{ backgroundColor: '#000' }}>
+            <List disablePadding={true}>
+              {
+                treeLayer.treeConfigs?.map(treeConfig => (
+                  <CustomListItem
+                    button={{
+                      onClick: () => onTreeSelect(treeLayer, treeConfig)
+                    }}
+                    size="small"
+                    selected={selectedTree === treeConfig.id}
+                    // sx={{ p: 1, pl: 3 }}
+                    disablePadding={true}
+                    disableGutters={false}
+                    key={treeConfig.id}
+                    label={treeConfig.name || treeConfig.filePath.split(/[\/\\]/g).pop()}
+                    icon={<TreeIcon />}
+                    menuItems={[
+                      {
+                        label: 'Remove Model',
+                        icon: <DeleteIcon />,
+                        onClick: () => onRemoveModel(treeLayer.id, treeConfig.id)
+                      }
+                    ]}
+                  />
+                ))
+              }
+            </List>
+          
+            <Box sx={{ textAlign: 'center', pt: 3, pb: 4 }}>
+              <Button onClick={() => onImportModel(treeLayer.id)} size="small" variant="contained" color="secondary">Plant Object</Button>
+            </Box>
           </Collapse>
         </React.Fragment>
       ))}

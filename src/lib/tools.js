@@ -8,6 +8,7 @@ import got from 'got';
 import { filesize } from 'filesize';
 import { app } from 'electron';
 import { resourceRoot } from './utils.js';
+import { downloadAsset, USER_AGENT, CancelledError } from './download.js';
 import { broadcast } from './window.js';
 import * as tar from 'tar';
 import extractZip from 'extract-zip';
@@ -17,7 +18,6 @@ const pipelineAsync = promisify(pipeline)
 
 const log = logger.scope('INSTALL');
 
-const USER_AGENT = 'OGSMeshery';
 let abortSignal;
 // const TOOLS_DIR = path.join(resourceRoot(), 'python', 'tools');
 // const PDAL_BIN = path.join(PYTHON_ENV, 'bin', 'pdal');
@@ -50,15 +50,6 @@ const REQUIRED_BINARIES = {
     windowsPath: 'Library/bin',
   }
 };
-
-
-class CancelledError extends Error {
-  constructor() {
-    super('Operation cancelled')
-    this.name = 'CancelledError'
-    this.cancelled = true
-  }
-}
 
 // Helper: throw if the signal has been aborted
 function throwIfAborted(signal) {
@@ -102,44 +93,44 @@ function updateInstallState(update) {
   broadcast('installState', installState);  
 }
 
-async function downloadAsset(asset, tmpArchive, signal, onProgress) {
-  throwIfAborted(signal);
-  if (!asset.browser_download_url) {
-    throw new Error('Unable to find valid download URL');
-  }
-  log.info(`Downloading ${asset.browser_download_url} to ${tmpArchive}`);
-  const downloadStream = got.stream(asset.browser_download_url, {
-    headers: { 'User-Agent': USER_AGENT },
-    // got auto-follows redirects by default, which matters for GitHub asset URLs
-  })
+// async function downloadAsset(asset, tmpArchive, signal, onProgress) {
+//   throwIfAborted(signal);
+//   if (!asset.browser_download_url) {
+//     throw new Error('Unable to find valid download URL');
+//   }
+//   log.info(`Downloading ${asset.browser_download_url} to ${tmpArchive}`);
+//   const downloadStream = got.stream(asset.browser_download_url, {
+//     headers: { 'User-Agent': USER_AGENT },
+//     // got auto-follows redirects by default, which matters for GitHub asset URLs
+//   })
 
-  downloadStream.on('downloadProgress', ({ transferred, total, percent }) => {
-    // console.log(`Downloading ${transferred} of ${total}`);
-    if (onProgress && total) {
-      onProgress({
-        // phase: 'download',
-        // downloaded: transferred,
-        // total,
-        progress: percent * 100,
-        status: `Downloading ${filesize(transferred)} of ${filesize(total)}`
-      })
-    }
-  });
+//   downloadStream.on('downloadProgress', ({ transferred, total, percent }) => {
+//     // console.log(`Downloading ${transferred} of ${total}`);
+//     if (onProgress && total) {
+//       onProgress({
+//         // phase: 'download',
+//         // downloaded: transferred,
+//         // total,
+//         progress: percent * 100,
+//         status: `Downloading ${filesize(transferred)} of ${filesize(total)}`
+//       })
+//     }
+//   });
 
-  // Abort the HTTP stream when the signal fires
-  const onAbort = () => downloadStream.destroy(new CancelledError());
-  signal.addEventListener('abort', onAbort);
+//   // Abort the HTTP stream when the signal fires
+//   const onAbort = () => downloadStream.destroy(new CancelledError());
+//   signal.addEventListener('abort', onAbort);
   
-  try {
-    await pipelineAsync(downloadStream, fs.createWriteStream(tmpArchive));
-    log.info(`Download finished!`);
-  } catch (err) {
-    if (signal?.aborted) throw new CancelledError();
-    throw err;
-  } finally {
-    signal.removeEventListener('abort', onAbort);
-  }
-}
+//   try {
+//     await pipelineAsync(downloadStream, fs.createWriteStream(tmpArchive));
+//     log.info(`Download finished!`);
+//   } catch (err) {
+//     if (signal?.aborted) throw new CancelledError();
+//     throw err;
+//   } finally {
+//     signal.removeEventListener('abort', onAbort);
+//   }
+// }
 
 async function extractArchive(archivePath, outDir, signal, onProgress) {
   throwIfAborted(signal);
@@ -216,7 +207,11 @@ export async function installStart() {
     const baseDir = getToolsPath();
     abortSignal = new AbortController();
     // await sleep(2000);
-    await downloadAsset(release.asset, tmpArchive, abortSignal.signal, (update) => {
+
+    if (!release.asset?.browser_download_url) {
+      throw new Error('Unable to find valid download URL');
+    }    
+    await downloadAsset(release.asset.browser_download_url, tmpArchive, abortSignal.signal, (update) => {
       updateInstallState({ progress: update.progress, status: update.status });
     });
   

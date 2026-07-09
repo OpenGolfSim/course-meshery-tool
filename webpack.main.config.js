@@ -8,6 +8,9 @@ module.exports = {
     'mesh.worker': './src/lib/workers/mesh.worker.js',
     'export.worker': './src/lib/workers/export.worker.js',
   },
+  externals: {
+    sharp: 'commonjs sharp'
+  },
   target: 'electron-main',
   output: {
     filename: '[name].js',

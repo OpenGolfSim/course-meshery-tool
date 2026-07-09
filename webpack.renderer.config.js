@@ -5,12 +5,24 @@ rules.push({
   test: /\.css$/,
   use: [{ loader: 'style-loader' }, { loader: 'css-loader' }],
 });
+rules.push({
+  test: /\.(png|jpe?g|svg|gif|webp)$/i,
+  type: 'asset/resource',
+  generator: {
+    filename: 'images/[name][ext]'
+  }
+  // use: [{ loader: 'style-loader' }, { loader: 'css-loader' }],
+});
 
 
 module.exports = {
   // Put your normal webpack config below here
   module: {
     rules,
+    noParse: [
+      /three\/examples\/jsm\/physics\/JoltPhysics/,
+      /three\/examples\/jsm\/physics\/RapierPhysics/,
+    ]
   },
   resolve: {
     extensions: ['.js', '.ts', '.jsx', '.tsx', '.css'],
@@ -24,5 +36,8 @@ module.exports = {
   stats: {
     children: true,
     errorDetails: true,
-  }
+  },
+  ignoreWarnings: [
+    /three\/examples\/jsm\/physics/,
+  ],
 };

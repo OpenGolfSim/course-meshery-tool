@@ -2,7 +2,20 @@ import { expose, Transfer } from 'threads/worker';
 import { Observable } from "observable-fns"
 
 import { Document, NodeIO } from '@gltf-transform/core';
-import { KHRTextureBasisu } from '@gltf-transform/extensions';
+// import { KHRTextureBasisu } from '@gltf-transform/extensions';
+import {
+  // KHRDracoMeshCompression,
+  KHRMaterialsUnlit,
+  KHRMeshQuantization,
+  KHRTextureBasisu,
+  KHRTextureTransform,
+  KHRMaterialsSpecular,
+  KHRMaterialsClearcoat,
+  KHRMaterialsTransmission,
+  KHRMaterialsVolume,
+  KHRMaterialsIOR,
+  EXTMeshGPUInstancing,
+} from '@gltf-transform/extensions';
 import { ktx2 } from 'ktx2-encoder/gltf-transform';
 // import sharp from 'sharp';
 import { PNG } from 'pngjs';
@@ -13,6 +26,7 @@ import path from "node:path";
 import { dedup, prune } from "@gltf-transform/functions";
 import { addOBJ } from "../../trees/lib/obj.js";
 import { addGLB } from "../../trees/lib/gltf.js";
+import { generateFlowMap } from '../flowmap.js';
 
 
 function decodeImage(data) {
@@ -26,7 +40,18 @@ function decodeImage(data) {
   return { width: png.width, height: png.height, data: new Uint8Array(png.data) };
 }
 
-const EXTENSIONS = [KHRTextureBasisu];
+const EXTENSIONS = [
+  KHRMaterialsUnlit,
+  KHRMeshQuantization,
+  KHRTextureBasisu,
+  KHRTextureTransform,
+  KHRMaterialsSpecular,
+  KHRMaterialsClearcoat,
+  KHRMaterialsTransmission,
+  KHRMaterialsVolume,
+  KHRMaterialsIOR,
+  EXTMeshGPUInstancing,
+];
 
 async function compressTextures(glbBuffer) {
   // return new Observable(async observer => {
@@ -90,10 +115,13 @@ export async function exportTreePackage(inputFiles, outputFile) {
     // process.exit(1);
   }
   
-  const io = new NodeIO().registerExtensions([KHRTextureBasisu]);
+  const io = new NodeIO().registerExtensions(EXTENSIONS);
   
   const doc = new Document();
-  doc.createExtension(KHRTextureBasisu);
+  for (const Ext of EXTENSIONS) {
+    doc.createExtension(Ext);
+  }
+  // doc.createExtension(KHRTextureBasisu);
   
   const buffer = doc.createBuffer();
   const scene = doc.createScene("OGSTree");
@@ -149,4 +177,12 @@ export async function exportTreePackage(inputFiles, outputFile) {
 
 }
 
-expose({ compressTextures, exportTreePackage });
+export async function generateFlowMapPNG(polygon, spine) {
+  const flowMapData = await generateFlowMap(polygon, spine);
+  const { data, width, height } = flowMapData;
+  const png = new PNG({ width, height, colorType: 6 }); // 6 = RGBA
+  png.data = Buffer.from(data);
+  return PNG.sync.write(png);
+}
+
+expose({ compressTextures, exportTreePackage, generateFlowMapPNG });

@@ -5,6 +5,7 @@ import * as project from './project';
 import * as imagery from './imagery';
 import * as tools from './tools';
 import * as colors from './colors';
+import * as plants from './cache/plants';
 import { exportMeshes } from './export';
 import { generateTerrain } from './terrain';
 import { changeToolsPath, getRecentProjects, getToolsPath } from './app';
@@ -55,10 +56,14 @@ ipcMain.handle('trees.import', (_event, treeLayerId) => project.importTree(treeL
 // ipcMain.handle('trees.postImport', (_event, treeLayerId, treeConfigId, imageData) => project.postImportTree(treeLayerId, treeConfigId, imageData));
 ipcMain.handle('trees.remove', (_event, treeLayerId, treeConfigId) => project.removeTreeConfig(treeLayerId, treeConfigId));
 
+ipcMain.handle('trees.getAvailablePlants', (_event) => plants.getAvailablePlants());
+ipcMain.handle('trees.downloadPlantAsset', (_event, plant) => plants.downloadPlantAsset(plant));
+ipcMain.handle('trees.importPlant', (_event, layerId, plant) => plants.importPlantAsset(layerId, plant));
+
 
 // ipcMain.handle('project.save', (_event) => project.saveProjectSettings());
 
-ipcMain.handle('colors.palette', (_event) => colors.parsePalette());
+// ipcMain.handle('colors.palette', (_event) => colors.parsePalette());
 // ipcMain.handle('project.reloadSVG', (_event) => project.reloadSVG());
 // ipcMain.handle('project.saveWrite', (_event, settings) => project.saveWrite(settings));
 
@@ -73,9 +78,12 @@ ipcMain.handle('lidar.downloadCourse', (_event, lidarGeoJson, courseBounds) => l
 ipcMain.handle('lidar.readOpenFile', (_event) => lidar.readOpenFile());
 
 ipcMain.handle('terrain.applySmoothing', (_event, data, radius) => project.smoothRaw(data, radius));
+ipcMain.handle('terrain.smoothRivers', (_event, data) => project.smoothRivers(data));
+ipcMain.handle('terrain.smoothLakes', (_event, data) => project.smoothLakes(data));
 ipcMain.handle('terrain.saveHeightMap', (_event, data, heightScale) => project.saveHeightMap(data, heightScale));
 ipcMain.handle('terrain.generate', (_event, type) => generateTerrain(type));
 
+ipcMain.handle('mesh.getCourseMesh', (_event) => project.getCourseMesh());
 ipcMain.handle('imagery.downloadDEM', (_event, courseBounds) => imagery.downloadCourseDEM(courseBounds));
 // ipcMain.handle('imagery.raw', (_event) => imagery.generateRAWFile());
 ipcMain.handle('imagery.hillShade', (_event) => imagery.generateHillShade());

@@ -8,7 +8,7 @@ import { ensureRecent } from './app';
 import { generateSVG, geoJSONToSvgPaths, parseSVG } from './svg';
 import { parseRaw } from './heightmap';
 import { getHeightMapStats } from './terrain';
-import { layerToMesh, smoothTerrain, svgToCourseLayers } from './workers';
+import { buildCourseCDT, generateFlowMapPNG, layerToMesh, smoothLakeShores, smoothRiverBeds, smoothTerrain, svgToCourseLayers } from './workers';
 import { IMAGERY_DIR, PROJECT_FILE_PROTOCOL, TERRAIN_DIR, TREE_IMPORT_PREFIX } from '../constants';
 import { getDateId } from './utils';
 import { randomUUID } from 'crypto';
@@ -48,7 +48,7 @@ const defaultProjectTemplate = {
         density: 0.4,
         opacity: 0.8,
         fogColor: '#f8f8f1',
-        skyColor: '#e0eef4',
+        skyColor: '#bddae7',
         cloudColor: '#ffffff',
         scale: 5.0,
         position: [0, 0, 0]
@@ -61,7 +61,6 @@ const defaultProjectTemplate = {
 export let openProject = { ...defaultProjectTemplate };
 
 export const meshData = {
-  // layers: [],
   meshes: new Map(),
   shapes: new Map(),
   state: { running: false }
@@ -164,13 +163,36 @@ export async function saveHeightMap(heightMapData, heightScale) {
 
 export async function smoothRaw(data, radius) {
   console.log(`Smooth data: ${data.length}`);
-  
+  return smoothTerrain(data, radius, openProject);
+}
+
+export async function smoothRivers(data) {
+  console.log(`smoothRivers: ${data.length}`);
+  const riverShapes = openProject._meshes
+    .filter(mesh => mesh.surface === 'river')
+    .map(water => {
+      return {
+        ...meshData.shapes.get(water.id) || {},
+        flowPoints: water.flowPoints
+      }
+    });
+  if (!riverShapes.length) {
+    throw new Error('No river shapes exist!');
+  }
+  return smoothRiverBeds(data, openProject, riverShapes);
+}
+
+export async function smoothLakes(data) {
+  console.log(`smoothLakes: ${data.length}`);
   const waterShapes = openProject._meshes
     .filter(mesh => mesh.surface === 'water')
     .map(water => meshData.shapes.get(water.id));
-
-  return smoothTerrain(data, radius, openProject, waterShapes);
+  if (!waterShapes.length) {
+    throw new Error('No water shapes exist!');
+  }
+  return smoothLakeShores(data, openProject, waterShapes);
 }
+
 
 export async function refreshRawData() {
   _heightMapCache = await parseRawData();
@@ -229,8 +251,12 @@ export async function saveSVG(options) {
 
 async function updateSVGData() {
   log.info(`Parsing generated SVG to layers...`);
-  const { layers } = await parseSVG(openProject._svgBuffer);
+  const { layers, width, height } = await parseSVG(openProject._svgBuffer);
+  if (width !== height) {
+    throw new Error('SVG must be square!');
+  }
   openProject._layers = layers;
+  
   broadcast('project.opened', openProject);
 }
 
@@ -291,14 +317,10 @@ export async function loadProjectFile(filePath) {
   const filePathInfo = path.parse(filePath);
 
   let holes = new Map();
-  console.log('loading project', stored);
   // parse holes to map
   if (stored.holes) {
-    console.log('Converting from array of arrays (map)...', stored.holes);
     holes = new Map(stored.holes);
   }
-  console.log('openProject.holes', holes);
-
 
   // then back as openProject.holes = Array.from(myMap.entries());
   openProject = _.merge({ ...defaultProjectTemplate }, {
@@ -338,7 +360,7 @@ export async function loadProjectFile(filePath) {
   await refreshSVG();
   await refreshRawData();
 
-  await parseShapeCache();
+  // await parseShapeCache();
   await parseMeshCache();
 
   setClean();
@@ -429,7 +451,7 @@ export function getMeshLayers() {
   return openProject.$meshLayers;
 }
 
-async function generateCourseShapes(layerSettings, terrainSettings) {
+async function generateCourseShapes(layerSettings) {
   meshData.shapes.clear();
 
   const result = await svgToCourseLayers({
@@ -452,10 +474,52 @@ async function generateCourseShapes(layerSettings, terrainSettings) {
     throw new Error('No course layers were generated');
   }
   
-  openProject._meshes = result.meshLayers;
-  
   meshData.shapes = result.polygonMap;
-  await buildShapeCache();
+
+  // build river flow-maps
+  openProject._meshes = result.meshLayers;
+  // openProject._meshes = await Promise.all(
+  //   result.meshLayers.map(async (layer) => {
+
+  //   if (layer.surface === 'plane_river' && layer.flowPoints) {
+  //     const riverShape = meshData.shapes.get(layer.id)?.polygon;
+  //     if (riverShape) {
+  //       console.log('Adding river flowmap...', layer);
+  //       const pngBuffer = await generateFlowMapPNG(riverShape, layer.flowPoints);
+  //       // finalDoc.createTexture(`flow_map_${layer.id}`)
+  //       //   .setMimeType('image/png')
+  //       //   .setImage(new Uint8Array(pngBuffer))
+  //       //   .setExtras({
+  //       //     type: 'flow_map',
+  //       //     riverId: layer.riverId,
+  //       //     id: layer.id,
+  //       //   });
+  //       layer.flowMap = new Uint8Array(pngBuffer);
+  //     }
+  //   }
+  //   return layer;
+  // }));
+  
+  // const firstEntry = result.polygonMap.entries().next().value;
+  // const poly = firstEntry[1].polygon;
+  // const hole = firstEntry[1].holes?.[0];
+  // console.log({
+  //   key: firstEntry[0],
+  //   polygonType: Array.isArray(poly) ? 'array' : typeof poly,
+  //   polygonLength: poly?.length,
+  //   firstPoint: poly?.[0],
+  //   secondPoint: poly?.[1],
+  //   holeCount: firstEntry[1].holes?.length,
+  //   firstHoleLength: hole?.length,
+  //   firstHolePoint: hole?.[0],
+  // });
+
+  // await buildShapeCache();
+  await buildMeshCache();
+}
+
+export function getCourseMesh() {
+  return meshData.cdtData;
 }
 
 export async function generateMeshes(layerSettings, terrainSettings) {
@@ -473,13 +537,16 @@ export async function generateMeshes(layerSettings, terrainSettings) {
 
     await generateCourseShapes(layerSettings, terrainSettings)
 
-    // broadcast('mesh.update', openProject);
-    // broadcast('mesh.data', meshData.state);
-    // broadcast('project.opened', openProject);
+    broadcast('mesh.progress', { progress, count: 0, status: 'Generating course mesh' });
 
-    // meshData.courseLayers = courseLayers;
-  
-    // console.log(`Generated ${result.layers.length} layers, ${meshData.shapes.size} polygons`);
+    // meshData.cdtData = await buildCourseCDT(
+    //   meshData.shapes,
+    //   openProject,
+    //   _heightMapCache,
+    //   layerSettings
+    // );
+    
+    // console.log(`Generated CDT for ${openProject._meshes.length} layers, ${meshData.shapes.size} polygons`);
 
     broadcast('mesh.progress', { progress, count: 0, status: `Starting ${openProject._meshes.length} meshes` });
 
@@ -504,27 +571,23 @@ export async function generateMeshes(layerSettings, terrainSettings) {
       progress = (index / openProject._meshes.length) * 100;
       index++;
     }
+
+
     meshData.state.error = undefined;
-    meshData.state.generated = index;
+    meshData.state.generated = true;
+    // meshData.state.generated = index;
     meshData.state.lastGenerated = Date.now();
-    log.info(`Finished generating ${meshData.state.generated} meshes`);
-
-    // const filePath = 
+    log.info(`Finished generating course mesh`);
+    
     await buildMeshCache();
-    // broadcast('project.opened', openProject);
-
-    // courseLayers.forEach((layer) => {
-    //   const mesh = layerToMesh(layer);
-    //   console.log('mesh', mesh);
-    // });
   } catch (error) {
     log.error(error);
     meshData.state.error = error.message;
   } finally {
-    meshData.state.running = false;
     console.log('send update', meshData.state);
+    meshData.state.running = false;
     broadcast('mesh.data', meshData.state);
-    return meshData.state;
+    return { state: meshData.state, _meshes: openProject._meshes };
   }
 }
 
@@ -543,13 +606,15 @@ export async function updateLayerById(layerId, update) {
 
   if (update.spacing || update.dig) {
     // save settings to disk?
-    await buildShapeCache();
+    // await buildShapeCache();
+    // await buildMeshCache();
     // layer._pending = true;
 
     const shape = meshData.shapes.get(layerId);    
     const mesh = await layerToMesh(layer, shape, openProject, _heightMapCache);
     meshData.meshes.set(layer.id, { name: layer.name, mesh });
-    broadcast('mesh.data', meshData.state);
+    // broadcast('mesh.data', meshData.state);
+    broadcast('mesh.data', { ...meshData.state, updatedLayerId: layerId });
     // layer._pending = false;
     await buildMeshCache();
   }
@@ -641,14 +706,32 @@ export async function removeTreeConfig(treeLayerId, treeConfigId) {
 //   return openProject.trees;
 // }
 
+export async function saveTreeConfig(treeLayerId, config) {
+  const foundLayer = openProject.trees.find(tl => tl.id === treeLayerId);
+  if (foundLayer) {
+    foundLayer.treeConfigs = [
+      ...(foundLayer.treeConfigs || []),
+      config
+    ];
+  }
+
+  await saveProjectSettings();
+
+  return openProject.trees;
+}
+
 export async function importTree(treeLayerId) {
   const { canceled, filePaths } = await dialog.showOpenDialog({
     title: 'Open Tree Model',
     filters: [{ name: 'Tree Model', extensions: ['glb'] }]
   });
+
   if (canceled || !filePaths?.length) {
     return;
   }
+  
+  // TODO: check for OGS packed LOD fields...
+
   const treeConfigId = randomUUID();
   const config = {
     url: `${PROJECT_FILE_PROTOCOL}://${TREE_IMPORT_PREFIX}/${treeConfigId}.glb`,
@@ -657,20 +740,11 @@ export async function importTree(treeLayerId) {
     id: treeConfigId,
     randomSeed: 12345,
     scaleRange: { min: 0.6, max: 1.8 },
-    density: 0.2
+    density: 0.2,
+    ...configOverrides
   };
-  // console.log(`Adding imported tree ${treeConfigId} to layer: ${treeLayerId}`, config);
-  const foundLayer = openProject.trees.find(tl => tl.id === treeLayerId);
-  if (foundLayer) {
-    foundLayer.treeConfigs = [
-      ...(foundLayer.treeConfigs || []),
-      config
-    ];
-  }
-  // return config;
-  await saveProjectSettings();
-  return openProject.trees;
-  // broadcast('project.opened', openProject); 
+
+  return saveTreeConfig(treeLayerId, config);
 }
 
 export function findTreeConfigById(treeConfigId) {

@@ -1,7 +1,7 @@
 // See the Electron documentation for details on how to use preload scripts:
 // https://www.electronjs.org/docs/latest/tutorial/process-model#preload-scripts
 import { contextBridge, ipcRenderer } from 'electron/renderer';
-import 'electron-log/preload';
+// import 'electron-log/preload';
 
 contextBridge.exposeInMainWorld('meshery', {
   selectSVGFile: () => ipcRenderer.invoke('svg.select'),
@@ -52,6 +52,9 @@ contextBridge.exposeInMainWorld('meshery', {
 
     // saveProject: (trees) => ipcRenderer.invoke('project.updateTrees', trees)
   },
+  mesh: {
+    getCourseMesh: () => ipcRenderer.invoke('mesh.getCourseMesh'),
+  },
   trees: {
     import: (treeLayerId) => ipcRenderer.invoke('trees.import', treeLayerId),
     // postImport: (treeLayerId, treeConfigId, imageData) => ipcRenderer.invoke('trees.postImport', treeLayerId, treeConfigId, imageData),
@@ -59,12 +62,16 @@ contextBridge.exposeInMainWorld('meshery', {
 
     addLayer: () => ipcRenderer.invoke('trees.addLayer'),
     updateLayer: (layerId, layerUpdate) => ipcRenderer.invoke('trees.updateLayer', layerId, layerUpdate),
-    removeLayer: (layerId) => ipcRenderer.invoke('trees.removeLayer', layerId)
-
+    removeLayer: (layerId) => ipcRenderer.invoke('trees.removeLayer', layerId),
+    getAvailablePlants: () => ipcRenderer.invoke('trees.getAvailablePlants'),
+    downloadPlantAsset: (plant) => ipcRenderer.invoke('trees.downloadPlantAsset', plant),
+    importPlant: (layerId, plant) => ipcRenderer.invoke('trees.importPlant', layerId, plant)
   },
   terrain: {
     getToken: () => ipcRenderer.invoke('terrain.token'),
     applySmoothing: (data, radius) => ipcRenderer.invoke('terrain.applySmoothing', data, radius),
+    smoothRivers: (data) => ipcRenderer.invoke('terrain.smoothRivers', data),
+    smoothLakes: (data) => ipcRenderer.invoke('terrain.smoothLakes', data),
     saveHeightMap: (data, heightScale) => ipcRenderer.invoke('terrain.saveHeightMap', data, heightScale),
     generate: (type) => ipcRenderer.invoke('terrain.generate', type),
   },
@@ -95,4 +102,5 @@ contextBridge.exposeInMainWorld('meshery', {
     installStart: () => ipcRenderer.invoke('tools.installStart'),
     installCancel: () => ipcRenderer.invoke('tools.installCancel'),
   },
+
 });

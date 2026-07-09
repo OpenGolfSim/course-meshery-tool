@@ -4,6 +4,7 @@ import { findTreeConfigById, openProject } from './project';
 import { EXTRA_RESOURCE_PATH, TEXTURES_PATH } from './app';
 import { PROJECT_FILE_PROTOCOL, RESOURCES_FILE_PROTOCOL, TREE_IMPORT_PREFIX } from '../constants';
 import { pathToFileURL } from 'url';
+import { PLANT_CACHE } from './cache/plants';
 
 export let mainWindow;
 
@@ -77,14 +78,26 @@ export function setupProtocolHandler() {
 
   protocol.handle(RESOURCES_FILE_PROTOCOL, (request) => {
     const key = request.url.slice(RESOURCES_FILE_PROTOCOL.length + 3); // removes the extra "://"
-    const filePath = path.join(EXTRA_RESOURCE_PATH, key);
+    let filePath = path.join(EXTRA_RESOURCE_PATH, key);
+
+    if (key.includes('plant-cache')) {
+      filePath = path.join(PLANT_CACHE, key.replace('plant-cache', ''));
+    }
+    
     const fetchFile = pathToFileURL(filePath).toString();
     return net.fetch(fetchFile);
   });
   
   protocol.handle(PROJECT_FILE_PROTOCOL, (request) => {
-    const key = request.url.slice(PROJECT_FILE_PROTOCOL.length + 3);
-    if (key.includes(TREE_IMPORT_PREFIX)) {
+    const key = request.url.slice(PROJECT_FILE_PROTOCOL.length + 3); // removes "://"
+    if (key.startsWith('svg')) {
+      return new Response(openProject._svgBuffer, {
+        status: 200,
+        headers: { 
+          'content-type': 'image/svg+xml'
+        }
+      });
+    } else if (key.includes(TREE_IMPORT_PREFIX)) {
       console.log(`Tree import: ${key}`);
       const treeId = key.slice(TREE_IMPORT_PREFIX.length + 1, -4);
       console.log(`Tree id: ${treeId}`);

@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { useThree, useLoader, useFrame } from '@react-three/fiber';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
 import { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader';
-import { positionsToMaskData } from '../utils/treeMask';
+import { positionsToMaskData, heightmapToMesh } from '../utils/treeMask';
 import { RESOURCES_FILE_PROTOCOL } from '../constants.js';
 
 // const TRANSCODER_PATH = 'https://cdn.jsdelivr.net/gh/pmndrs/drei-assets/basis/';
@@ -97,36 +97,7 @@ function loadTree(tree) {
   return treeGroup;
 }
 
-function heightmapToMesh(heightData, hmSize, worldSize, resolution = 64, yScale = 1) {
-  // const geo = new THREE.PlaneGeometry(worldSize, worldSize, resolution, resolution);
-  // geo.rotateX(-Math.PI / 2);
-  const geo = new THREE.PlaneGeometry(worldSize, worldSize, resolution, resolution);
-  geo.rotateX(-Math.PI / 2);
-  geo.translate(worldSize / 2, 0, worldSize / 2); // ← this line
 
-  const pos = geo.attributes.position;
-  const step = hmSize / resolution;
-
-  for (let iy = 0; iy <= resolution; iy++) {
-    for (let ix = 0; ix <= resolution; ix++) {
-      // Sample from the heightmap
-      const hx = Math.min(Math.floor(ix * step), hmSize - 1);
-      const hy = Math.min(Math.floor(iy * step), hmSize - 1);
-      const height = heightData[hy * hmSize + hx];
-
-      const vi = iy * (resolution + 1) + ix;
-      pos.setY(vi, (height / 65535) * yScale);
-    }
-  }
-
-  pos.needsUpdate = true;
-  geo.computeVertexNormals();
-
-  const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ visible: false }));
-  // mesh.raycast = function() {};
-  // mesh.layers.disable(0);
-  return mesh;
-}
 
 function flattenGLTF(gltfScene) {
   // const loaded = TreePlanter.loadTree(gltfScene.scene);

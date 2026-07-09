@@ -219,15 +219,18 @@ export function smoothLakeShores(heightData, terrainSize, svgSize, lakeShapes, o
           // Outside, within outer band
           const t = smootherstep(dist / outerPx);
           // t=0 at edge → waterLevel;  t=1 at outerRadius → original
-          blended = lerp(targetH, original, t);
+          // blended = lerp(targetH, original, t);
+          blended = Math.min(original, lerp(targetH, original, t));
         } else {
           // Inside, within inner band
           const t = smootherstep(dist / innerPx);
           // t=0 at edge → waterLevel;  t=1 at innerRadius → original
-          blended = lerp(targetH, original, t);
+          // blended = lerp(targetH, original, t);
+          blended = Math.min(original, lerp(targetH, original, t));
         }
 
-        out[idx] = blended;
+        // out[idx] = blended;
+        out[idx] = Math.min(out[idx], blended);
       }
     }
   }
@@ -313,5 +316,173 @@ function pointInPolygonWithHoles(pt, polyPx, holesPx) {
   return true;
 }
 
+/**
+ * Smooth terrain along river paths so the river follows a natural downhill grade.
+ * Samples the spine elevation from the heightmap, smooths it into a gentle slope,
+ * then flattens the terrain to match.
+ *
+ * @param {Uint16Array|Float32Array} heightData - the heightmap (mutated copy)
+ * @param {number} terrainSize - e.g. 4097
+ * @param {number} svgSize     - project.settings.distance * 1000 (world units)
+ * @param {Array}  riverShapes  - array of { polygon, spine, holes }
+ *   polygon: [[x,z],...] river boundary
+ *   spine: [[x,z],...] flow line points, upstream → downstream
+ *   holes: optional [[[x,z],...]]
+ * @param {object} options
+ * @returns {Uint16Array|Float32Array} modified heightmap
+ */
+export function smoothRiverBeds(heightData, terrainSize, svgSize, riverShapes, options = {}) {
+  const {
+    outerRadius  = 6.0,   // SVG-space meters outside river edge to blend
+    innerRadius  = 3.0,   // SVG-space meters inside river edge to blend
+    digDepth     = 2.0,   // how far below the smoothed spine to dig the bed (SVG units mapped to height)
+    spineSmoothPasses = 5, // how many times to smooth the spine elevation profile
+  } = options;
 
-expose({ smoothTerrainData, smoothLakeShores });
+  const out = new Float32Array(heightData.length);
+  for (let i = 0; i < heightData.length; i++) out[i] = heightData[i];
+
+  const pxToSvg = svgSize / (terrainSize - 1);
+  const svgToPx = (terrainSize - 1) / svgSize;
+
+  for (const shape of riverShapes) {
+    const { polygon, flowPoints, holes = [] } = shape;
+
+    const polyPx  = polygon.map(([x, z]) => [x * svgToPx, z * svgToPx]);
+    const holesPx = holes.map(h => h.map(([x, z]) => [x * svgToPx, z * svgToPx]));
+    const allSegments = extractSegments(polyPx, holesPx);
+
+    if (!flowPoints?.length) {
+      continue;
+    }
+    // --- Phase 1: Sample heightmap along the spine and smooth it ---
+    const spineElevations = flowPoints.map(([x, z]) => {
+      const col = Math.round(x * svgToPx);
+      const row = Math.round(z * svgToPx);
+      const clamped_col = Math.max(0, Math.min(terrainSize - 1, col));
+      const clamped_row = Math.max(0, Math.min(terrainSize - 1, row));
+      return out[clamped_row * terrainSize + clamped_col];
+    });
+
+    // Smooth the elevation profile so it's a gentle gradient
+    // Also enforce monotonically non-increasing (river flows downhill)
+    let smoothed = Float32Array.from(spineElevations);
+    for (let pass = 0; pass < spineSmoothPasses; pass++) {
+      const temp = Float32Array.from(smoothed);
+      for (let i = 1; i < smoothed.length - 1; i++) {
+        temp[i] = smoothed[i - 1] * 0.25 + smoothed[i] * 0.5 + smoothed[i + 1] * 0.25;
+      }
+      smoothed = temp;
+    }
+
+    // Enforce downhill: each point can't be higher than the previous
+    for (let i = 1; i < smoothed.length; i++) {
+      if (smoothed[i] > smoothed[i - 1]) {
+        smoothed[i] = smoothed[i - 1];
+      }
+    }
+
+    // Build spine segments in pixel space for nearest-point lookup
+    const spineSegsPx = [];
+    for (let i = 0; i < flowPoints.length - 1; i++) {
+      const [ax, az] = flowPoints[i];
+      const [bx, bz] = flowPoints[i + 1];
+      spineSegsPx.push({
+        ax: ax * svgToPx, ay: az * svgToPx,
+        bx: bx * svgToPx, by: bz * svgToPx,
+        dx: (bx - ax) * svgToPx, dy: (bz - az) * svgToPx,
+        len: Math.sqrt(((bx - ax) * svgToPx) ** 2 + ((bz - az) * svgToPx) ** 2),
+        startElev: smoothed[i],
+        endElev: smoothed[i + 1],
+      });
+    }
+
+    // --- Phase 2: Modify terrain ---
+    const radiusPx = Math.max(outerRadius, innerRadius) * svgToPx;
+    const bbox = getSegmentsBBox(polyPx, holesPx, radiusPx, terrainSize);
+    const outerPx = outerRadius * svgToPx;
+    const innerPx = innerRadius * svgToPx;
+
+    for (let row = bbox.minRow; row <= bbox.maxRow; row++) {
+      for (let col = bbox.minCol; col <= bbox.maxCol; col++) {
+        const pt = [col, row];
+        const dist = distToSegments(pt, allSegments);
+        const inside = pointInPolygonWithHoles(pt, polyPx, holesPx);
+        const idx = row * terrainSize + col;
+        const original = out[idx];
+
+        if (!inside && dist >= outerPx) continue;
+
+        // Find target elevation from nearest spine point
+        const { elev: targetH, t: spineT } = nearestSpineElevation(pt, spineSegsPx);
+        const bedH = targetH - digDepth;
+
+        if (inside) {
+          if (dist >= innerPx) {
+            // Deep inside river — set to bed height
+            // out[idx] = bedH;
+            // For idempotency (prevent going lower than the initial dig depth)
+            out[idx] = Math.min(out[idx], bedH);
+          } else {
+            // Near inner edge — blend from bed to edge
+            const t = smootherstep(dist / innerPx);
+            // out[idx] = lerp(targetH, bedH, t);
+            // For idempotency (prevent going lower than the initial dig depth)
+            out[idx] = Math.min(out[idx], lerp(targetH, bedH, t));
+          }
+        } else {
+          // Outside, within outer band — blend from targetH to original
+          const t = smootherstep(dist / outerPx);
+          // out[idx] = lerp(targetH, original, t);
+          // For idempotency (prevent going lower than the initial dig depth)
+          out[idx] = Math.min(out[idx], lerp(targetH, original, t));
+        }
+      }
+    }
+    
+  }
+  
+
+  if (heightData instanceof Uint16Array) {
+    const u16 = new Uint16Array(out.length);
+    for (let i = 0; i < out.length; i++) {
+      u16[i] = Math.max(0, Math.min(65535, Math.round(out[i])));
+    }
+    return u16;
+  }
+  return out;
+}
+
+/**
+ * Find the nearest point on the spine and return the interpolated elevation.
+ */
+function nearestSpineElevation(pt, spineSegs) {
+  let bestDist = Infinity;
+  let bestElev = 0;
+  let bestT = 0;
+
+  for (const seg of spineSegs) {
+    const apx = pt[0] - seg.ax;
+    const apy = pt[1] - seg.ay;
+    let t = seg.len > 0
+      ? (apx * seg.dx + apy * seg.dy) / (seg.len * seg.len)
+      : 0;
+    t = Math.max(0, Math.min(1, t));
+
+    const closestX = seg.ax + t * seg.dx;
+    const closestY = seg.ay + t * seg.dy;
+    const dx = pt[0] - closestX;
+    const dy = pt[1] - closestY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestElev = seg.startElev + t * (seg.endElev - seg.startElev);
+    }
+  }
+
+  return { elev: bestElev, dist: bestDist };
+}
+
+
+expose({ smoothTerrainData, smoothLakeShores, smoothRiverBeds });

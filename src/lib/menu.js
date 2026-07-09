@@ -1,10 +1,25 @@
 import { app, dialog, Menu, Tray, shell } from 'electron';
+import fs from 'fs';
 import * as project from './project';
 import { isInstalled } from './tools';
 import { createTreeMakerWindow } from '../trees/main';
+import { generateInkscapePalette } from './colors';
 
 let appMenu;
 let exportRawMenu;
+
+async function generatePaletteFile() {
+  const result = await dialog.showSaveDialog({
+    title: 'Save Inkscape Palette',
+    defaultPath: 'OpenGolfSimPalette.gpl', 
+  });
+  if (!result.canceled && result.filePath) {
+    const data = generateInkscapePalette();
+    console.log('write data:', data);
+    console.log(' to ->', result.filePath);
+    await fs.promises.writeFile(result.filePath, data);
+  }
+}
 
 export function buildAppMenu() {
   const isMac = process.platform === 'darwin'
@@ -41,11 +56,6 @@ export function buildAppMenu() {
           enabled: project.isOpen(),
           accelerator: 'CommandOrControl+O'
         },
-        { type: 'separator' },
-        {
-          label: 'Tree Maker',
-          click: () => createTreeMakerWindow()
-        },
         // {
         //   label: 'Save Project',
         //   click: project.save,
@@ -72,6 +82,19 @@ export function buildAppMenu() {
     },
     { role: 'editMenu' },
     { role: 'viewMenu' },
+    {
+      label: 'Tools',
+      submenu: [
+        {
+          label: 'Tree Maker',
+          click: () => createTreeMakerWindow()
+        },
+        {
+          label: 'Generate Inkscape Palette',
+          click: () => generatePaletteFile()
+        },
+      ]
+    },
     { role: 'windowMenu' },
     {
       role: 'help',

@@ -8,6 +8,18 @@ function getWorker(workerFilename) {
   return spawn(new Worker(path.join(__dirname, workerFilename)));
 }
 
+export async function buildCourseCDT(polygonMap, project, heightMap) {
+  const meshWorker = await getWorker('mesh.worker.js');
+
+  let courseSize = Math.round(project.settings.distance * 1000);
+  let heightScale = project?.stats?.heightScale || project?.stats?.relief || 1;
+
+  const cdtData = await meshWorker.buildCDTData(polygonMap, project._meshes, courseSize, heightMap, heightScale);
+  await Thread.terminate(meshWorker);
+  console.log(`CDT mesh built: ${cdtData.triangleCount} triangles`);
+  return cdtData;
+}
+
 export async function svgToCourseLayers(data, onProgress) {
   // console.log('job', job);
   // console.log('data', data);
@@ -33,37 +45,62 @@ export async function svgToCourseLayers(data, onProgress) {
 
 export async function layerToMesh(layer, shape, project, heightMap) {
   const meshWorker = await getWorker('mesh.worker.js');
+
   let mesh = await meshWorker.generateMesh(layer, shape);
   if (!mesh.points.length || !mesh.triangles.length) {
     console.log(`No points or triangles generated for ${layer.id}`);
   }
   mesh = await meshWorker.conformMeshToTerrain(layer, mesh, project, heightMap);
+
   if (layer.dig?.enabled) {
     mesh = await meshWorker.digMesh(mesh, shape, layer);
   }
+
+  if (['river', 'water'].includes(layer.surface)) {
+    mesh = await meshWorker.smoothMeshEdges(mesh, 3, 1);
+  }
+
+  // Generate blend map if blending is enabled for this surface
+  if (layer.blending?.enabled && layer.blending?.distance > 0) {
+    const svgSize = Math.round(project.settings.distance * 1000);
+    console.log(`Generating blend map for: ${layer.id}`);
+    mesh.blendMap = await meshWorker.generateBlendMap(shape, layer.blending, svgSize);
+  }
+
   await Thread.terminate(meshWorker);
   // console.log(`Generated mesh from layer`);
   return mesh;
 }
 
-export async function smoothTerrain(heightMapData, smoothingRadius, project, lakeShapes = []) {
+export async function smoothTerrain(heightMapData, smoothingRadius, project) {
   const smoothWorker = await getWorker('terrain.worker.js');
-  
-  let smoothed = await smoothWorker.smoothTerrainData(heightMapData, smoothingRadius);
-
-  if (!_heightMapCache) {
-    throw new Error('Invalid or missing heightMap data!');
-  }
-  const heightSize = _heightMapCache?.size;
-  const svgSize = Math.round(project.settings.distance * 1000);
-  // const lakeShapes = project.
-
-  smoothed = await smoothWorker.smoothLakeShores(smoothed, heightSize, svgSize, lakeShapes)
-
+  const smoothed = await smoothWorker.smoothTerrainData(heightMapData, smoothingRadius);
   await Thread.terminate(smoothWorker);
-
   return smoothed;
-  // console.log(`Mesh ${finished} of ${courseLayers.length} (triangles:${mesh.triangles.length}, points:${mesh.points.length})`);  
+}
+
+export async function smoothLakeShores(heightMapData, project, lakeShapes = []) {
+  const smoothWorker = await getWorker('terrain.worker.js');
+  if (!_heightMapCache?.size || !project.settings.distance) {
+    throw new Error('Invalid or missing heightMap data or course size!');
+  }
+  const svgSize = Math.round(project.settings.distance * 1000);
+  const smoothed = await smoothWorker.smoothLakeShores(heightMapData, _heightMapCache?.size, svgSize, lakeShapes)
+  await Thread.terminate(smoothWorker);
+  return smoothed;
+}
+
+export async function smoothRiverBeds(heightMapData, project, riverShapes = []) {
+  const smoothWorker = await getWorker('terrain.worker.js');
+  if (!_heightMapCache?.size || !project.settings.distance) {
+    throw new Error('Invalid or missing heightMap data or course size!');
+  }
+  const svgSize = Math.round(project.settings.distance * 1000);
+  console.log(`Smoothing river bed: size:${_heightMapCache?.size}, svgSize:${svgSize}, shapes:${riverShapes.length}`);
+  const smoothed = await smoothWorker.smoothRiverBeds(heightMapData, _heightMapCache?.size, svgSize, riverShapes)
+  await Thread.terminate(smoothWorker);
+  console.log(`Done smoothing river`);
+  return smoothed;
 }
 
 // export async function conformMesh(layer, mesh, project, heightMap) {
@@ -101,6 +138,11 @@ export async function createWorkerWindow(preloadUrl, mainUrl) {
 export async function exportTreePackage(inputFiles, outputFile) {
   const exportWorker = await getWorker('export.worker.js'); 
   await exportWorker.exportTreePackage(inputFiles, outputFile);
+}
+
+export async function generateFlowMapPNG(polygon, spine) {
+  const exportWorker = await getWorker('export.worker.js'); 
+  return exportWorker.generateFlowMapPNG(polygon, spine);
 }
 
 export async function compressTextures(uncompressedGlb, onProgress = () => {}) {

@@ -53,7 +53,7 @@
     "@mapbox/mapbox-gl-geocoder": "^5.1.2",
     "@mui/icons-material": "^7.3.6",
     "@mui/material": "^7.3.9",
-    "@opengolfsim/fuse": "github:OpenGolfSim/fuse",
+    "@opengolfsim/fuse": "github:opengolfsim/fuse#feat/webgpu",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.1",
     "@turf/turf": "^7.3.4",

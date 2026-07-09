@@ -21,7 +21,8 @@ const getDefaultInstallPath = () => {
 
 const store = new Store({
   defaults: {
-    toolsPath: getDefaultInstallPath()
+    toolsPath: getDefaultInstallPath(),
+    plantCache: {}
   }
 });
 
@@ -69,7 +70,6 @@ export function setInstallPath(newPath) {
 export function getRecentProjects() {
   const projects = store.get('recentProjects', []);
   const filtered = sortByOpened(filterRemoved(projects));
-  console.log('filtered', filtered);
   store.set('recentProjects', [...filtered]);
   return filtered;
 }
@@ -98,4 +98,15 @@ export function ensureRecent(project) {
   // cap recent projects
   const copy = sortByOpened([record, ...recentProjects]);
   store.set('recentProjects', copy.slice(0, 10));
+}
+
+export function cachePlant(record) {
+  const currentCache = store.get('plantCache', {});
+  const cacheCopy = { ...currentCache };
+  cacheCopy[record.key] = record;
+  store.set('plantCache', cacheCopy);
+}
+
+export function getPlantCache() {
+  return store.get('plantCache', {});
 }

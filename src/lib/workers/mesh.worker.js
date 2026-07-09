@@ -3,6 +3,9 @@ import PoissonDiskSampling from 'poisson-disk-sampling';
 import { Delaunay } from 'd3-delaunay';
 import poly2tri from 'poly2tri';
 import { lerp, smootherstep, smoothstep } from './utils';
+import cdt2d from 'cdt2d';
+import cleanPSLG from 'clean-pslg';
+import { SurfacePalette } from '../colors';
 
 const MIN_DISTANCE = 1e-8; // or whatever small threshold
 
@@ -436,7 +439,10 @@ function tryTriangulate(boundaryPts, holes, steinerPts) {
   const allPoints = [...boundaryPts, ...holes.flat(), ...steinerPts];
 
   const p2tPoints = allPoints.map(([x, y], i) => {
-    const p = new poly2tri.Point(x, y);
+    // const p = new poly2tri.Point(x, y);
+    const [jx, jy] = perturbPoint(x, y);
+    const p = new poly2tri.Point(jx, jy);
+
     p._idx = i;
     return p;
   });
@@ -465,37 +471,28 @@ function tryTriangulate(boundaryPts, holes, steinerPts) {
   return { allPoints, finalTriangles };
 }
 
-function removeCollinearPoints(ring, threshold = 1e-6) {
-  if (ring.length < 3) return ring;
-  const result = [];
-  const n = ring.length;
-  for (let i = 0; i < n; i++) {
-    const prev = ring[(i - 1 + n) % n];
-    const curr = ring[i];
-    const next = ring[(i + 1) % n];
-    const cross =
-      (curr[0] - prev[0]) * (next[1] - prev[1]) -
-      (curr[1] - prev[1]) * (next[0] - prev[0]);
-    const lenA = Math.hypot(curr[0] - prev[0], curr[1] - prev[1]);
-    const lenB = Math.hypot(next[0] - curr[0], next[1] - curr[1]);
-    const denom = lenA * lenB;
-    if (denom > 1e-12 && Math.abs(cross) / denom < threshold) {
-      continue; // collinear — skip
-    }
-    result.push(curr);
-  }
-  return result.length >= 3 ? result : ring;
+// Deterministic micro-perturbation to break exact collinearity (poly2tri EdgeEvent workaround).
+// Same (x,y) always yields the same offset, so shared seam vertices shift identically.
+function hashPt(x, y) {
+  let h = 2166136261 >>> 0;
+  const s = x.toFixed(6) + ',' + y.toFixed(6);
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  return h;
 }
 
-export function generateMesh(layer, shape) {
-  if (layer.error) {
-    return;
-  }
-  shape = {
-    ...shape,
-    polygon: removeCollinearPoints(shape.polygon),
-    holes: shape.holes.map(h => removeCollinearPoints(h)),
-  };
+function perturbPoint(x, y, mag = 1e-6) {
+  const h = hashPt(x, y);
+  return [
+    x + (((h & 0xffff) / 0xffff) - 0.5) * 2 * mag,
+    y + ((((h >>> 16) & 0xffff) / 0xffff) - 0.5) * 2 * mag,
+  ];
+}
+
+function triangulatePiece(layer, shape) {
+// export function generateMesh(layer, shape) {
+  // if (layer.error) {
+  //   return;
+  // }
 
   const boundaryPts = shape.polygon;
   const holePts = shape.holes?.flat() || [];
@@ -585,6 +582,9 @@ export function generateMesh(layer, shape) {
     } catch (e) {
       if (attempt === MAX_RETRIES) {
         const name = layer.name || layer.id || 'unknown';
+
+        console.log(JSON.stringify({ name, boundaryPts, holes: shape.holes, steinerPts, error: e.message }));
+
         throw new Error(
           `Triangulation failed on layer "${name}" after ${MAX_RETRIES} retries: ${e.message}. ` +
           `Boundary: ${boundaryPts.length} pts, ${shape.holes.length} holes, ` +
@@ -599,22 +599,59 @@ export function generateMesh(layer, shape) {
   }
 
 
-  // --- Everything below is unchanged ---
+  // // --- Everything below is unchanged ---
 
-  // Generate flat 3D array of points
-  const positions3D = [];
-  for (const [x, z] of allPoints) {
-    positions3D.push(x, 0, z);
+  // // Generate flat 3D array of points
+  // const positions3D = [];
+  // for (const [x, z] of allPoints) {
+  //   positions3D.push(x, 0, z);
+  // }
+
+  // // Fill with white color
+  // let colors = new Array(allPoints.length * 3).fill(1);
+  // if (layer.blending?.enabled && layer.blending?.distance > 0) {
+  //   colors = computeVertexColors(allPoints, shape.polygon, shape.holes, layer.blending.distance);
+  // }
+
+  // return {
+  //   triangles: finalTriangles,
+  //   points: new Float32Array(positions3D),
+  //   colors: new Float32Array(colors)
+  // };
+// }
+  return { allPoints, finalTriangles };
+}
+
+export function generateMesh(layer, shape) {
+  if (layer.error) {
+    return;
   }
 
-  // Fill with white color
-  let colors = new Array(allPoints.length * 3).fill(1);
-  if (layer.blending?.enabled && layer.blending?.distance > 0) {
-    colors = computeVertexColors(allPoints, shape.polygon, shape.holes, layer.blending.distance);
+  const pieces = shape.pieces?.length ? shape.pieces : [shape];
+
+  const positions3D = [];
+  const triangles = [];
+  const colors = [];
+
+  for (const piece of pieces) {
+    if (!piece.polygon?.length) continue;
+
+    const { allPoints, finalTriangles } = triangulatePiece(layer, piece);
+
+    // append this piece's vertices, shifting triangle indices past prior pieces
+    const offset = positions3D.length / 3;
+    for (const [x, z] of allPoints) positions3D.push(x, 0, z);
+    for (const idx of finalTriangles) triangles.push(idx + offset);
+
+    let pieceColors = new Array(allPoints.length * 3).fill(1);
+    if (layer.blending?.enabled && layer.blending?.distance > 0) {
+      pieceColors = computeVertexColors(allPoints, piece.polygon, piece.holes, layer.blending.distance);
+    }
+    for (const c of pieceColors) colors.push(c);
   }
 
   return {
-    triangles: finalTriangles,
+    triangles,
     points: new Float32Array(positions3D),
     colors: new Float32Array(colors)
   };
@@ -923,4 +960,159 @@ function computeSmoothNormals(points, triangles) {
   return norms;
 }
 
-expose({ generateMesh, digMesh, conformMeshToTerrain });
+function smoothMeshEdges(mesh, passes = 3) {
+  const { points, triangles } = mesh;
+  const vertCount = points.length / 3;
+
+  // Build adjacency
+  const neighbors = new Array(vertCount);
+  for (let i = 0; i < vertCount; i++) neighbors[i] = new Set();
+
+  for (let i = 0; i < triangles.length; i += 3) {
+    const a = triangles[i], b = triangles[i + 1], c = triangles[i + 2];
+    neighbors[a].add(b); neighbors[a].add(c);
+    neighbors[b].add(a); neighbors[b].add(c);
+    neighbors[c].add(a); neighbors[c].add(b);
+  }
+
+  // Find boundary vertices (edges with only one triangle)
+  const edgeCount = new Map();
+  for (let i = 0; i < triangles.length; i += 3) {
+    const tri = [triangles[i], triangles[i + 1], triangles[i + 2]];
+    for (let e = 0; e < 3; e++) {
+      const a = Math.min(tri[e], tri[(e + 1) % 3]);
+      const b = Math.max(tri[e], tri[(e + 1) % 3]);
+      const key = `${a},${b}`;
+      edgeCount.set(key, (edgeCount.get(key) || 0) + 1);
+    }
+  }
+
+  const boundaryVerts = new Set();
+  for (const [key, count] of edgeCount) {
+    if (count === 1) {
+      const [a, b] = key.split(',').map(Number);
+      boundaryVerts.add(a);
+      boundaryVerts.add(b);
+    }
+  }
+
+  // Laplacian smooth Y positions for all non-boundary vertices
+  const copy = new Float32Array(points);
+
+  for (let pass = 0; pass < passes; pass++) {
+    const temp = new Float32Array(copy);
+
+    for (let vi = 0; vi < vertCount; vi++) {
+      if (boundaryVerts.has(vi)) continue;
+
+      const nbs = neighbors[vi];
+      if (nbs.size === 0) continue;
+
+      let sumY = 0;
+      for (const ni of nbs) {
+        sumY += temp[ni * 3 + 1];
+      }
+
+      copy[vi * 3 + 1] = temp[vi * 3 + 1] * 0.5 + (sumY / nbs.size) * 0.5;
+    }
+  }
+  
+  const normals = computeSmoothNormals(copy, triangles);
+
+  return {
+    ...mesh,
+    points: copy,
+    normals,
+  };
+}
+
+function addRingAsConstraints(points, edges, ring) {
+  const startIdx = points.length;
+  for (let i = 0; i < ring.length; i++) {
+    points.push([ring[i][0], ring[i][1]]);
+    edges.push([startIdx + i, startIdx + ((i + 1) % ring.length)]);
+  }
+}
+
+
+function generateBlendMap(shape, blendSettings, svgSize, targetMPP = 0.25) {
+
+// function generateBlendMap(shape, blendSettings, svgSize, resolution = 256) {
+  const { polygon, holes } = shape;
+  const { distance: blendDist } = blendSettings;
+
+  if (!blendDist || blendDist <= 0) return null;
+
+  // Compute bounding box of the polygon + padding for blend zone
+  const bbox = getBoundingBox([polygon, ...holes]);
+  const pad = blendDist;
+  const bx = bbox.minX - pad;
+  const by = bbox.minY - pad;
+  const bw = (bbox.maxX - bbox.minX) + pad * 2;
+  const bh = (bbox.maxY - bbox.minY) + pad * 2;
+
+  // Scale to fit the texture resolution
+  // const aspect = bw / bh;
+  // let texW, texH;
+  // if (aspect >= 1) {
+  //   texW = resolution;
+  //   texH = Math.max(1, Math.round(resolution / aspect));
+  // } else {
+  //   texH = resolution;
+  //   texW = Math.max(1, Math.round(resolution * aspect));
+  // }
+  const texW = Math.min(2048, Math.max(64, Math.ceil(bw / targetMPP)));
+  const texH = Math.min(2048, Math.max(64, Math.ceil(bh / targetMPP)));
+
+  const scaleX = texW / bw;
+  const scaleY = texH / bh;
+
+  // const data = new Uint8Array(texW * texH);
+  const data = new Uint8Array(texW * texH * 4);
+
+  for (let ty = 0; ty < texH; ty++) {
+    const worldY = by + (ty + 0.5) / scaleY;
+    for (let tx = 0; tx < texW; tx++) {
+      const worldX = bx + (tx + 0.5) / scaleX;
+      const pt = [worldX, worldY];
+
+      const inside = isPointInPolygon(pt, polygon, holes);
+      const dist = distanceToPolygonEdge(pt, polygon);
+
+      // Also check distance to hole edges
+      let holeDist = Infinity;
+      for (const hole of holes) {
+        const hd = distanceToPolygonEdge(pt, hole);
+        if (hd < holeDist) holeDist = hd;
+      }
+      const edgeDist = Math.min(dist, holeDist);
+
+      let value;
+      if (!inside) {
+        // Outside the polygon — blend zone extends outward
+        value = Math.max(0, Math.round((1 - Math.min(1, edgeDist / blendDist)) * 127));
+      } else {
+        // Inside — 128 at edge, 255 deep inside
+        value = 128 + Math.round(Math.min(1, edgeDist / blendDist) * 127);
+      }
+
+      // data[ty * texW + tx] = value;
+      const idx = (ty * texW + tx) * 4;
+      data[idx] = value;
+      data[idx + 1] = value;
+      data[idx + 2] = value;
+      data[idx + 3] = 255;
+
+    }
+  }
+
+  return {
+    data,
+    width: texW,
+    height: texH,
+    bounds: { x: bx, y: by, w: bw, h: bh },
+  };
+}
+
+
+expose({ generateMesh, digMesh, conformMeshToTerrain, smoothMeshEdges, generateBlendMap });

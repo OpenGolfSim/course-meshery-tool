@@ -29,9 +29,10 @@ import SurfaceSettings from '../components/SurfaceSettings.jsx';
 import { useProject } from '../contexts/Project.jsx';
 import { defaultSettings } from '../lib/settings.js';
 import NumberField from '../components/NumberField.jsx';
+import { SurfacePalette } from '../lib/colors.js';
 
 export default function GenerateMeshDialog(props) {
-  const { project, palette } = useProject();
+  const { project, generateMeshes } = useProject();
   const { onClose, open } = props;
   const [expanded, setExpanded] = React.useState(false);
   const [layerSettings, setLayerSettings] = React.useState({ ...defaultSettings });
@@ -166,9 +167,12 @@ export default function GenerateMeshDialog(props) {
   const handleConfirm = useCallback(async () => {
     console.log('generate them!');
     setJobState(old => ({ ...old, phase: 'generate' }));
-    const result = await window.meshery.project.generateMeshes(layerSettings, terrainSettings);
-    console.log('Done generating meshes!');
-    setJobState(old => ({ ...old, ...result, phase: 'complete' }));
+    const result = await generateMeshes(layerSettings, terrainSettings);
+    // const result = await window.meshery.project.generateMeshes(layerSettings, terrainSettings);
+    // console.log('Done generating meshes!', result);
+    if (result.state) {
+      setJobState(old => ({ ...old, ...result.state, phase: 'complete' }));
+    }
     // onClose(true);
   }, [layerSettings, terrainSettings]);
 
@@ -229,13 +233,11 @@ export default function GenerateMeshDialog(props) {
                 <Accordion key={setting.surface} expanded={expanded === setting.surface} onChange={handleChange(setting.surface)}>
                   <AccordionSummary
                     expandIcon={<ExpandMoreIcon />}
-                    aria-controls="panel1bh-content"
-                    id="panel1bh-header"
                   >
                     <Box sx={{ width: '33%', flexShrink: 0, display: 'flex', alignItems: 'center' }}>
                       <Avatar
                         sx={{
-                          backgroundColor: `#${getKeyByValue(palette, setting.surface) || 'aaa'}`,
+                          backgroundColor: SurfacePalette[setting.surface]?.hex || 'aaa',
                           width: 15,
                           height: 15,
                           mr: 2
@@ -259,7 +261,7 @@ export default function GenerateMeshDialog(props) {
                         <Chip
                           size="small"
                           avatar={<GradientIcon />}
-                          label={`${setting.blending?.distance?.toFixed(2)}m:${setting.blending?.spacing?.toFixed(2)}m`}
+                          label={`${setting.blending?.distance?.toFixed(2)}m`}
                         />
                       ) : null}
 

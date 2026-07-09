@@ -1,4 +1,3 @@
-// import fs from 'node:fs';
 import * as cheerio from 'cheerio';
 import * as martinez from 'martinez-polygon-clipping';
 import polygonClipping from 'polygon-clipping';
@@ -17,14 +16,14 @@ import {
 } from 'transformation-matrix';
 
 import { defaultSettings } from './settings';
-import { getColor, parsePalette } from './colors';
+import { colorMap, getColor, getHexId, idMap, parsePalette } from './colors';
 import { openProject } from './project';
 
-// const earcut = require('earcut');
 
-const COLOR_MATCH = /fill:\s*#([a-z0-9]+)/i;
+const FILL_MATCH = /fill:\s*#([a-z0-9]+)/i;
+const STROKE_MATCH = /stroke:\s*#([a-z0-9]+)/i;
 
-// maps OSM shapes to OpenGolfSim surfaces
+// maps OSM shapes to OpenGolfSim SVG surfaces
 const SURFACE_MAP = {
   green: 'green',
   fairway: 'fairway',
@@ -74,20 +73,11 @@ export function generateSVG(coursePaths, included = {}) {
       svgPaths,
     '</g>',
 
+    '<g id="flowmaps" inkscape:groupmode="layer"></g>',
+
     '</svg>'
   ].filter(Boolean).join('\n');
 }
-
-// Signed area via the shoelace formula; we only care about magnitude here.
-// const ringArea = (pts) => {
-//   let a = 0;
-//   for (let i = 0, n = pts.length; i < n; i++) {
-//     const [x1, y1] = pts[i];
-//     const [x2, y2] = pts[(i + 1) % n];
-//     a += x1 * y2 - x2 * y1;
-//   }
-//   return Math.abs(a) / 2;
-// };
 
 function ringArea(ring) {
   // Shoelace formula, for absolute area comparison
@@ -248,143 +238,71 @@ function toMatrix(t) {
   throw new Error("Unknown transform: " + JSON.stringify(t));
 }
 
-function snapRingToGrid(ring, gridSize = 1e-3) {
-  return ring.map(([x, y]) => [
-    Math.round(x / gridSize) * gridSize,
-    Math.round(y / gridSize) * gridSize
-  ]);
-}
-function forceClosedRing(points) {
-  if (!points?.length) return [];
-  points = snapRingToGrid(points);
-  const [x0, y0] = points[0];
-  const [xn, yn] = points[points.length - 1];
-  // Use fixed decimal for float compare
-  if (Number(x0).toFixed(5) !== Number(xn).toFixed(5) ||
-    Number(y0).toFixed(5) !== Number(yn).toFixed(5)) {
-    return [...points, [x0, y0]];
-  }
-  return points;
+function getElementName(el) {
+  return $(el).attr('inkscape:label') || $(el).attr('id');
 }
 
-function closeAllRings(multiPoly) {
-  if (!Array.isArray(multiPoly)) return [];
-  return multiPoly.map(forceClosedRing);
-}
-
-function ensureClosed(points, tolerance = 1e-6) {
-  if (!points?.length) return points;
-  const [x0, y0] = points[0];
-  const [xn, yn] = points[points.length - 1];
-  if (Math.abs(x0 - xn) > tolerance || Math.abs(y0 - yn) > tolerance)
-    return [...points, [x0, y0]];
-  return points;
-}
-
-function cutHolesFromPolygon(polygon, polygonsToCut) {
-  let base;
-  try {
-    base = [ensureClosed(polygon)];
-  } catch (error) {
-    console.error("ENSURE ERRROR");
-    throw error;
-  }
-  for (const clip of polygonsToCut) {
-    base = martinez.diff(base, [ensureClosed(clip)]) || [];
-  }
-  // Result may be: null | [ [exterior], ...holes ] | [ [ [exterior], ...holes ], ... ]
-  if (!base) return { polygon: [], holes: [] };
-  // If result is MultiPolygon, pick the largest by area (or accumulate all? your call)
-  if (base?.length && Array.isArray(base[0][0])) {
-    // MultiPolygon: find largest
-    let biggest = base[0];
-    let maxA = ringArea(base[0][0]);
-    for (const poly of base) {
-      const a = ringArea(poly[0]);
-      if (a > maxA) {
-        biggest = poly;
-        maxA = a;
-      }
-    }
-    return {
-      polygon: biggest[0],
-      holes: biggest.slice(1)
-    };
-  }
-  // Single polygon with holes
-  return {
-    polygon: base[0],
-    holes: base.slice(1)
-  };
-}
-
-
-function parseTreeLayers($, treeLayer, palette) {
-
+function parseCourseLayers($, courseLayer) {
   // Get all <path> in the layer
-  return treeLayer.find('path').map((i, el) => {
-    const name = $(el).attr('id');
-    const style = $(el).attr('style').toLowerCase() || '';
+  
+  const flowLines = new Map();
+  const results = [];
 
-    const matched = style && style.match(COLOR_MATCH);
-    if (!matched) {
-      throw new Error(`Unable to match layer (${name}) to a valid surface!`);
-    }
-    const [, hexColor] = matched;
-    const surface = matched ? palette?.[hexColor] : null;
-    if (!surface) {
-      throw new Error(`Unable to match layer color (${name}, ${hexColor}) to a valid surface!`);
-    }
-
-    return {
-      name,
-      surface,
-      hexColor,
-    };
-  }).get();
-}
-
-function parseCourseLayers($, courseLayer, palette) {
-  // Get all <path> in the layer
-  return courseLayer.find('path').map((i, el) => {
+  courseLayer.find('path').each((i, el) => {
     const data = $(el).attr('d');
-    const name = $(el).attr('id');
+    const id = $(el).attr('id');
+    const name = $(el).attr('inkscape:label') || id;
     const style = $(el).attr('style')?.toLowerCase();
+    
+    // console.log(`PATH: ${name}, ${style}`);
 
-    const matched = style.match(COLOR_MATCH);
+    const matched = style?.match(FILL_MATCH);
     if (!matched) {
-      throw new Error(`Unable to match layer (${name}) to a valid surface!`);
+      const strokeMatch = style?.match(STROKE_MATCH);
+      if (strokeMatch) {
+        const [, hex] = strokeMatch;
+        const hexId = getHexId(hex);
+        const surface = colorMap.get(hexId);
+        if (surface === 'river_flow') {
+          const flowLine = $(el).attr('d');
+          const riverId = $(el).siblings().first().attr('id');
+          if (riverId) {
+            console.log(`Found river flow line! ${name}, riverId: ${riverId}`);
+            flowLines.set(riverId, flowLine);
+          }
+          // flowLines.push(el);
+        }
+      }
+      // skip other paths without a fill
+      return;
     }
-    const [, hexColor] = matched;
-    const surface = matched ? palette?.[hexColor] : null;
+    const [, hex] = matched;
+    // const hexId = hex.toLowerCase().replace(/#/g, '');
+    const hexId = getHexId(hex);
+    const surface = colorMap.get(hexId);
+    // const splatId = idMap.get(hexId);
+    // const surface = matched ? palette?.[hexColor] : null;
     if (!surface) {
       throw new Error(`Unable to match layer color (${name}, ${hexColor}) to a valid surface!`);
     }
-
-    // let settings = { ...defaultSettings.rough };
-    // if (defaultSettings?.[surface]) {
-    //   settings = defaultSettings?.[surface];
-    // }
 
     const layer = {
       id: `${surface}_${i}`,
+      pathId: id,
+      // splatId,
+      surface,
       name,
       visible: true,
-      surface,
-      color: hexColor,
+      color: hex,
       data
-      // ...settings
     };
 
     let finalMatrix = fromObject({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 });
 
     try {
       const transformString = $(el).attr('transform');
-      // Default: Identity matrix (no transform)
-      // log.info(`Parsing layer ${i} (${name})`, JSON.stringify(transformString));
 
       if (transformString) {
-        // Parse into a list of transforms
         const transforms = parseTransform(transformString);
         if (transforms) {
           const matrices = Array.isArray(transforms) ? transforms.map(toMatrix) : [toMatrix(transforms)];
@@ -393,38 +311,66 @@ function parseCourseLayers($, courseLayer, palette) {
           }
         }
       }
-      return {
+      results.push({
         matrix: finalMatrix,
         ...layer
-      }
+      });
     } catch (error) {
       log.error(`SVG transform error (${name})`, error);
       throw new Error(`SVG transform error (layer: ${name})`)
     }
-  }).get();
-}
+  }).get().filter(Boolean);
 
 
-// export function parseSVG(payload) {
-export async function parseSVG(svgData, palette = null) {
-  // const { svgData, settings: { palette } } = payload;
-  if (!palette) {
-    palette = await parsePalette();
-  }
 
-  // const stats = await fs.promises.stat(svgPath);
-  // if (stats.size > MAX_FILESIZE) {
-  //   throw new Error(`SVG file should not be larger than 1MB. Make sure you link any image layers rather than embedding them.`);
+  // console.log('results', results);
+  // console.log('flowLines', flowLines);
+  // // Attach flow lines to their grouped course shapes
+  // const allPaths = courseLayer.find('path').get();
+  // for (const el of allPaths) {
+  //   const style = $(el).attr('style')?.toLowerCase() || '';
+  //   if (style.match(FILL_MATCH)) continue;
+
+  //   const parent = $(el).parent();
+  //   if (parent.get(0) === courseLayer.get(0)) continue;
+
+  //   const siblingShape = parent.children('path').filter((_, sib) => {
+  //     return sib !== el && $(sib).attr('style')?.match(FILL_MATCH);
+  //   }).first();
+
+  //   if (siblingShape.length) {
+  //     const siblingName = siblingShape.attr('id');
+  //     const match = results.find(l => l.name === siblingName);
+  //     if (match) {
+  //       match.flowLine = $(el).attr('d');
+  //     }
+  //   }
   // }
 
-  // const svg = await fs.promises.readFile(svgPath, 'utf-8');
+  return results.map(result => {
+    if (result.surface === 'river') {
+      const flowLine = flowLines.get(result.pathId);
+      if (flowLine) {
+        return {
+          ...result,
+          flowLine
+        }
+      }
+    }
+    return result;
+  });
+}
+
+export async function parseSVG(svgData) {
+  // if (!palette) {
+  //   palette = await parsePalette();
+  // }
+
   const $ = cheerio.load(svgData, { xmlMode: true });
 
   // Find a layer by id
   const root = $('svg');
   const viewBox = root.attr('viewBox');
-  // const widthRaw = root.attr('width');
-  // const heightRaw = root.attr('height');
 
   if (!viewBox) {
     throw new Error('Unable to parse viewBox of SVG file');
@@ -438,13 +384,13 @@ export async function parseSVG(svgData, palette = null) {
   if (!courseLayer.get(0)) {
     throw new Error('Unable to find layer with ID of course');
   }
-  let courseLayers = parseCourseLayers($, courseLayer, palette);
+  let courseLayers = parseCourseLayers($, courseLayer);
 
-  const treeLayer = $('g#trees');
-  let treeLayers = [];
-  if (treeLayer.get(0)) {
-    treeLayers = parseTreeLayers($, treeLayer, palette);
-  }
+  // const treeLayer = $('g#trees');
+  // let treeLayers = [];
+  // if (treeLayer.get(0)) {
+  //   treeLayers = parseTreeLayers($, treeLayer);
+  // }
 
   if (!courseLayers?.length) {
     log.warn('No course shapes found in course layer');
@@ -460,8 +406,9 @@ export async function parseSVG(svgData, palette = null) {
   }
 
   return {
-    treeLayers,
-    palette,
+    // TODO: validate we can remove this
+    treeLayers: [],
+    // palette,
     width,
     height,
     layers: courseLayers

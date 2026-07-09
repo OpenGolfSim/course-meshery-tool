@@ -1091,7 +1091,6 @@ export default function Map() {
   }, []);
 
   const handleKeyboard = useCallback((e) => {
-    console.log('e.code', e.code, isEditingHolePoint);
     if (isEditingHolePoint && e.code === 'Escape') {
       setIsEditingHolePoint(null);
     }

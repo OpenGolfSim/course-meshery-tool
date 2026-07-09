@@ -6,13 +6,20 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { FlyControls, MapControls, OrbitControls, Shape, Grid as ThreeGrid, Line, Bounds, useBounds, CameraControls } from '@react-three/drei';
 import NumberField from '../components/NumberField';
 import { Accordion, AccordionDetails, AccordionHeader, AccordionSummary, SidebarAccordionGroup } from '../components/Accordion';
-import { WireframeOverlay } from '../components/WireframeOverlay';
+import { PROJECT_FILE_PROTOCOL } from '../constants';
+import useCompositeTexture from '../hooks/useCompositeTexture';
+import LoadingButton from '../components/LoadingButton';
+
+// QUESTION: how would I overlay this on the below material? Canvas texture?
+// const SVG_URL = `${PROJECT_FILE_PROTOCOL}://svg/course.svg`;
 
 function Terrain({
   ref,
   heightMapRef,
   heightMapVersion,
   textureUrl,
+  svgUrl = `${PROJECT_FILE_PROTOCOL}://svg/course.svg`,
+  svgOpacity = 1,
   brushMode,
   brushStrength,
   heightScale,
@@ -164,17 +171,18 @@ function Terrain({
     get mesh() { return internalRef.current; }
   }), [heightScale, brushMode, brushRadius, strength, sampledHeight]);
 
-  const texture = useMemo(() => {
-    if (!textureUrl) return null;
-    if (textureUrl.includes('hillshade')) {
-      textureUrl = textureUrl.replace('.tif', '.jpg');
-    }
-    const tex = new THREE.TextureLoader().load(textureUrl);
-    tex.wrapS = THREE.ClampToEdgeWrapping;
-    tex.wrapT = THREE.ClampToEdgeWrapping;
-    return tex;
-  }, [textureUrl]);
-
+  // const texture = useMemo(() => {
+  //   if (!textureUrl) return null;
+  //   if (textureUrl.includes('hillshade')) {
+  //     textureUrl = textureUrl.replace('.tif', '.jpg');
+  //   }
+  //   const tex = new THREE.TextureLoader().load(textureUrl);
+  //   tex.wrapS = THREE.ClampToEdgeWrapping;
+  //   tex.wrapT = THREE.ClampToEdgeWrapping;
+  //   return tex;
+  // }, [textureUrl]);
+  
+  const texture = useCompositeTexture(textureUrl, svgUrl, svgOpacity);
 
   const geometry = useMemo(() => {
     if (!heightMapRef.current?.length) {
@@ -405,9 +413,47 @@ export default function EditTerrainDialog(props) {
     setPanelExpanded(newExpanded ? panel : false);
   };  
 
+  const handleSmoothRivers = useCallback(async () => {
+    try {
+      setSmoothPending('river');
+      const hm = heightMap.current;
+      const res = await window.meshery.terrain.smoothRivers(hm);
+      if (!res) {
+        throw new Error('Empty response');
+      }
+      const view = new Uint16Array(res);
+      heightMap.current = view;
+      console.log('Rivers have been smoothed!');
+      setHeightMapVersion(v => v + 1);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setSmoothPending(false);
+    } 
+  }, []);
+
+  const handleSmoothLakes = useCallback(async () => {
+    try {
+      setSmoothPending('lake');
+      const hm = heightMap.current;
+      const res = await window.meshery.terrain.smoothLakes(hm);
+      if (!res) {
+        throw new Error('Empty response');
+      }
+      const view = new Uint16Array(res);
+      heightMap.current = view;
+      console.log('Lakes have been smoothed!');
+      setHeightMapVersion(v => v + 1);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setSmoothPending(false);
+    }
+  }, []);
+
   const handleSmoothAll = useCallback(async () => {
     try {
-      setSmoothPending(true);
+      setSmoothPending('smooth');
       // let current = meshRef.current?.exportHeightMap();
       // console.log('smooth data', current);
       // current = current || heightMap;
@@ -518,13 +564,16 @@ export default function EditTerrainDialog(props) {
           })}
         >
           <SidebarAccordionGroup>
-            <Accordion expanded={panelExpanded === 'brush'} onChange={handlePanelChange('brush')}>
+            <Accordion expanded={panelExpanded === 'info'} onChange={handlePanelChange('info')}>
               <AccordionSummary id="brush-header">
                 <AccordionHeader>Info</AccordionHeader>
               </AccordionSummary>
               <AccordionDetails sx={{ p: 2 }}>
                 <Typography>heightScale: {heightScale?.toFixed(3)}</Typography>
               </AccordionDetails>
+            </Accordion>
+            
+            <Accordion expanded={panelExpanded === 'brush'} onChange={handlePanelChange('brush')}>            
               <AccordionSummary id="brush-header">
                 <AccordionHeader>Brush</AccordionHeader>
               </AccordionSummary>
@@ -570,31 +619,8 @@ export default function EditTerrainDialog(props) {
                     />
                   </Box>
 
-                  {brushMode === 'smooth' ? (
-                    <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
-                      <NumberField
-                        label="Smooth Amount"
-                        value={smoothStrength}
-                        size="small"
-                        min={0}
-                        step={1}
-                        max={50}
-                        fullWidth={true}
-                        onChange={(val) => setSmoothStrength(val)}                          
-                      />
-                      <Button
-                        sx={{ mt: 1 }}
-                        disabled={smoothPending}
-                        color="secondary"
-                        variant="contained"
-                        fullWidth
-                        size="small"
-                        onClick={handleSmoothAll}
-                      >
-                        Smooth All
-                      </Button>
-                    </Stack>
-                  ) : null}
+                  {/* {brushMode === 'smooth' ? (
+                  ) : null} */}
 
                   {brushMode === 'set' ? (
                     <Box sx={{ pt: 2 }}>
@@ -613,6 +639,67 @@ export default function EditTerrainDialog(props) {
                 </Stack>
               </AccordionDetails>
             </Accordion>
+
+            <Accordion expanded={panelExpanded === 'process'} onChange={handlePanelChange('process')}>
+              <AccordionSummary id="process-header">
+                <AccordionHeader sx={{ flex: 1, alignContent: 'center' }} variant="h5" color="textSecondary">
+                  Processing
+                </AccordionHeader>
+              </AccordionSummary>
+              <AccordionDetails sx={{ p: 3 }}>
+                <Stack spacing={4}>
+                  <LoadingButton
+                    fullWidth={true}
+                    pending={smoothPending==='lake'}
+                    disabled={smoothPending}
+                    variant="contained"
+                    color="secondary"
+                  >
+                    Smooth Lake Areas
+                  </LoadingButton>
+
+                  <LoadingButton
+                    fullWidth={true}
+                    pending={smoothPending==='river'}
+                    disabled={smoothPending}
+                    variant="contained"
+                    color="secondary"                    
+                    onClick={handleSmoothRivers}
+                  >
+                    Flatten Rivers
+                  </LoadingButton>
+
+                  <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
+                    <NumberField
+                      label="Smooth Amount"
+                      disabled={smoothPending}
+                      value={smoothStrength}
+                      size="small"
+                      min={0}
+                      step={1}
+                      max={50}
+                      fullWidth={true}
+                      onChange={(val) => setSmoothStrength(val)}                          
+                    />
+                    <LoadingButton
+                      sx={{ mt: 1 }}
+                      disabled={smoothPending}
+                      pending={smoothPending==='river'}
+                      color="secondary"
+                      variant="contained"
+                      fullWidth
+                      size="small"
+                      onClick={handleSmoothAll}
+                    >
+                      Smooth All
+                    </LoadingButton>
+                  </Stack>
+                </Stack>
+
+
+              </AccordionDetails>
+            </Accordion>
+
             <Accordion expanded={panelExpanded === 'image'} onChange={handlePanelChange('image')}>
               <AccordionSummary id="image-header">
                 <AccordionHeader sx={{ flex: 1, alignContent: 'center' }} variant="h5" color="textSecondary">
@@ -633,6 +720,9 @@ export default function EditTerrainDialog(props) {
                     }}
                   >
                     <MenuItem value={''}>None</MenuItem>
+                    {project._svgBuffer ? (
+                      <MenuItem value='svg'>Course SVG</MenuItem>
+                    ) : null}
                     {Object.values(project.satellite).map(sat => {
                       return (<MenuItem key={sat.uri} value={sat.uri}>Satellite ({sat.source})</MenuItem>);
                     })}

@@ -14,7 +14,9 @@ import {
   applyToPoint,
   matrix as tmMatrix
 } from 'transformation-matrix';
+import { PNG } from 'pngjs';
 import { defaultSettings } from '../../lib/settings';
+import { generateFlowMap } from '../flowmap';
 
 const log = logger.scope('SVG_WORKER');
 
@@ -80,14 +82,24 @@ function cleanPolygonOutput(polygon, holes, epsilon = 0.01) {
 }
 
 
+function ringArea(ring) {
+  let a = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const [x1, y1] = ring[i];
+    const [x2, y2] = ring[(i + 1) % ring.length];
+    a += x1 * y2 - x2 * y1;
+  }
+  return Math.abs(a / 2);
+}
 
-export function generateCoursePolygons(courseLayers, layerSettings) {
+export async function generateCoursePolygons(courseLayers, layerSettings) {
   let meshLayers = [];
   const polygonMap = new Map();
   // convert outer rings to polygons
   let current = 0;
 
-  courseLayers.forEach(layer => {
+  // courseLayers.forEach(async layer => {
+  for (const layer of courseLayers) {    
   // let layers = courseLayers.map((layer) => {
     const { data, matrix, ...restOfLayer } = layer;
     const properties = new svgPathProperties(data);
@@ -124,16 +136,34 @@ export function generateCoursePolygons(courseLayers, layerSettings) {
       settings = layerSettings?.[layer.surface];
     }
 
-    // layers.push({ ...layer, ...settings });
-    // polygons.push({ id: layer.id, ...settings, polygon, holes: [] });
     polygonMap.set(layer.id, { polygon, holes: [] });
     
+    // Sample the flow line if this layer has one
+    let flowPoints = null;
+    if (layer.flowLine) {
+      console.log('generate flowPoints!');
+      const flowProps = new svgPathProperties(layer.flowLine);
+      const flowLength = flowProps.getTotalLength();
+      // const flowSamples = Math.max(Math.round(flowLength / 2), 20);
+      const flowSamples = Math.max(Math.round(flowLength / 10), 20);
+      flowPoints = [];
+
+      for (let i = 0; i <= flowSamples; i++) {
+        const pos = flowProps.getPointAtLength(flowLength * (i / flowSamples));
+        if (matrix) {
+          const transformed = applyToPoint(matrix, { x: pos.x, y: pos.y });
+          flowPoints.push([transformed.x, transformed.y]);
+        } else {
+          flowPoints.push([pos.x, pos.y]);
+        }
+      }
+    
+    }
+
     meshLayers.push({
-      // ...layer,
       ...restOfLayer,
-      ...settings
-      // polygon,
-      // holes: [],
+      ...settings,
+      ...flowPoints && { flowPoints }
     });
 
     progressSubject.next({
@@ -144,13 +174,7 @@ export function generateCoursePolygons(courseLayers, layerSettings) {
     });
     current++;
 
-    // return {
-    //   ...layer,
-    //   ...settings,
-    //   polygon,
-    //   holes: [],
-    // }
-  })
+  }
 
   if (!meshLayers?.length) {
     log.error('No valid paths found in course layer');
@@ -164,93 +188,106 @@ export function generateCoursePolygons(courseLayers, layerSettings) {
       const layersToCut = layersAbove.map(l => [polygonMap.get(l.id)?.polygon]);
       let polygon = polygonMap.get(layer.id)?.polygon || [];
 
-      let holes = [];
+      // let holes = [];
+      let rawPieces = [{ polygon, holes: [] }];
       if (layersToCut.length > 0) {
         // Single combined difference avoids accumulating floating-point errors
         const result = polygonClipping.difference([polygon], ...layersToCut);
-        if (result.length > 0) {
-          const rings = result[0];
-          polygon = rings[0];
-          holes = rings.slice(1);
-        }
+        // if (result.length > 0) {
+        //   const rings = result[0];
+        //   polygon = rings[0];
+        //   holes = rings.slice(1);
+        // }
+        // difference() returns a MULTIpolygon: keep every piece, not just the first
+        rawPieces = result.map(rings => ({ polygon: rings[0], holes: rings.slice(1) }));
+
       }
 
       // Clean geometry before it reaches the mesh worker
-      const cleaned = cleanPolygonOutput(polygon, holes);
+      // const cleaned = cleanPolygonOutput(polygon, holes);
 
-      polygonMap.set(layer.id, cleaned);
+      // polygonMap.set(layer.id, cleaned);
+      // Clean each piece, drop degenerate slivers, largest piece first
+      const MIN_PIECE_AREA = 0.5; // square course-units
+      const pieces = rawPieces
+        .map(p => cleanPolygonOutput(p.polygon, p.holes))
+        .filter(p => p.polygon.length >= 3 && ringArea(p.polygon) > MIN_PIECE_AREA)
+        .sort((a, b) => ringArea(b.polygon) - ringArea(a.polygon));
+
+      if (!pieces.length) {
+        log.warn(`Layer ${layer.name || layer.id} is fully covered by layers above; producing empty mesh`);
+      }
+
+      // polygon/holes stay = the main piece for backward compatibility
+      // (flow maps, dig, smoothing, blend maps all keep working unchanged)
+      polygonMap.set(layer.id, {
+        polygon: pieces[0]?.polygon || [],
+        holes: pieces[0]?.holes || [],
+        pieces,
+      });
+
     } catch (error) {
       log.error('Cut error', error);
       layer.error = 'Cut Error: Unable to cut holes in shape';
     }
   });
 
-  // Cut-out any layers above
-  // layers = layers.map((layer, index) => {
-  // layers.forEach((layer, index) => {
-  //   try {
-  //     const layersAbove = (layers.slice(index + 1) || []);
-  //     const layersToCut = layersAbove.map(l => [polygonMap.get(l.id)?.polygon]);
-  //     // let polygon = [...layer.polygon];
-  //     let polygon = polygonMap.get(layer.id)?.polygon || [];
-
-  //     let holes = [];
-  //     if (layersToCut?.length > 0) {
-  //       for (const cl of layersToCut) {
-  //         const result = polygonClipping.difference([polygon], [cl]);
-  //         const rings = result[0];
-  //         polygon = rings[0];
-  //         holes = [...holes, ...rings.slice(1)];
-  //       }
-  //     }
-  //     polygonMap.set(layer.id, { polygon, holes });
-  //     // return {
-  //     //   ...layer,
-  //     //   polygon,
-  //     //   holes
-  //     // }
-  //   } catch (error) {
-  //     log.error('Cut error', error);
-  //     layer.error = 'Cut Error: Unable to cut holes in shape';
-  //     // return {
-  //     //   ...layer,
-  //     //   error: 'Cut Error: Unable to cut holes in shape'
-  //     // }
-  //   }
-  // });
-
   // adds an extra water plane after cutting
   for (const layer of meshLayers) {
-    if (layer.surface === 'water' || layer.surface === 'river') {
-      const existingPoly = polygonMap.get(layer.id);
-      let newlayer = null;
-      if (layer.surface === 'river' && layerSettings?.plane_river) {
-        newlayer = {
-          ...layerSettings.river_plane,
-          id: `plane_river_${layer.id}`,
-          riverId: layer.id,
-          name: `plane_river_${layer.id}`,
-          hidden: false,
-          surface: 'plane_river',
-          color: '0088AA',
-          // data: layer.data,
+    if (!['water', 'river'].includes(layer.surface)) {
+      continue;
+    }
+    const existingPoly = polygonMap.get(layer.id);
+    let newlayer = null;
+    if (layer.surface === 'river' && layerSettings?.plane_river) {
+      console.log('river plane');
+
+      let flowMap = null;
+      if (layer.flowPoints?.length) {
+        console.log('generate flowMap!');
+
+        const flowMapData = await generateFlowMap(existingPoly.polygon, layer.flowPoints);
+        const { data, width, height, bounds } = flowMapData;
+        // const png = new PNG({ width, height, colorType: 6 }); // 6 = RGBA
+        // png.data = Buffer.from(data);
+        // const pngData = PNG.sync.write(png);
+        flowMap = {
+          // data: `data:image/png;base64,${pngData.toString('base64')}`,
+          data,
+          width,
+          height,
+          bounds,
         };
-      } else if (layer.surface === 'water' && layerSettings?.plane_lake) {
-        newlayer = {
-          ...layerSettings.plane_lake,
-          id: `plane_lake_${layer.id}`,
-          lakeId: layer.id,
-          name: `plane_lake_${layer.id}`,
-          hidden: false,
-          surface: 'plane_lake',
-          color: '0088AA',
-          // data: layer.data,
-        };
+        // const pngBuffer = await generateFlowMapPNG(riverShape, layer.flowPoints);
       }
-      if (newlayer) {
-        meshLayers.push(newlayer);
-        polygonMap.set(newlayer.id, { ...existingPoly });
-      }
+
+      newlayer = {
+        ...layerSettings.plane_river,
+        id: `plane_river_${layer.id}`,
+        riverId: layer.id,
+        name: `plane_river_${layer.id}`,
+        hidden: false,
+        surface: 'plane_river',
+        color: '0088AA',
+        // ...layer.flowPoints && { flowPoints: layer.flowPoints },
+        ...flowMap && { flowMap },
+        // data: layer.data,
+      };
+    } else if (layer.surface === 'water' && layerSettings?.plane_lake) {
+      newlayer = {
+        ...layerSettings.plane_lake,
+        id: `plane_lake_${layer.id}`,
+        lakeId: layer.id,
+        name: `plane_lake_${layer.id}`,
+        hidden: false,
+        surface: 'plane_lake',
+        color: '0088AA',
+        // data: layer.data,
+      };
+    }
+    if (newlayer) {
+      meshLayers.push(newlayer);
+      polygonMap.set(newlayer.id, { ...existingPoly });
     }
   }
 

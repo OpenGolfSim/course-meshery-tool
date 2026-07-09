@@ -25,7 +25,7 @@ import { TEXTURES_PATH } from '../app';
 import { CACHE_DIR, PROJECT_FILE_PROTOCOL, RESOURCES_FILE_PROTOCOL } from '../../constants';
 import { openProject, saveProjectSettings } from '../project';
 import { broadcast } from '../window';
-import { compressTextures } from '../workers';
+import { compressTextures, generateFlowMapPNG } from '../workers';
 
 
 const EXTENSIONS = [
@@ -160,7 +160,9 @@ export function meshNodeForLayer(doc, buffer, layer, mesh, cfg = {}, material) {
       type: 'course',
       surface: layer.surface,
       name: layer.name,
-      id: layer.id
+      id: layer.id,
+      tileSize: cfg?.tileSize,
+      blendSettings: layer.blending,
     })
     .setMesh(finalMesh);
   
@@ -346,6 +348,87 @@ export async function write(filePath, project, meshData, imageData) {
       .setImage(new Uint8Array(mapImage))
       .setExtras({ type: 'course_map' });
   }
+  
+  // add flow/blend maps (uncompressed)
+  for (const layer of project._meshes) {
+    // Add blend maps (uncompressed — must not be KTX2 compressed)
+    const meshRecord = meshData.meshes.get(layer.id);
+    if (meshRecord?.mesh?.blendMap) {
+      const { width, height, bounds, data } = meshRecord.mesh.blendMap;
+      // const png = new PNG({ width, height, colorType: 0 }); // grayscale
+      // for (let i = 0; i < data.length; i++) {
+      //   png.data[i * 4] = data[i];
+      //   png.data[i * 4 + 1] = data[i];
+      //   png.data[i * 4 + 2] = data[i];
+      //   png.data[i * 4 + 3] = 255;
+      // }
+      const png = new PNG({ width, height, colorType: 6 }); // RGBA
+      const pixelCount = width * height;
+      for (let i = 0; i < pixelCount; i++) {
+        const srcIdx = i * 4;       // RGBA source
+        const dstIdx = i * 4;       // RGBA destination
+        png.data[dstIdx]     = data[srcIdx];
+        png.data[dstIdx + 1] = data[srcIdx + 1];
+        png.data[dstIdx + 2] = data[srcIdx + 2];
+        png.data[dstIdx + 3] = data[srcIdx + 3];
+      }
+      const pngBuffer = PNG.sync.write(png);
+
+      finalDoc.createTexture(`blend_map_${layer.id}`)
+        .setMimeType('image/png')
+        .setImage(new Uint8Array(pngBuffer))
+        .setExtras({
+          type: 'blend_map',
+          id: layer.id,
+          width,
+          height,
+          bounds,
+        });
+    }
     
+    if (layer.surface === 'plane_river' && layer.flowMap) {
+      console.log('Adding river plane...');
+      const { width, height, bounds, data } = layer.flowMap;
+
+      const png = new PNG({ width, height, colorType: 6 }); // 6 = RGBA
+      png.data = Buffer.from(data);
+      const pngBuffer = PNG.sync.write(png);
+
+      finalDoc.createTexture(`flow_map_${layer.id}`)
+          .setMimeType('image/png')
+          .setImage(new Uint8Array(pngBuffer))
+          .setExtras({
+            type: 'flow_map',
+            riverId: layer.riverId,
+            id: layer.id,
+            width,
+            height,
+            bounds
+          });
+      
+      // const riverShape = meshData.shapes.get(layer.id)?.polygon;
+      // const polygon = meshData.meshes.get(layer.id)?.mesh?.polygon
+      //     ?? meshData.polygonMap?.get(layer.id)?.polygon;
+
+      // if (riverShape) {
+      //   const pngBuffer = await generateFlowMapPNG(riverShape, layer.flowPoints);
+      //   finalDoc.createTexture(`flow_map_${layer.id}`)
+      //     .setMimeType('image/png')
+      //     .setImage(new Uint8Array(pngBuffer))
+      //     .setExtras({
+      //       type: 'flow_map',
+      //       riverId: layer.riverId,
+      //       id: layer.id,
+      //     });
+        
+      //   // console.log(`${filePath}_flowmap_debug.png`, pngBuffer.length);
+      //   // fs.writeFileSync(`${filePath}_flowmap_debug.png`, pngBuffer);
+
+      // } else {
+      //   console.log('NO FLOW POLYGON');
+      // }
+    }
+
+  }
   await io.write(filePath, finalDoc);
 }

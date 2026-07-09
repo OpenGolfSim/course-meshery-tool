@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef, useCallback, Suspense } from 'react';
+import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import {
   Avatar,
   Box,
@@ -18,114 +18,41 @@ import {
   Tab,
   Tabs,
   TextField,
-  Typography
+  Typography,
+  CircularProgress,
 } from "@mui/material";
-import ImportIcon from '@mui/icons-material/FileOpen';
-import EditIcon from '@mui/icons-material/Edit';
-import DeleteIcon from '@mui/icons-material/Delete';
-import LayerIcon from '@mui/icons-material/Layers';
-import TreeIcon from '@mui/icons-material/Park';
-import { useProject } from '../contexts/Project';
-import * as THREE from 'three';
-import { Canvas, useThree } from '@react-three/fiber';
-import {
-  OrbitControls,
-  Shape,
-  Grid as ThreeGrid,
-  Line,
-  Bounds,
-  CameraControls,
-  useBounds,
-  useGLTF,
-  Sky,
-  Html
-} from '@react-three/drei';
-import { Accordion, AccordionDetails, AccordionHeader, AccordionSummary, SidebarAccordionGroup } from '../components/Accordion';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
-import CourseOutline from '../components/CourseOutline.jsx';
+// import { Canvas, extend, useFrame } from '@react-three/fiber';
+import { MapControls, CameraControls, Grid as ThreeGrid } from '@react-three/drei';
+import * as THREE from 'three/webgpu';
+import { MeshPhysicalNodeMaterial } from 'three/webgpu';
+import { texture, uv, vec3, float, int, Fn } from 'three/tsl';
+import { Accordion, AccordionDetails, AccordionHeader, AccordionSummary, SidebarAccordionGroup } from '../components/Accordion';
+// import * as THREE from 'three';
+import { useProject } from "../contexts/Project";
+import CourseScene from '../fuse/CourseScene';
+import GenerateMeshDialog from '../dialogs/GenerateMeshDialog';
+import ExportCourseDialog from '../dialogs/ExportCourseDialog';
+import { MiniTab, MiniTabPanel, MiniTabs } from '../components/MiniTabs';
 import SurfaceSettings from '../components/SurfaceSettings.jsx';
-import GenerateMeshDialog from '../dialogs/GenerateMeshDialog.jsx';
-import CustomMesh from '../components/CustomMesh.jsx';
-import ExportCourseDialog from '../dialogs/ExportCourseDialog.jsx';
-import { RESOURCES_FILE_PROTOCOL } from '../constants.js';
-import CustomListItem from '../components/CustomListItem.jsx';
-import TreeLayerDialog from '../dialogs/TreeLayerDialog.jsx';
-import TreePreview from '../components/TreePreview.jsx';
-import SkyPreview from '../components/SkyPreview.jsx';
-import NumberField from '../components/NumberField.jsx';
-import ColorField from '../components/ColorField.jsx';
 import TreeLayerList from '../components/TreeLayerList.jsx';
-import CourseMapCapture from '../components/CourseMapCapture.jsx';
+import TreeLayerDialog from '../dialogs/TreeLayerDialog.jsx';
+import NumberField from '../components/NumberField.jsx';
+import TreeImportDialog from '../dialogs/TreeImportDialog.jsx';
+import ColorField from '../components/ColorField.jsx';
 
-const MiniTabs = styled(props => <Tabs {...props} />)(theme => ({
-  height: 32,
-  minHeight: 32,
-  // Adjusts the overall container height
-  "&.MuiTabs-root": { minHeight: 32, height: 32 },
-  // Adjusts the individual tab clickable area
-  "& .MuiTab-root": { minHeight: 32, height: 32 },
-}));
+// extend(THREE);
 
-const MiniTab = styled(props => <Tab disableRipple {...props} />)(theme => ({
-  // padding: '1px 3px',
-  // minHeight: 32,
-  // '& .MuiTabs-root': {
-  //   minHeight: 32,
-  //   height: 32,
-  // }
-}));
-
-function MiniTabPanel(props) {
-  const { children, value, index, ...other } = props;
-  return (
-    <div
-      role="tabpanel"
-      hidden={value !== index}
-      id={`mini-tabpanel-${index}`}
-      aria-labelledby={`mini-tab-${index}`}
-      {...other}
-    >
-      {value === index && <Box sx={{ p: 3 }}>{children}</Box>}
-    </div>
-  );
-}
-
-
-// Helper inside Canvas
-function SceneGrabber({ setScene }) {
-  const { scene } = useThree();
-  useEffect(() => {
-    setScene(scene);
-  }, [scene]);
-  return null;
-}
-
-function LayerSetup() {
-  const { camera, raycaster } = useThree()
-
-  useEffect(() => {
-    // Camera now sees default Layer 0 AND Layer 1
-    camera.layers.enable(1)
-    
-    // Raycaster can now click items on Layer 0 AND Layer 1
-    raycaster.layers.enable(1)
-  }, [camera, raycaster])
-
-  return null
-}
-
-function ImportedModel({ url, ...rest }) {
-  const { scene } = useGLTF(url)
-  // scene.traverse(child => {
-  //   console.log('scene-child', child);
-  // });
-  return <primitive object={scene} {...rest} />
-}
-
-function SetCamera({ controlsRef, worldSize }) {
+function SetCamera({ controlsRef }) {
   const [set, setSet] = useState(false);
+  const { project } = useProject();
+
+  const worldSize = useMemo(() => {
+    return project.settings.distance * 1000;
+  }, [project.settings.distance]);
+
   useEffect(() => {
     if (!controlsRef.current || set) return;
     controlsRef.current.setLookAt(
@@ -136,6 +63,62 @@ function SetCamera({ controlsRef, worldSize }) {
     setSet(true);
   }, [controlsRef.current, worldSize]);
   return null;
+}
+
+function TerrainMesh({ heightMap, heightScale, maxSegments = 1024, size = 1000 }) {
+  
+  const material = useMemo(() => {
+    // const mat = new THREE.MeshStandardMaterial({
+    //   color: '#909380',
+    //   // map: texture,
+    //   wireframe: false
+    // });
+    const mat = new THREE.MeshBasicNodeMaterial();
+    mat.colorNode = vec3(0.56, 0.58, 0.50);
+    mat.side = THREE.DoubleSide;
+    return mat;
+  }, []);
+
+  const geometry = useMemo(() => {
+    if (!heightMap?.length) {
+      console.warn('No heightmap!');
+      return;
+    }
+    if (typeof heightScale !== 'number') return;   // wait for the real value
+    console.time('build-mesh');
+
+
+    // const resolution = Math.sqrt(heightMap.length);
+    // const segments = Math.min(resolution - 1, maxSegments);
+    // const step = resolution / (segments + 1);
+    // const geo = new THREE.PlaneGeometry(size, size, segments, segments);
+    // geo.rotateX(-Math.PI / 2); // lay it flat
+    // const pos = geo.attributes.position;
+    // for (let z = 0; z <= segments; z++) {
+    //   for (let x = 0; x <= segments; x++) {
+    //     const srcX = Math.round(x * step);
+    //     const srcZ = Math.round(z * step);
+    //     const srcIdx = srcZ * resolution + srcX;
+    //     const dstIdx = z * (segments + 1) + x;
+    //     pos.setY(dstIdx, heightMap[srcIdx] / 65535 * heightScale);
+    //   }
+    // }
+    // pos.needsUpdate = true;
+    // geo.computeBoundingSphere();
+    // geo.computeVertexNormals();
+    console.timeEnd('build-mesh');
+    return geo;
+  }, [heightMap, heightScale]);
+
+  // return null;
+  return (
+    <mesh
+      geometry={geometry}
+      material={material}
+      raycast={() => null} 
+      // events={undefined}
+    />
+  );
 }
 
 export default function Course() {
@@ -150,105 +133,110 @@ export default function Course() {
     importTreeModel,
     removeTreeModel
   } = useProject();
+
   const [panelExpanded, setPanelExpanded] = useState('veg');
-  const controlsRef = useRef();
-  const groundRef = useRef();
-  const lightTargetRef = useRef();
-  const captureRef = useRef();
-
-  const [scene, setScene] = useState();
-  const [heightMap, setHeightMap] = useState(null);
-  const [visibilityMenu, setVisibilityMenu] = useState();
-  const [selectedLayer, setSelectedLayer] = useState();
-  const [selectedTab, setSelectedTab] = useState(0);
-
   const [skySettings, setSkySettings] = useState({ ...project?.scene?.sky || {} });
   const skySettingsInit = useRef(false);
-
-  const [renderSettings, setRenderSettings] = useState({ wireframe: false, vertex: false });
-  const selectedMeshRef = useRef();
-  const meshRefs = useRef(new Map());
-  const [treeEditDialog, setTreeEditDialog] = useState(null);
-  const [layers, setLayers] = useState([]);
-  const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
-  const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [exportCourseData, setExportCourseData] = useState({ mapImage: null });
+  // const [heightMap, setHeightMap] = useState(null);
+  const [heightScale, setHeightScale] = useState(project.stats?.heightScale || project.stats?.relief);
   const [meshDataState, setMeshDataState] = useState(null);
+  const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
+  const [treeImportDialog, setTreeImportDialog] = useState(false);
+  const [loading, setLoading] = useState(null);
+  const [selectedLayer, setSelectedLayer] = useState(null);
+  const [selectedTab, setSelectedTab] = useState(0);
   const [hiddenLayers, setHiddenLayers] = useState({});
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [treeEditDialog, setTreeEditDialog] = useState(null);
 
+  // refs
+  const courseSceneRef = useRef();
+  const controlsRef = useRef();
+  const lightTargetRef = useRef();
+
+  // const heightMap = useRef();
   const worldSize = useMemo(() => {
     return project.settings.distance * 1000;
   }, [project.settings.distance]);
-  
-  const registerMeshRef = useCallback((id, node) => {
-    if (node) {
-      meshRefs.current.set(id, node);
+
+  const handleStateUpdate = (event, result) => {
+    // console.log('handleStateUpdate', result);
+    // setMeshDataState(result);
+    // if (result.running) {
+    //   setGenerateDialogOpen(true);
+    // }
+    console.log('[state] handleStateUpdate', result?.updatedLayerId, result);
+    if (result.updatedLayerId) {
+      // Single layer update — skip full rebuild
+      courseSceneRef.current?.refreshLayer(result.updatedLayerId);
     } else {
-      meshRefs.current.delete(id); // cleanup on unmount
+      setMeshDataState(result);
+      if (result.running) {
+        setGenerateDialogOpen(true);
+      }
     }
-  }, []);
 
-
-  const zoomToObject = (mesh) => {
-    if (!controlsRef.current) return;
-    const box = new THREE.Box3().setFromObject(mesh);
-    const center = new THREE.Vector3();
-    box.getCenter(center);  // center in world coordinates
-    // Move above the object center
-    controlsRef.current.setLookAt(
-      center.x, center.y + 20, center.z,     // camera position
-      center.x, center.y, center.z,          // look at this position
-      true                                   // animate: true/false as needed
-    );
-    controlsRef.current.fitToBox(mesh, true);
   }
-  
-  const handleCanvasClick = useCallback((e) => {
+
+  const sleep = (ms) => new Promise(resolve => requestAnimationFrame(resolve));
+  const handleExport = async () => {
     setSelectedLayer(null);
-  }, []);
-
-  const handleMeshClick = useCallback((layer, e) => {
-    setSelectedLayer({ type: 'layer', layer: layer, object: e.object });
-    return false;
-  }, []);
-  
-  const handleMeshDoubleClick = useCallback((layer, e) => {
-    setSelectedLayer({ type: 'layer', layer: layer, object: e.object });
-    zoomToObject(e.object);
-  }, []);
-
-  const handleLayerZoom = useCallback((e, layer) => {
-    const mesh = meshRefs.current.get(layer?.id);
-    if (!mesh) return;
-    zoomToObject(mesh);
-  }, []);
-
-  const handleShowHide = useCallback((e, layer) => {
-    setHiddenLayers(old => ({ ...old, [layer.id]: old?.[layer.id] ? false : true }));
-  }, []);
-
-  const handleSpacingChange = useCallback((newValue) => {
-    // setSelectedLayer(old => ({ ...old, layer: { ...old.layer, spacing: newValue }}))
-  }, [selectedLayer]);
-  
-  const handleCloudSettingsChange = useCallback((key, newValue) => {
-    setSkySettings(old => ({ ...old, clouds: { ...old.clouds, [key]: newValue } }))
-  }, [skySettings]);
-  
-  const handleExport = () => {
-    setSelectedLayer(null);
-    // -- Capture course image here?
-    const mapImage = captureRef.current?.capture(4096);
-    setExportCourseData(old => ({ ...old, mapImage }));
     setExportDialogOpen(true);
+    await sleep(200);
+    // -- Capture course image here?
+    // const mapImage = captureRef.current?.capture(4096);
+    const mapImage = await courseSceneRef.current?.capture(4096);
+    setExportCourseData(old => ({ ...old, mapImage }));
   }
+
+  // const loadRawData = async (uri) => {
+  //   const response = await fetch(uri);
+  //   const buffer = await response.arrayBuffer();
+  //   setHeightMap(new Uint16Array(buffer));   // triggers re-render
+  // }
+
+
+  useEffect(() => {
+    const hs = project.stats?.heightScale || project.stats?.relief;
+    if (typeof hs === 'undefined') {
+      console.warn('No heightscale on stats!');
+      return;
+    }
+    console.log(`Setting height scale to: ${hs}`);
+    setHeightScale(hs);
+  }, [project.stats]);
+
   const handleGenerateMeshes = () => {
     setGenerateDialogOpen(true);
   }
+  const handleLayerSelect = (layer) => {
+    console.log('layer', layer);
+    if (layer) {
+      setSelectedLayer({ type: 'layer', layer });
+    } else {
+      setSelectedLayer(null);
+    }
+  }
+  
+  const handleSaveSurface = useCallback(async () => {
+    console.log('surface-changed', selectedLayer);
+  }, [selectedLayer]);
+
+  const handleTreeImportClosed = useCallback(async (plant) => {
+    // TreeImportDialog
+    if (plant) {
+      console.log('Write import to settings', treeImportDialog, plant);
+      await importTreeModel(treeImportDialog, plant);
+      // await window.meshery.trees.importPlant(treeImportDialog, plant);
+    }
+    setTreeImportDialog(null);
+  }, [treeImportDialog]);
 
   const handleTreeModelImport = async (treeLayerId) => {
     // await window.meshery.trees.import(treeLayer.id);
-    await importTreeModel(treeLayerId);
+    // await importTreeModel(treeLayerId);
+    setTreeImportDialog(treeLayerId);
   }
   const handleTreeModelRemove = async (treeLayerId, treeConfigId) => {
     // window.meshery.trees.remove(treeLayerId, treeConfigId)    
@@ -305,18 +293,9 @@ export default function Course() {
     // updateTreeLayer
   }, [selectedLayer]);
 
-  const handleSaveSurface = useCallback(() => {
-    console.log('surface-changes', selectedLayer);
-  }, [selectedLayer]);
-
-  const handleStateUpdate = (event, result) => {
-    console.log('handleStateUpdate', result);
-    setMeshDataState(result);
-    if (result.running) {
-      setGenerateDialogOpen(true);
-    }
-  }
-
+  const handleCloudSettingsChange = useCallback((key, newValue) => {
+    setSkySettings(old => ({ ...old, clouds: { ...old.clouds, [key]: newValue } }))
+  }, [skySettings]);
 
   useEffect(() => {
     if (!skySettingsInit.current) {
@@ -325,32 +304,44 @@ export default function Course() {
     }
     console.log('skySettings-changed', skySettings);
     updateSceneSettings({ sky: skySettings });
-  }, [skySettings]);
+  }, [skySettings]);  
 
   useEffect(() => {
-    window.meshery.project.getHeightMap().then(result => {
-      console.log('getHeightMap', result);
-      setHeightMap(result);
-    });
+    console.log(`${Date.now()} - CourseMap init effect`);
+    
+    // window.meshery.project.getHeightMap().then(result => {
+    //   console.log(`${Date.now()} - getHeightMap resolved (${result?.data?.length} entries)`);
+    //   setHeightMap(result);
+    // });
+
     window.meshery.project.getMeshDataState().then(result => {
-      console.log('res', result);
+      console.log(`${Date.now()} - getMeshDataState resolved`);
       handleStateUpdate(null, result);
     });
 
     window.meshery.on('mesh.data', handleStateUpdate);
+    
     return () => {
       window.meshery.off('mesh.data', handleStateUpdate);
-    }
-  }, []);
+    };
+  }, []);  
+  // useEffect(() => {
+  //   window.meshery.project.getHeightMap().then(result => {
+  //     setHeightMap(result);
+  //   });
 
-  if (!project._layers?.length) {
-    return (
-      <Box sx={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <Typography color="textSecondary">No SVG layers detected yet</Typography>
-      </Box>
-    );
-  }
+  //   window.meshery.project.getMeshDataState().then(result => {
+  //     console.log('res', result);
+  //     handleStateUpdate(null, result);
+  //   });
 
+  //   window.meshery.on('mesh.data', handleStateUpdate);
+    
+  //   return () => {
+  //     window.meshery.off('mesh.data', handleStateUpdate);
+  //   };
+  // }, []);
+  
   return (
     <React.Fragment>
       <Box
@@ -367,15 +358,6 @@ export default function Course() {
         <Box sx={{ width: 220, flexGrow: 0, flexShrink: 0, display: 'flex', flexDirection: 'column', maxHeight: '100%' }}>
           
           <Stack sx={{ p: 3 }} spacing={3}>
-            <Button
-              disabled={!meshDataState?.generated || !project._layers?.length}
-              color={!meshDataState?.generated || !project._layers?.length ? 'inherit' : 'primary'}
-              onClick={handleExport}
-              fullWidth={true}
-              variant="contained"
-            >
-              Export Course
-            </Button>
 
             <Button
               onClick={handleGenerateMeshes}
@@ -386,15 +368,24 @@ export default function Course() {
               {!meshDataState?.generated || !project._layers?.length ? 'Generate' : 'Regenerate'} Meshes
             </Button>
 
+            <Button
+              disabled={!project._layers?.length}
+              color={!project._layers?.length ? 'inherit' : 'primary'}
+              onClick={handleExport}
+              fullWidth={true}
+              variant="contained"
+            >
+              Export Course
+            </Button>
+
           </Stack>
+
 
           <Box sx={{ mt: 2, flexGrow: 1, overflow: 'hidden', height: '80%', display: 'flex', flexDirection: 'column' }}>
             <SidebarAccordionGroup>
-
-
               <Accordion expanded={panelExpanded === 'veg'} onChange={(e, expanded) => setPanelExpanded(expanded ? 'veg' : null)}>
                 <AccordionSummary id="veg-header">
-                  <AccordionHeader sx={{ flex: 1, alignContent: 'center' }} variant="h5" color="textSecondary">Trees &amp; Vegetation</AccordionHeader>
+                  <AccordionHeader sx={{ flex: 1, alignContent: 'center' }} variant="h5" color="textSecondary">Planting</AccordionHeader>
                 </AccordionSummary>
                 <AccordionDetails>
                   <TreeLayerList
@@ -407,7 +398,7 @@ export default function Course() {
                     onTreeSelect={(layer, config) => setSelectedLayer({ type: 'tree', layer, config })}
                   />
                   <Box sx={{ p: 2 }}>
-                    <Button fullWidth onClick={handleTreeAdd} color="secondary" variant="contained">Add Layer</Button>
+                    <Button fullWidth onClick={handleTreeAdd} color="secondary" variant="contained">Add Planting Layer</Button>
                   </Box>
                 </AccordionDetails>
               </Accordion>
@@ -426,7 +417,7 @@ export default function Course() {
                       label="Sky"
                     >
                       <MenuItem value="clouds">Clouds</MenuItem>
-                      <MenuItem value="box">SkyBox</MenuItem>
+                      <MenuItem disabled value="box">SkyBox (Coming Soon!)</MenuItem>
                     </TextField>
 
                     <NumberField
@@ -442,7 +433,6 @@ export default function Course() {
 
                     <ColorField
                       label="Sky Color"
-                      // onChange={(newValue) => console.log('skyColor', newValue)}
                       onChange={(newValue) => handleCloudSettingsChange('skyColor', newValue)}
                       value={skySettings.clouds.skyColor}
                     />
@@ -460,142 +450,49 @@ export default function Course() {
                 </AccordionDetails>
               </Accordion>
 
-
-              {/* <Accordion expanded={panelExpanded === 'models'} onChange={(e, expanded) => setPanelExpanded(expanded ? 'models' : null)}>
-                <AccordionSummary id="model-header">
-                  <AccordionHeader sx={{ flex: 1, alignContent: 'center' }} variant="h5" color="textSecondary">Models</AccordionHeader>
-                </AccordionSummary>
-                <AccordionDetails sx={{ p: 2 }}>
-                  <Button color="secondary" variant="contained" fullWidth>Import Model</Button>
-                </AccordionDetails>
-              </Accordion> */}
-
-              <Accordion expanded={panelExpanded === 'scene'} onChange={(e, expanded) => setPanelExpanded(expanded ? 'scene' : null)}>
-                <AccordionSummary id="course-area-header">
-                  <AccordionHeader sx={{ flex: 1, alignContent: 'center' }} variant="h5" color="textSecondary">Meshes</AccordionHeader>
-                </AccordionSummary>
-                <AccordionDetails>
-                  <Stack sx={{ px: 4, py: 2 }} spacing={2}>
-                    <FormControlLabel
-                      label="Wireframe"
-                      control={<Switch size="small" checked={renderSettings.wireframe} onChange={(e) => setRenderSettings(old => ({ ...old, wireframe: e.target.checked }))} />}
-                    />
-                    <FormControlLabel
-                      label="Vertex Shading"
-                      control={<Switch size="small" checked={renderSettings.vertex} onChange={(e) => setRenderSettings(old => ({ ...old, vertex: e.target.checked }))} />}
-                    />
-                  </Stack>
-                </AccordionDetails>
-              </Accordion>
-
-            </SidebarAccordionGroup>
-                        
+            </SidebarAccordionGroup> 
           </Box>
+
         </Box>
         <Box sx={{ flex: 1, backgroundColor: 'black', position: 'relative', minWidth: 0, overflow: 'hidden' }}>
+          {/* <CourseScene meshDataState={meshDataState} worldSize={worldSize} /> */}
+          {/* <CourseScene meshDataState={meshDataState} heightMap={heightMap} worldSize={worldSize} /> */}
+         <CourseScene
+           meshDataState={meshDataState}
+           ref={courseSceneRef}
+           skySettings={skySettings}
+           worldSize={worldSize}
+           selectedLayer={selectedLayer}
+           onSelect={handleLayerSelect}
+           onLoadingChange={setLoading}
+         />
 
-          <Canvas
-            camera={{ fov: 50, near: 0.5, far: 3000 }}
-            onPointerMissed={handleCanvasClick}
-            onCreated={({ scene }) => {
-              // scene.fog = new THREE.Fog(fogColor, 100, 800);
-              // scene.fog = new THREE.Fog('#fff7e0', 100, 800); 
-            }}            
-          >
-            <color attach="background" args={[skySettings.clouds.skyColor]} />
-            <CameraControls
-              ref={controlsRef}
-              dollyToCursor={true}
-              minDistance={1}
-              maxDistance={2000}
-              dollySpeed={0.5}
-            />
-            <SetCamera controlsRef={controlsRef} worldSize={worldSize} />
-
-            <ambientLight intensity={0.8} />
-            <group position={[500, 0, 500]} ref={lightTargetRef} />
-            <directionalLight
-              color={0xffffff}
-              position={[worldSize/2, 800, worldSize/2]}
-              intensity={1.1}
-              shadow={{
-                mapSize: { width: 2048, height: 2048 },
-                camera: {
-                  near: 1,
-                  far: 700,
-                  left: -500,
-                  right: 500,
-                  top: 500,
-                  bottom: -500
-                }
-              }}
-              target={lightTargetRef.current}
-              castShadow={true}
-            />
-            
-            {/* Places a colored outline around the square course bounds */}
-            <CourseOutline color={0xdddd77} />
-            
-            <SkyPreview
-              density={skySettings.clouds.density}
-              skyColor={skySettings.clouds.skyColor}
-              fogColor={skySettings.clouds.fogColor}
-              cloudColor={skySettings.clouds.cloudColor}
-            />
+         {loading && loading.phase !== 'ready' && (
+           <Stack
+             direction="row"
+             spacing={1.5}
+             alignItems="center"
+             sx={{
+               position: 'absolute',
+               top: 16,
+               left: 16,
+               bgcolor: 'rgba(0,0,0,0.7)',
+               color: 'white',
+               px: 2,
+               py: 1,
+               borderRadius: 1,
+             }}
+           >
+             <CircularProgress size={16} color="inherit" />
+             <Typography variant="body2">
+               {loading.phase === 'surfaces'
+                 ? `Loading surfaces… ${loading.loaded}/${loading.total}`
+                 : `Planting trees… ${loading.loaded}/${loading.total}`}
+             </Typography>
+           </Stack>
+         )}
 
 
-            {project._meshes?.map(layer => {
-              return [
-                <CustomMesh
-                  key={layer.id}
-                  registerRef={registerMeshRef}
-                  layer={layer}
-                  visible={!hiddenLayers?.[layer.id]}
-                  meshDataState={meshDataState}
-                  renderSettings={renderSettings}
-                  selectedLayer={selectedLayer}
-                  onDoubleClick={(e) => handleMeshDoubleClick(layer, e)}
-                  onClick={(e) => handleMeshClick(layer, e)}
-                />
-              ]
-            })}
-
-            <Suspense fallback={null}>
-              {heightMap && project.trees?.length ? project.trees.map((treeLayer) => (
-                <TreePreview
-                  key={treeLayer.id}
-                  worldSize={worldSize}
-                  // groundRef={groundRef}
-                  heightMap={heightMap}
-                  heightScale={project.stats.heightScale || project.stats.relief}
-                  positions={treeLayer.positions}
-                  trees={treeLayer.treeConfigs}
-                  seed={treeLayer.randomSeed}
-                />
-              )) : null}
-            </Suspense>
-
-            {/* <ImportedModel
-              url={`${RESOURCES_FILE_PROTOCOL}://models/FlagStick.glb`}
-              position={[0, 0, 0]}
-            /> */}
-            
-            <ThreeGrid
-              position={[worldSize / 2, 0, worldSize / 2]}
-              // followCamera={true}
-              cellSize={10}
-              sectionSize={100}
-              infiniteGrid={true}
-              fadeDistance={1500}
-              sectionThickness={2}
-              sectionColor={0x444444}
-            />
-
-            <LayerSetup />
-            <SceneGrabber setScene={setScene} />
-            <CourseMapCapture captureRef={captureRef} worldSize={worldSize} />
-          </Canvas>
-          
           {selectedLayer ? (
             <Paper
               elevation={4}
@@ -628,7 +525,6 @@ export default function Course() {
                         value={selectedLayer.config.density}
                         onChange={(event, val) => handleTreeConfigChange('density', event)}
                       />
-                      {/* <NumberField label="Scale Range" size="small" min={0.01} max={1} step={0.01} onChange={(event, val) => handleTreeConfigChange(val)} /> */}
                       <Box>
                         <Typography variant="caption">Scale Range</Typography>
                         <Slider
@@ -695,7 +591,7 @@ export default function Course() {
               ) : null}
               </Paper>
           ) : null}
-                 
+
         </Box>
       </Box>
 
@@ -705,8 +601,12 @@ export default function Course() {
         onSave={handleTreeSave}
         onClose={() => setTreeEditDialog(null)}
       />
-      <GenerateMeshDialog open={generateDialogOpen} onClose={() => setGenerateDialogOpen(false)} />
+      <TreeImportDialog
+        open={Boolean(treeImportDialog)}
+        onClose={handleTreeImportClosed}
+      />
+      <GenerateMeshDialog open={generateDialogOpen} onClose={() => setGenerateDialogOpen(false)} />     
       <ExportCourseDialog data={exportCourseData} open={exportDialogOpen} onClose={() => setExportDialogOpen(false)} />
-    </React.Fragment>
-  )
+   </React.Fragment>
+  );
 }
