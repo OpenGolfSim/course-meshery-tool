@@ -26,6 +26,7 @@ import { dedup, prune } from "@gltf-transform/functions";
 import { addOBJ } from "../../trees/lib/obj.js";
 import { addGLB } from "../../trees/lib/gltf.js";
 import { generateFlowMap } from '../flowmap.js';
+import { EXTRA_RESOURCE_PATH } from '../app.js';
 
 
 function decodeImage(data) {
@@ -71,7 +72,8 @@ async function compressTextures(glbBuffer) {
       ktx2({
         isUASTC: true,
         generateMipmap: true,
-        imageDecoder: decodeImage
+        imageDecoder: decodeImage,
+        wasmUrl: path.join(EXTRA_RESOURCE_PATH, 'basis/basis_encoder.wasm'),
         // imageDecoder: async (data) => {
           // return decodeImage(data);
           // const { info, data: raw } = await sharp(Buffer.from(data))
@@ -157,15 +159,16 @@ export async function exportTreePackage(inputFiles, outputFile) {
     ktx2({
       isUASTC: true,
       generateMipmap: true,
-      imageDecoder: decodeImage
+      imageDecoder: decodeImage,
+      wasmUrl: path.join(EXTRA_RESOURCE_PATH, 'basis/basis_encoder.wasm'),
       // imageDecoder: async (data) => {
-        // const { info, data: raw } = await sharp(Buffer.from(data))
-        //   .ensureAlpha()
-        //   .raw()
-        //   .toBuffer({ resolveWithObject: true });
-        // const pixels = new Uint8Array(raw.length);
-        // pixels.set(raw);
-        // return { width: info.width, height: info.height, data: pixels };
+      // const { info, data: raw } = await sharp(Buffer.from(data))
+      //   .ensureAlpha()
+      //   .raw()
+      //   .toBuffer({ resolveWithObject: true });
+      // const pixels = new Uint8Array(raw.length);
+      // pixels.set(raw);
+      // return { width: info.width, height: info.height, data: pixels };
       // }
     })
   );
