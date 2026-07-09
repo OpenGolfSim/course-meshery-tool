@@ -17,7 +17,6 @@ import {
   EXTMeshGPUInstancing,
 } from '@gltf-transform/extensions';
 import { ktx2 } from 'ktx2-encoder/gltf-transform';
-// import sharp from 'sharp';
 import { PNG } from 'pngjs';
 import jpeg from 'jpeg-js';
 

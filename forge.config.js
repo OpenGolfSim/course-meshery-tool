@@ -13,7 +13,7 @@ module.exports = {
       './extra-resources'
     ],
     asar: {
-      unpack: "{**/.webpack/main/*.worker.js,**/node_modules/{sharp,@img}/**/*}",
+      unpack: '**/.webpack/main/*.worker.js',
     },
     ...process.env.OSX_SIGN && {
       osxSign: {
@@ -49,11 +49,8 @@ module.exports = {
   ],
   plugins: [
     {
-      name: '@timfish/forge-externals-plugin',
-      config: {
-        externals: ['sharp'],
-        includeDeps: true,
-      },
+      name: '@electron-forge/plugin-auto-unpack-natives',
+      config: {},
     },
     {
       name: '@electron-forge/plugin-webpack',
@@ -101,8 +98,8 @@ module.exports = {
       [FuseV1Options.EnableCookieEncryption]: true,
       [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
       [FuseV1Options.EnableNodeCliInspectArguments]: false,
-      [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: false,
-      [FuseV1Options.OnlyLoadAppFromAsar]: false,
+      [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: true,
+      [FuseV1Options.OnlyLoadAppFromAsar]: true,
     }),
   ],
 };

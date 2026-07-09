@@ -1,4 +1,5 @@
 // const ThreadsPlugin = require('threads-plugin');
+const webpack = require('webpack');
 
 module.exports = {
   entry: {
@@ -8,20 +9,14 @@ module.exports = {
     'mesh.worker': './src/lib/workers/mesh.worker.js',
     'export.worker': './src/lib/workers/export.worker.js',
   },
-  externals: {
-    sharp: 'commonjs sharp'
-  },
+  plugins: [
+    new webpack.IgnorePlugin({ resourceRegExp: /^sharp$/ })
+  ],
   target: 'electron-main',
   output: {
     filename: '[name].js',
   },
-  // Put your normal webpack config below here
   module: {
     rules: require('./webpack.rules'),    
   },
-  // plugins: [
-  //   new ThreadsPlugin({
-  //     target: 'electron-node', // important for Electron main process
-  //   }),
-  // ],
 };
