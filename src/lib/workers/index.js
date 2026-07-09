@@ -1,10 +1,15 @@
 import { app, session, shell, BrowserWindow, ipcMain, dialog, protocol, net } from 'electron';
 import path from 'path';
 import pMap from 'p-map';
+import logger from 'electron-log';
 import { spawn, Thread, Worker, Pool } from 'threads';
 import { Transfer } from 'threads/worker';
 import { _heightMapCache } from '../project';
 import { EXTRA_RESOURCE_PATH } from '../app';
+
+const log = logger.scope('EXPORT_WORKER');
+
+const wasmPath = path.join(EXTRA_RESOURCE_PATH, 'basis/basis_encoder.wasm');
 
 function getWorker(workerFilename) {
   return spawn(new Worker(path.join(__dirname, workerFilename)));
@@ -139,9 +144,9 @@ export async function createWorkerWindow(preloadUrl, mainUrl) {
 
 export async function exportTreePackage(inputFiles, outputFile) {
   const exportWorker = await getWorker('export.worker.js'); 
-  await exportWorker.exportTreePackage(inputFiles, outputFile, {
-    wasmUrl: path.join(EXTRA_RESOURCE_PATH, 'basis/basis_encoder.wasm'),    
-  });
+  // const wasmUrl = require('url').pathToFileURL(path.join(EXTRA_RESOURCE_PATH, 'basis/basis_encoder.wasm')).href;
+  log.info(`wasmPath: ${wasmPath}`);
+  await exportWorker.exportTreePackage(inputFiles, outputFile, { wasmPath });
 }
 
 export async function generateFlowMapPNG(polygon, spine) {
@@ -149,13 +154,8 @@ export async function generateFlowMapPNG(polygon, spine) {
   return exportWorker.generateFlowMapPNG(polygon, spine);
 }
 
-// export async function compressTextures(uncompressedGlb, ktx2Options = {}, onProgress = () => {}) {
-//   const exportWorker = await getWorker('export.worker.js'); 
-//   return exportWorker.compressTextures(Transfer(uncompressedGlb.buffer), ktx2Options);
-// }
 
 export async function compressTextures(doc, onProgress = () => {}) {
-  // const pool = Pool(() => spawn(new Worker(path.join(__dirname, 'export.worker.js'))), 4);
   const pool = Pool(() => getWorker('export.worker.js'), 4);
 
   const textures = doc.getRoot().listTextures()
@@ -163,13 +163,12 @@ export async function compressTextures(doc, onProgress = () => {}) {
   const total = textures.length;
   let completed = 0;
 
+  log.info(`wasmPath: ${wasmPath}`);
+
   await pMap(textures, async (texture) => {
     const rawImage = texture.getImage();
-
     const ktx2Buffer = await pool.queue(worker =>
-      worker.compressTexture(Transfer(rawImage.buffer), {
-        wasmUrl: path.join(EXTRA_RESOURCE_PATH, 'basis/basis_encoder.wasm'), 
-      })
+      worker.compressTexture(Transfer(rawImage.buffer), { wasmPath })
     );
 
     texture.setImage(new Uint8Array(ktx2Buffer));

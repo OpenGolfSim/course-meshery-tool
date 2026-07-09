@@ -11,7 +11,8 @@ module.exports = {
   },
   resolve: {
     alias: {
-      sharp: path.resolve(__dirname, 'src/sharp-fix.js')
+      sharp: path.resolve(__dirname, 'src/sharp-fix.js'),
+      'ktx2-basis': path.resolve(__dirname, 'node_modules/ktx2-encoder/dist/basis/basis_encoder.js')
     }
   },
   optimization: {

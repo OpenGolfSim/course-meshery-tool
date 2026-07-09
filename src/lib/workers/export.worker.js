@@ -2,9 +2,7 @@ import { expose, Transfer } from 'threads/worker';
 import { Observable } from "observable-fns"
 
 import { Document, NodeIO } from '@gltf-transform/core';
-// import { KHRTextureBasisu } from '@gltf-transform/extensions';
 import {
-  // KHRDracoMeshCompression,
   KHRMaterialsUnlit,
   KHRMeshQuantization,
   KHRTextureBasisu,
@@ -16,8 +14,7 @@ import {
   KHRMaterialsIOR,
   EXTMeshGPUInstancing,
 } from '@gltf-transform/extensions';
-import { encodeToKTX2 } from 'ktx2-encoder';
-import { ktx2 } from 'ktx2-encoder/gltf-transform';
+import BASIS from 'ktx2-basis';
 import { PNG } from 'pngjs';
 import jpeg from 'jpeg-js';
 
@@ -53,52 +50,47 @@ const EXTENSIONS = [
   EXTMeshGPUInstancing,
 ];
 
-async function compressTextures(glbBuffer, ktx2Options = {}) {
-  const io = new NodeIO().registerExtensions(EXTENSIONS);
-  const doc = await io.readBinary(new Uint8Array(glbBuffer));
 
-  let textureCount = 0;
-  let totalTextures = 0;
+let basisPromise = null;
 
-  // Count first
-  doc.getRoot().listTextures().forEach(t => {
-    totalTextures++;
-    console.log(t.getName());
-  });
+function initBasis(wasmPath) {
+  if (!basisPromise) {
+    const wasmBinary = fs.readFileSync(wasmPath);
+    basisPromise = BASIS({ wasmBinary: new Uint8Array(wasmBinary) })
+      .then(basis => { basis.initializeBasis(); return basis; });
+  }
+  return basisPromise;
+}
 
-  await doc.transform(
-    ktx2({
-      isUASTC: true,
-      generateMipmap: true,
-      imageDecoder: decodeImage,
-      ...ktx2Options
-    })
-  );
-
-  const result = await io.writeBinary(doc);
-  return Transfer(result.buffer);
+async function encodeTexture(rawImageData, ktx2Options = {}) {
+  const basis = await initBasis(ktx2Options.wasmPath);
+  const decoded = decodeImage(rawImageData);
+  const encoder = new basis.BasisEncoder();
+  try {
+    encoder.setUASTC(true);
+    encoder.setCreateKTX2File(true);
+    encoder.setKTX2SRGBTransferFunc(true);
+    encoder.setKTX2UASTCSupercompression(true);
+    encoder.setMipGen(true);
+    encoder.setSliceSourceImage(0, new Uint8Array(decoded.data), decoded.width, decoded.height, 0);
+    const resultData = new Uint8Array(1024 * 1024 * 10);
+    const resultSize = encoder.encode(resultData);
+    if (resultSize === 0) throw new Error('KTX2 encode failed');
+    return new Uint8Array(resultData.buffer, 0, resultSize);
+  } finally {
+    encoder.delete();
+  }
 }
 
 async function compressTexture(rawImageBuffer, ktx2Options = {}) {
-  const decoded = decodeImage(rawImageBuffer);
-  const result = await encodeToKTX2(decoded.data, {
-    isUASTC: true,
-    generateMipmap: true,
-    imageDecoder: () => decoded,
-    ...ktx2Options
-  });
+  const result = await encodeTexture(Buffer.from(rawImageBuffer), ktx2Options);
   return Transfer(result.buffer);
 }
 
-export async function exportTreePackage(inputFiles, outputFile, ktx2Options = {}) {
 
-  // const inputFiles = process.argv.slice(2, -1);
-  // const output = process.argv.at(-1);
-  
+export async function exportTreePackage(inputFiles, outputFile, ktx2Options = {}) {
   if (inputFiles.length < 1 || !outputFile?.endsWith(".glb")) {
     throw new Error('Invalid input or output files');
-    // console.log("Usage: node generate-tree.js LOD0.obj [LOD1.obj ...] output.glb");
-    // process.exit(1);
   }
   
   const io = new NodeIO().registerExtensions(EXTENSIONS);
@@ -107,7 +99,6 @@ export async function exportTreePackage(inputFiles, outputFile, ktx2Options = {}
   for (const Ext of EXTENSIONS) {
     doc.createExtension(Ext);
   }
-  // doc.createExtension(KHRTextureBasisu);
   
   const buffer = doc.createBuffer();
   const scene = doc.createScene("OGSTree");
@@ -138,25 +129,14 @@ export async function exportTreePackage(inputFiles, outputFile, ktx2Options = {}
   for (const a of doc.getRoot().listAccessors()) a.setBuffer(buffer);
   await doc.transform(dedup(), prune());
   
-  await doc.transform(
-    dedup(),
-    prune(),
-    ktx2({
-      isUASTC: true,
-      generateMipmap: true,
-      imageDecoder: decodeImage,
-      ...ktx2Options
-      // imageDecoder: async (data) => {
-      // const { info, data: raw } = await sharp(Buffer.from(data))
-      //   .ensureAlpha()
-      //   .raw()
-      //   .toBuffer({ resolveWithObject: true });
-      // const pixels = new Uint8Array(raw.length);
-      // pixels.set(raw);
-      // return { width: info.width, height: info.height, data: pixels };
-      // }
-    })
-  );
+  for (const texture of doc.getRoot().listTextures()) {
+    if (texture.getMimeType() === 'image/ktx2') continue;
+    const image = texture.getImage();
+    if (!image) continue;
+    texture.setImage(await encodeTexture(image, ktx2Options));
+    texture.setMimeType('image/ktx2');
+  }
+  doc.createExtension(KHRTextureBasisu).setRequired(true);  
   
   await io.write(outputFile, doc);
   const mb = (fs.statSync(outputFile).size / 1024 / 1024).toFixed(2);
@@ -172,4 +152,4 @@ export async function generateFlowMapPNG(polygon, spine) {
   return PNG.sync.write(png);
 }
 
-expose({ compressTextures, compressTexture, exportTreePackage, generateFlowMapPNG });
+expose({ compressTexture, exportTreePackage, generateFlowMapPNG });
