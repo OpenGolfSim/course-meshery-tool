@@ -14,9 +14,13 @@ module.exports = {
       sharp: path.resolve(__dirname, 'src/sharp-fix.js')
     }
   },
+  optimization: {
+    splitChunks: false,
+  },
   target: 'electron-main',
   output: {
     filename: '[name].js',
+    asyncChunks: false
   },
   module: {
     rules: require('./webpack.rules'),    
