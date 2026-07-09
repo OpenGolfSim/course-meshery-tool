@@ -1,5 +1,5 @@
 // const ThreadsPlugin = require('threads-plugin');
-const webpack = require('webpack');
+const path = require('path');
 
 module.exports = {
   entry: {
@@ -11,7 +11,7 @@ module.exports = {
   },
   resolve: {
     alias: {
-      sharp: false
+      sharp: path.resolve(__dirname, 'src/sharp-fix.js')
     }
   },
   target: 'electron-main',
