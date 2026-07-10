@@ -5,6 +5,8 @@ import { randomUUID } from 'crypto';
 import { TREE_MAKER_FILE_PROTOCOL } from '../constants';
 import { pathToFileURL } from 'url';
 import { exportTreePackage } from '../lib/workers/index';
+import { PLANT_CACHE } from '../lib/cache/plants';
+import { cachePlant } from '../lib/app';
 
 let treeMakerScope = new Map();
 export let treeWindow;
@@ -57,26 +59,34 @@ export function createTreeMakerWindow() {
   treeWindow.show();
 }
 
-ipcMain.handle('treeMaker.export', async (event, thumbnailUri) => {
+ipcMain.handle('treeMaker.export', async (event, thumbnailUri, plantOptions = {}) => {
   const thumbnailRaw = thumbnailUri.split('base64,')?.[1];
   if (!thumbnailRaw?.length) {
     throw new Error('Missing thumbnail data');
   }
 
-  const result = await dialog.showSaveDialog({
-    defaultPath: 'TreePack'
-    // filters: [{ extensions: ['.glb'] }]
-  });
-  if (result.canceled || !result.filePath?.length) {
-    return;
-  }
-  const outputFile = result.filePath;
+  // const result = await dialog.showSaveDialog({
+  //   defaultPath: 'TreePack'
+  //   // filters: [{ extensions: ['.glb'] }]
+  // });
+  // if (result.canceled || !result.filePath?.length) {
+  //   return;
+  // }
+
+  const treeId = randomUUID();
+  const filename = `custom-${treeId}.glb`;
+  const filenamePNG = `custom-${treeId}.png`;
+  const outputFileGLB = path.join(PLANT_CACHE, filename);
+  const outputFilePNG = path.join(PLANT_CACHE, filenamePNG);
+
+
   const inputFiles = [...treeMakerScope.values()]
     .sort((a, b) => a.lod < b.lod ? -1 : 1)
     .map(tree => tree.path);
   
-  const outputFileGLB = `${outputFile}.glb`;
-  const outputFilePNG = `${outputFile}.png`;
+  // const outputFile = filePath;
+  // const outputFileGLB = `${outputFile}.glb`;
+  // const outputFilePNG = `${outputFile}.png`;
   console.log('inputFiles', inputFiles);
   console.log('outputFileGLB', outputFileGLB);
   console.log('outputFilePNG', outputFilePNG);
@@ -86,7 +96,17 @@ ipcMain.handle('treeMaker.export', async (event, thumbnailUri) => {
   // can take a while for compressing textures...
   await exportTreePackage(inputFiles, outputFileGLB);
 
-  shell.showItemInFolder(outputFileGLB);
+  cachePlant({
+    id: treeId,
+    key: treeId,
+    type: 'custom',
+    title: plantOptions.title ?? 'Custom Plant',
+    addedAt: new Date(),
+    thumbnail: outputFilePNG,
+    filePath: outputFileGLB,
+  });
+
+  // shell.showItemInFolder(outputFileGLB);
 
 });
 

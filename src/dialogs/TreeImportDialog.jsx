@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -28,6 +28,12 @@ export default function TreeImportDialog(props) {
   const [labelCache, setLabelCache] = useState('');
   const [availablePlants, setAvailablePlants] = useState();
   const [downloadPending, setDownloadPending] = useState();
+  const [selectedCategory, setSelectedCategory] = useState('trees');
+  
+  const filteredPlants = useMemo(() => {
+    return availablePlants?.[selectedCategory] || [];
+  }, [availablePlants, selectedCategory]);
+
   const handleClose = (event, reason) => {
     // if (reason === 'backdropClick') {
       event.preventDefault();
@@ -76,23 +82,26 @@ export default function TreeImportDialog(props) {
         <Grid container spacing={2}>
           <Grid size={2}>
             <List>
-              <ListItemButton selected={true}>
+              <ListItemButton selected={selectedCategory === 'trees'} onClick={(e) => setSelectedCategory('trees')}>
                 <ListItemText primary="Trees" />
               </ListItemButton>
-              <ListItemButton>
+              <ListItemButton selected={selectedCategory === 'grasses'} onClick={(e) => setSelectedCategory('grasses')}>
                 <ListItemText primary="Grasses" />
               </ListItemButton>
-              <ListItemButton>
+              <ListItemButton selected={selectedCategory === 'rocks'} onClick={(e) => setSelectedCategory('rocks')}>
                 <ListItemText primary="Rocks" />
               </ListItemButton>
-              <ListItemButton>
-                <ListItemText primary="Houses" />
+              <ListItemButton selected={selectedCategory === 'buildings'} onClick={(e) => setSelectedCategory('buildings')}>
+                <ListItemText primary="Buildings" />
+              </ListItemButton>
+              <ListItemButton selected={selectedCategory === 'custom'} onClick={(e) => setSelectedCategory('custom')}>
+                <ListItemText primary="Custom" />
               </ListItemButton>
             </List>
           </Grid>
           <Grid size={10}>
             <Grid container spacing={3}>
-              {availablePlants?.trees?.map(tree => {
+              {filteredPlants.map(tree => {
                 return (
                   <Grid size={3} key={tree.title}>
                     <Card variant="outlined">

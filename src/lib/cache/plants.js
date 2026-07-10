@@ -84,6 +84,16 @@ export function getAvailablePlants(tree) {
   const plantCache = getPlantCache();
   console.log('Found cached plants', plantCache);
   return {
+    custom: Object.values(plantCache).filter(p => p.type === 'custom').map(p => {
+      return {
+        ...p,
+        thumbnail: `${RESOURCES_FILE_PROTOCOL}://plant-cache/${path.basename(p.thumbnail)}`,
+        _cache: {
+          ...p,
+          _fileExists: true
+        }
+      }
+    }),
     trees: TREES.map(plant => {
       const cache = plantCache?.[plant.id];
       let url;
