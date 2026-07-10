@@ -76,7 +76,8 @@ async function encodeTexture(rawImageData, ktx2Options = {}) {
     const resultData = new Uint8Array(1024 * 1024 * 10);
     const resultSize = encoder.encode(resultData);
     if (resultSize === 0) throw new Error('KTX2 encode failed');
-    return new Uint8Array(resultData.buffer, 0, resultSize);
+    // return new Uint8Array(resultData.buffer, 0, resultSize);
+    return resultData.slice(0, resultSize);
   } finally {
     encoder.delete();
   }

@@ -302,7 +302,7 @@ export default function Course() {
       skySettingsInit.current = true;
       return;
     }
-    console.log('skySettings-changed', skySettings);
+    console.log('sky Settings-changed', skySettings);
     updateSceneSettings({ sky: skySettings });
   }, [skySettings]);  
 

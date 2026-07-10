@@ -188,8 +188,21 @@ export const defaultSettings = {
     // blend: 0,
     // blending: { ...defaultBlend },
     blend: 0.5,
-    blending: { ...defaultBlend },
-    // blending: { enabled: true, distance: 2, spacing: 0.5 },
+    // blending: { ...defaultBlend },
+    blending: {
+      enabled: true,
+      distance: 2.0,       // narrow blend zone
+      noiseFreq: 0.8,      // gentle undulation
+      noiseAmp: 0.8,      // subtle edge wander
+      lipDarken: 0.0,
+      dirtTint: '#5a4a32',
+      dirtWidth: 0.0,
+      dirtStrength: 0.0,
+      sandNoiseFreq: 0.15,          // scale of sand color variation
+      sandVariationStrength: 0.3,    // how much dark patches show (0-1)
+      sandLowDarken: 0.25,           // how much lower spots darken (0-1)
+      sandBaseHeight: 0,             // reference height — set to bunker floor Y
+    },
     dig: { ...defaultDig }
   }
 }

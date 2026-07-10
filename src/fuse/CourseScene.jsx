@@ -292,7 +292,7 @@ export default function CourseScene({
     raycasterRef.current.setFromCamera(pointerRef.current, cameraRef.current);
     const meshes = surfacesRef.current.map(s => s.mesh);
     const hits = raycasterRef.current.intersectObjects(meshes, false);
-
+    console.log(hits);
     const layer = hits.length > 0 ? project._meshes.find(l => l.id === hits[0].object.name) : null;
     if (onSelect) onSelect(layer);
   }, [project._meshes]);
@@ -324,11 +324,12 @@ export default function CourseScene({
     }
   }, [project._meshes]);
 
+
   useEffect(() => {
     const ctx = sceneRef.current;
-    if (!ctx || !skySettings) return;
+    if (!ctx || !rendererReady || !skySettings) return;
     const { scene, camera } = ctx;
-
+    console.log("SKY SETTINGS CHANGED");
     // Update background
     scene.background = new THREE.Color(skySettings.clouds.skyColor);
 
@@ -337,16 +338,17 @@ export default function CourseScene({
       scene.remove(cloudsRef.current.object);
     }
 
-    // const clouds = new VolumetricClouds(camera, {
-    //   radius: 800,
-    //   skyColor: new THREE.Color(skySettings.clouds.skyColor),
-    //   cloudColor: new THREE.Color(skySettings.clouds.cloudColor),
-    //   density: skySettings.clouds.density,
-    //   scale: 4,
-    // });
-    // scene.add(clouds.object);
-    // cloudsRef.current = clouds;
-  }, [skySettings]);
+    const clouds = new VolumetricClouds(camera, {
+      radius: 800,
+      skyColor: new THREE.Color(skySettings.clouds.skyColor),
+      cloudColor: new THREE.Color(skySettings.clouds.cloudColor),
+      fogColor: new THREE.Color(skySettings.clouds.fogColor),
+      density: skySettings.clouds.density,
+      scale: 4,
+    });
+    scene.add(clouds.object);
+    cloudsRef.current = clouds;
+  }, [skySettings, rendererReady]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -635,6 +637,8 @@ export default function CourseScene({
           const neighborMesh = new THREE.Mesh(new THREE.BufferGeometry(), neighborMaterial);
           neighborMesh.userData.tileSize = TEXTURE_MAP[neighborSurface]?.tileSize || 2.0;
 
+          mesh.receiveShadow = true;
+
           // SandMaterial reads from both meshes and replaces the material
           new SandMaterial(
             mesh,
@@ -690,7 +694,7 @@ export default function CourseScene({
          mesh.name = layer.id;
          mesh.visible = layer.visible !== false;
          mesh.receiveShadow = true;
-
+         console.log(`Add base texture ${layer.surface}`, layer.id);
          scene.add(mesh);
          surfacesRef.current.push({ mesh, geometry, material });
        }

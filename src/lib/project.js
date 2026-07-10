@@ -778,11 +778,13 @@ export async function updateHoleByNumber(holeNumber, update) {
 }
 
 export async function updateScene(update) {
-  const updatedScene = _.merge({ ...openProject.scene }, update);
-  const changed = !_.isEqual(updatedScene, openProject.scene);
+  // const updatedScene = _.merge({ ...openProject.scene }, update);
+  const changed = !_.isEqual(update, openProject.scene);
+  console.log('updateScene', update, openProject.scene);
+  console.log('changed', changed);
   if (changed) {
     console.log('Project scene changed!');
-    openProject.scene = updatedScene;
+    openProject.scene = update;
     await saveProjectSettings();
   // } else {
     // console.log('Project scene NOT changed!');

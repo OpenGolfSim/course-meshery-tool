@@ -3,7 +3,7 @@
 // Texture paths are URIs relative to the output .gltf file.
 export const TEXTURE_MAP = {
   fairway: {
-    tileSize: 2.0,
+    tileSize: 3.5,
     baseColor: 'gen_fairway_tex.png',
     normal:    'gen_fairway_map.png',
     normalScale: [0.2, 0.5],
@@ -14,7 +14,7 @@ export const TEXTURE_MAP = {
     // tint: 'hsl(21, 42%, 84%)',
   },
   first_cut: {
-    tileSize: 2.0,
+    tileSize: 3.5,
     baseColor: 'gen_fairway_tex.png',
     normal:    'gen_fairway_map.png',
     // tint: 'rgb(240, 233, 204)',
@@ -24,7 +24,7 @@ export const TEXTURE_MAP = {
     tint: 'hsl(20, 50%, 80%)',
   },
   green: {
-    tileSize: 3.0,
+    tileSize: 3.2,
     baseColor: 'gen_green_tex.png',
     normal:    'gen_green_map.png',
     normalScale: [0.2, 0.3],
@@ -41,7 +41,7 @@ export const TEXTURE_MAP = {
     roughnessFactor: 0.95,
   },
   tee: {
-    tileSize: 1.0,
+    tileSize: 3.0,
     baseColor: 'gen_fairway_tex.png',
     normal:    'gen_fairway_map.png',
     normalScale: [0.8, 1],
@@ -81,24 +81,25 @@ export const TEXTURE_MAP = {
     tint: 'rgb(214, 197, 163)',
   },
   water: {
-    tileSize: 1.5,
+    tileSize: 2.5,
     baseColor: 'ground_color.png',
     normal:    'ground_normal_gl.png',
     roughnessFactor: 0.8,
     tint: 'hsl(68, 27%, 63%)',
   },
   river: {
-    tileSize: 1.5,
+    tileSize: 2.5,
     baseColor: 'ground_color.png',
     normal:    'ground_normal_gl.png',
     roughnessFactor: 0.8,
     tint: 'hsl(68, 27%, 63%)',
   },
   pine_straw: {
-    tileSize: 1.5,
+    tileSize: 2.5,
     baseColor: 'pine_straw_map.png',
     normal:    'pine_straw_normal.png',
     roughnessFactor: 1.0,
+    tint: 'hsl(68, 27%, 63%)',
   },
   // Fallback for layers whose surface isn't textured yet — uses layer.color.
   _default: { tileSize: 2.0, roughnessFactor: 0.9 },
