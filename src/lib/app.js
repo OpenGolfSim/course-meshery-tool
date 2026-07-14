@@ -8,12 +8,12 @@ const APP_NAME = 'ogs-meshery';
 const getDefaultInstallPath = () => {
   switch (process.platform) {
     case 'win32':
-      return path.join(app.getPath('home'), `.${APP_NAME}`, 'tools');
+      return path.join(app.getPath('home'), `.${APP_NAME}-tools`);
     case 'darwin':
-      return path.join(app.getPath('home'), APP_NAME, 'tools');
+      return path.join(app.getPath('home'), `${APP_NAME}-tools`);
     case 'linux':
       const dataHome = process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share');
-      return path.join(dataHome, APP_NAME, 'tools');
+      return path.join(dataHome, `${APP_NAME}-tools`);
     default:
       throw new Error('Unsupported platform');
   }

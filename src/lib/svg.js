@@ -35,6 +35,9 @@ const SURFACE_MAP = {
 
 export function generateSVG(coursePaths, included = {}) {
   let svgPaths = '';
+  console.log('generateSVG', included);
+
+
   const distance = Math.round(openProject.settings.distance * 1000);
   if (coursePaths?.length) {
     svgPaths = coursePathsToSVG(coursePaths);
@@ -43,14 +46,21 @@ export function generateSVG(coursePaths, included = {}) {
   const trimLength = openProject._workingDir.length + 1;
 
   const images = [
-    included.hillShade && openProject.hillShade?.filePath && 
+    included?.hillShade && openProject?.hillShade?.filePath && 
       `<image width="${distance}" height="${distance}" id="HillShade" preserveAspectRatio="none" xlink:href="${openProject.hillShade.filePath.slice(trimLength)}" style="display:inline" />`,
 
-    ...included.satellite && openProject.satellite && Object.values(openProject.satellite).map(satellite => {
-      return `<image width="${distance}" height="${distance}" id="Satellite-${satellite.source}" preserveAspectRatio="none" xlink:href="${satellite.filePath.slice(trimLength)}" style="display:inline" />`;
-    })
+    // ...included?.satellite && openProject?.satellite && Object.values(openProject?.satellite || {}).map(satellite => {
+    //   return `<image width="${distance}" height="${distance}" id="Satellite-${satellite.source}" preserveAspectRatio="none" xlink:href="${satellite.filePath.slice(trimLength)}" style="display:inline" />`;
+    // })
 
   ].filter(Boolean).join('\n ');
+
+  const satImages = Object.values(openProject?.satellite || {});
+  if (!!included?.satellite && satImages?.length) {
+    images.push(...satImages.map(satellite => {
+      return `<image width="${distance}" height="${distance}" id="Satellite-${satellite.source}" preserveAspectRatio="none" xlink:href="${satellite.filePath.slice(trimLength)}" style="display:inline" />`;
+    }))
+  }
 
   const svgProps = [
   //  'inkscape:version="1.3 (0e150ed, 2023-07-21)"',
@@ -72,8 +82,6 @@ export function generateSVG(coursePaths, included = {}) {
     '<g id="course" inkscape:groupmode="layer">',
       svgPaths,
     '</g>',
-
-    '<g id="flowmaps" inkscape:groupmode="layer"></g>',
 
     '</svg>'
   ].filter(Boolean).join('\n');

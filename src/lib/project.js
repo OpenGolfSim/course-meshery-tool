@@ -209,10 +209,10 @@ export async function refreshSVG() {
   broadcast('project.opened', openProject);
 }
 
-export async function saveSVG(options) {
+export async function saveSVG(options = {}) {
   // options.included
   // options.paths
-
+  console.log('saveSVG', options);
   const { filePath, canceled } = await dialog.showSaveDialog({
     title: 'Save SVG',
     defaultPath: path.join(openProject._workingDir, 'course.svg'),
@@ -227,6 +227,7 @@ export async function saveSVG(options) {
   // create a simple SVG to start
   // openProject.paths
   openProject.svg = { filePath, fileName: path.basename(filePath) };
+  console.log('openProject.svg', openProject.svg);
   await saveProjectSettings();
 
   if (!filePath) {
@@ -235,7 +236,8 @@ export async function saveSVG(options) {
   }
 
   log.info(`Generating SVG...`);
-  openProject._svgBuffer = generateSVG(options.paths, options.included);
+  openProject._svgBuffer = generateSVG(options?.paths, options?.included);
+  console.log('openProject._svgBuffer', openProject._svgBuffer);
 
   // openProject._layers = generateCoursePolygons(openProject._svgBuffer);
   

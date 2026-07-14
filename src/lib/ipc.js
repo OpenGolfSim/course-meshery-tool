@@ -7,7 +7,7 @@ import * as tools from './tools';
 import * as colors from './colors';
 import * as plants from './cache/plants';
 import { exportMeshes } from './export';
-import { generateTerrain } from './terrain';
+import { generateTerrain, importTerrainData } from './terrain';
 import { changeToolsPath, getRecentProjects, getToolsPath } from './app';
 
 
@@ -82,6 +82,7 @@ ipcMain.handle('terrain.smoothRivers', (_event, data) => project.smoothRivers(da
 ipcMain.handle('terrain.smoothLakes', (_event, data) => project.smoothLakes(data));
 ipcMain.handle('terrain.saveHeightMap', (_event, data, heightScale) => project.saveHeightMap(data, heightScale));
 ipcMain.handle('terrain.generate', (_event, type) => generateTerrain(type));
+ipcMain.handle('terrain.importTerrainData', (_event) => importTerrainData());
 
 ipcMain.handle('mesh.getCourseMesh', (_event) => project.getCourseMesh());
 ipcMain.handle('imagery.downloadDEM', (_event, courseBounds) => imagery.downloadCourseDEM(courseBounds));

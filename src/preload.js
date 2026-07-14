@@ -68,6 +68,7 @@ contextBridge.exposeInMainWorld('meshery', {
     importPlant: (layerId, plant) => ipcRenderer.invoke('trees.importPlant', layerId, plant)
   },
   terrain: {
+    importTerrainData: () => ipcRenderer.invoke('terrain.importTerrainData'),
     getToken: () => ipcRenderer.invoke('terrain.token'),
     applySmoothing: (data, radius) => ipcRenderer.invoke('terrain.applySmoothing', data, radius),
     smoothRivers: (data) => ipcRenderer.invoke('terrain.smoothRivers', data),
@@ -93,7 +94,7 @@ contextBridge.exposeInMainWorld('meshery', {
   },
   lidar: {
     downloadCourse: (lidarGeoJSON, bounds) => ipcRenderer.invoke('lidar.downloadCourse', lidarGeoJSON, bounds),
-    readOpenFile: () => ipcRenderer.invoke('lidar.readOpenFile')
+    readOpenFile: () => ipcRenderer.invoke('lidar.readOpenFile'),
   },
   tools: {
     getToolsPath: () => ipcRenderer.invoke('tools.getToolsPath'),

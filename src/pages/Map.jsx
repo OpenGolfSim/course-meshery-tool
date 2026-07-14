@@ -12,6 +12,7 @@ import {
   List,
   ListItem,
   ListItemAvatar,
+  ListItemButton,
   ListItemIcon,
   ListItemText,
   ListSubheader,
@@ -515,7 +516,10 @@ export default function Map() {
   const processLidar = async (lidarFeature) => {
     setLidarDialogData(lidarFeature);
   }
-
+  const handleTerrainImport = async () => {
+    const res = await window.meshery.terrain.importTerrainData();
+    console.log('import terrain', res);
+  }
   const handleShapesSave = () => {
     // courseShapesLayer.current.addData(shapesGeoJSON);
     setShapesDialogOpen(false);
@@ -1247,23 +1251,22 @@ export default function Map() {
                     </Box>
                   ) : (
                   <List disablePadding={true} sx={{ p: 2 }}>
+                    <ElevationDataDownloadHeader
+                      key={'lidar-header'}
+                      title="Lidar Sources"
+                      infoText="Lidar is higher resolution elevation data that is usually around 0.5 - 1m in resolution"
+                    />
+
                     {availableLidar?.features.length > 0 ? (
-                      [
-                        <ElevationDataDownloadHeader
-                          key={'lidar-header'}
-                          title="Lidar Sources"
-                          infoText="Lidar is higher resolution elevation data that is usually around 0.5 - 1m in resolution"
-                        />,
-                        ...availableLidar.features.map(feature => (
-                          <ElevationDataDownload
-                            key={feature.properties.name}
-                            name={feature.properties.name}
-                            onDownload={() => processLidar(feature)}
-                          />
-                        ))
-                      ]
+                      availableLidar.features.map(feature => (
+                        <ElevationDataDownload
+                          key={feature.properties.name}
+                          name={feature.properties.name}
+                          onDownload={() => processLidar(feature)}
+                        />
+                      ))
                     ): null}
-                    
+
                     <ElevationDataDownloadHeader
                       title="DSM/DEM Sources"
                       infoText="Lower resolution digital elevation models range from 5 - 30m in resolution"
@@ -1281,18 +1284,20 @@ export default function Map() {
                       ))
                     }
 
-                      {/* <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', p: 2 }}>
-                        <Typography component="div" variant="caption" color="textSecondary" sx={{ textAlign: 'center' }}>
-                          {`No lidar exists for this course yet :(`}
-                        </Typography>
-                        <Button onClick={() => processLidar({ type: 'dem', name: 'Copernicus 30m DSM' })}>
-                          Use 30m DEM
-                        </Button>
-                      </Box> */}
-
                   </List>
                   )
                 )}
+                {/* <Box sx={{ textAlign: 'center', mb: 2 }}>
+                  <Button
+                    variant="contained"
+                    color="secondary"
+                    size="small"
+                    onClick={handleTerrainImport}
+                  >
+                    Import Custom Data
+                  </Button>
+                </Box> */}
+                
               </AccordionDetails>
 
             </Accordion>

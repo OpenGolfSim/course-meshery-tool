@@ -69,3 +69,10 @@ npm run generate-tree -- \
 /path/to/tree/Oak_LOD3.obj \
 /path/to/tree/OakTree.glb
  ```
+
+
+ ## Debug Logs
+
+ ```powershell
+ Get-Content "$env:USERPROFILE\AppData\Roaming\ogs-meshery\logs\main.log" -Wait -Tail 30
+ ```

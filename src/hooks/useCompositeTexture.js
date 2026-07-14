@@ -15,26 +15,36 @@ export default function useCompositeTexture(baseUrl, overlayUrl, overlayOpacity 
   const [texture, setTexture] = useState(null);
 
   useEffect(() => {
-    if (!baseUrl) {
-      setTexture(null);
-      return;
-    }
+    // if (!baseUrl) {
+    //   setTexture(null);
+    //   return;
+    // }
 
     let cancelled = false;
 
     async function composite() {
-      let resolvedBase = baseUrl;
-      if (resolvedBase.includes('hillshade')) {
-        resolvedBase = resolvedBase.replace('.tif', '.jpg');
-      }
-
-      const baseImg = await loadImage(resolvedBase);
+      let baseImg;
       const canvas = document.createElement('canvas');
-      canvas.width = baseImg.naturalWidth;
-      canvas.height = baseImg.naturalHeight;
+      if (baseUrl) {
+        let resolvedBase = baseUrl;
+        if (resolvedBase.includes('hillshade')) {
+          resolvedBase = resolvedBase.replace('.tif', '.jpg');
+        }
+        baseImg = await loadImage(resolvedBase);
+        canvas.width = baseImg.naturalWidth;
+        canvas.height = baseImg.naturalHeight;
+      } else {
+        canvas.width = 4096;
+        canvas.height = 4096;
+      }
       const ctx = canvas.getContext('2d');
 
-      ctx.drawImage(baseImg, 0, 0, canvas.width, canvas.height);
+      if (baseImg) {
+        ctx.drawImage(baseImg, 0, 0, canvas.width, canvas.height);
+      } else {
+        ctx.fillStyle = '#aaa';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
 
       if (overlayUrl) {
         try {

@@ -83,6 +83,32 @@ async function getElevationRange(tifPath) {
   };
 }
 
+export async function getGeoTIFFSummary(tifPath) {
+  const output = await runGDALCommand('gdalinfo', ['-json', tifPath]);
+
+  const info = JSON.parse(output.stdout);
+
+  const wkt = info.coordinateSystem?.wkt || '';
+  if (!wkt.trim()) {
+    throw new Error(`No CRS found in ${tifPath} — cannot build GeoJSON bbox`);
+  }
+
+  if (!info.wgs84Extent) {
+    throw new Error(`GDAL could not compute WGS84 extent for ${tifPath}`);
+  }
+
+  const bboxGeoJSON = {
+    type: 'Feature',
+    properties: {},
+    geometry: info.wgs84Extent
+  };
+
+  return {
+    ...info,
+    bboxGeoJSON
+  };
+}
+
 /**
  * Convert lat/lon to tile coordinates at a given zoom level
  */

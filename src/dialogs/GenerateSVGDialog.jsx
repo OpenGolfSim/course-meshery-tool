@@ -56,11 +56,19 @@ export default function SearchShapesDialog(props) {
 
   const handleSave = useCallback(async () => {
     console.log('save it', results);
-    const file = await window.meshery.project.saveSVG({ paths: results.paths, included });
+    const file = await window.meshery.project.saveSVG({ paths: results?.paths, included });
     if (props.onSave) {
       props.onSave();
     }
   }, [results, included]);
+
+  useEffect(() => {
+    setIncluded(old => ({
+      ...old,
+      hillShade: !!project?.hillShade,
+      satellite: hasSatellite
+    }));
+  }, [hasSatellite, project?.hillShade])
 
   useEffect(() => {
     if (!props.open || !project.settings.centerPoint || !project.settings.distance) {

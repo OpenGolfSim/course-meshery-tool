@@ -11,6 +11,7 @@ const ProjectContext = createContext({
   // setProject: () => {},
   generateHillShade: () => {},
   generateSatellite: () => {},
+  generateTerrainData: () => {},
   setProjectSettings: () => {},
   updateSceneSettings: () => {},
   addHole: () => {},
@@ -219,6 +220,12 @@ export const ProjectProvider = ({ children }) => {
       setProject((old) => ({ ...old, stats: res.stats, raw: res.raw }))
     }
   }
+  const generateTerrainData = async (terrainType) => {
+    const res = await window.meshery.terrain.generate(terrainType);
+    if (res) {
+      setProject((old) => ({ ...old, stats: res.stats, raw: res.raw }))
+    }
+  }
 
   const updateLayerById = (layerId, update) => {
     return window.meshery.project.updateLayerById(layerId, update);
@@ -300,6 +307,7 @@ export const ProjectProvider = ({ children }) => {
       handleDownloadCourse,
       generateHillShade,
       generateSatellite,
+      generateTerrainData,
       palette,
       updateLayerById,
       generateMeshes,

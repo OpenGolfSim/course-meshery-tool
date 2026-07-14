@@ -1,9 +1,12 @@
 import fs from 'fs';
 import path from 'path';
+import { dialog } from 'electron';
 import logger from 'electron-log';
 import { _heightMapCache, openProject, saveProjectSettings } from './project';
 import { PROJECT_FILE_PROTOCOL, TERRAIN_DIR } from '../constants';
 import { broadcast } from './window';
+import { getLidarSummary } from './lidar';
+import { getGeoTIFFSummary } from './imagery';
 
 const log = logger.scope('TERRAIN');
 
@@ -240,6 +243,42 @@ export function getHeightMapStats(heightMapData, heightScale) {
     relief: toMeters(max - min),
     stddev: toMeters(Math.sqrt(sqDiffSum / len)),
   };
+}
+
+export async function importTerrainData() {
+  const files = await dialog.showOpenDialog({
+    properties: ['openFile', 'multiSelections'],
+    filters: [ { extensions: ['laz', 'las', 'tiff', 'tif'], name: 'Elevation Data' }]
+  });
+  if (files.canceled) {
+    return;
+  }
+  let results = [];
+  for (const filePath of files.filePaths) {
+    let item = { filePath };
+    try {
+      const ext = path.extname(filePath).toLowerCase();
+      const isLidar = ['.laz', '.las'].includes(ext);
+      const isTiff = ['.tif', '.tiff'].includes(ext);
+      if (isLidar) {
+        item.type = 'laz';
+        const details = await getLidarSummary(filePath);
+        item.details = details;
+        item.updateCourseBounds = false;
+      } else if (isTiff) {
+        const details = await getGeoTIFFSummary(filePath);
+        item.details = details;
+        item.updateCourseBounds = true;
+      } else {
+        throw new Error('Unable to handle file type');
+      }
+    } catch (error) {
+      item.error = error.message;
+    } finally {
+      results.push(item);
+    }
+  }
+  return results;
 }
 
 export async function generateTerrain() {

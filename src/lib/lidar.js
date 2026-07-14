@@ -175,6 +175,63 @@ async function getStatsStats(lazPath) {
   });
 }
 
+export async function getLidarSummary(lazPath) {
+  return new Promise((resolve, reject) => {
+    const info = spawn(
+      getBin('pdal'),
+      [
+        'info',
+        '--summary',
+        lazPath
+      ],
+      { env: getSpawnEnv() }
+    );
+
+    let out = '';
+    info.stdout.on('data', (d) => out += d);
+    info.on('close', (code) => {
+      if (code !== 0) return reject(new Error(`pdal info exited ${code}`));
+      const result = JSON.parse(out);
+
+      const srs = result.summary.srs || {};
+      const wkt = srs.compoundwkt || srs.wkt || srs.prettywkt || '';
+
+      if (!wkt.trim()) {
+        return reject(new Error(`No CRS found in ${lazPath} — cannot build GeoJSON bbox`));
+      }
+
+      const { minx, miny, maxx, maxy } = result.summary.bounds;
+
+      let bboxGeoJSON;
+      try {
+        const toWgs84 = proj4(wkt, 'EPSG:4326');
+        const [west, south] = toWgs84.forward([minx, miny]);
+        const [east, north] = toWgs84.forward([maxx, maxy]);
+
+        bboxGeoJSON = {
+          type: 'Feature',
+          properties: {},
+          geometry: {
+            type: 'Polygon',
+            coordinates: [[
+              [west, south],
+              [east, south],
+              [east, north],
+              [west, north],
+              [west, south]
+            ]]
+          }
+        };
+      } catch (err) {
+        return reject(new Error(`Failed to reproject CRS for ${lazPath}: ${err.message}`));
+      }
+
+      result.bboxGeoJSON = bboxGeoJSON;
+      resolve(result);
+    });
+  });
+}
+
 export async function downloadCourse(geoJSON, bounds) {
 
   // if (!openProject.filePath) {

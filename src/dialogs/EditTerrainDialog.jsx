@@ -720,9 +720,9 @@ export default function EditTerrainDialog(props) {
                     }}
                   >
                     <MenuItem value={''}>None</MenuItem>
-                    {project._svgBuffer ? (
+                    {/* {project._svgBuffer ? (
                       <MenuItem value='svg'>Course SVG</MenuItem>
-                    ) : null}
+                    ) : null} */}
                     {Object.values(project.satellite).map(sat => {
                       return (<MenuItem key={sat.uri} value={sat.uri}>Satellite ({sat.source})</MenuItem>);
                     })}

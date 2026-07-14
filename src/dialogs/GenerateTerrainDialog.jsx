@@ -1,18 +1,22 @@
-import React from 'react';
+import React, { useCallback, useState } from 'react';
 import { Dialog, DialogTitle, DialogContent, Typography, DialogActions, Button, Alert, Stack, Box, TextField, MenuItem } from '@mui/material';
 import MenuBookIcon from '@mui/icons-material/MenuBook';
 import ClearIcon from '@mui/icons-material/Clear';
+import { useProject } from '../contexts/Project';
 
 export default function GenerateTerrainDialog(props) {
   const { onClose, open } = props;
+  const { generateTerrainData } = useProject();
+  const [terrainType, setTerrainType] = useState('flat');
 
   const handleClose = () => {
     onClose();
   };
-  const handleGenerate = async () => {
-    await window.meshery.terrain.generate('flat');
+  const handleGenerate = useCallback(async () => {
+    // await window.meshery.terrain.generate(terrainType);
+    await generateTerrainData(terrainType);
     onClose();
-  };
+  }, [terrainType]);
 
   return (
     <Dialog
@@ -29,8 +33,9 @@ export default function GenerateTerrainDialog(props) {
           <TextField
             label="Generate"
             select={true}
+            onChange={(event) => setTerrainType(event.target.value)}
             fullWidth={true}
-            defaultValue={'flat'}
+            value={terrainType}
           >
             <MenuItem value="flat">Flat</MenuItem>
             <MenuItem value="random">Random</MenuItem>

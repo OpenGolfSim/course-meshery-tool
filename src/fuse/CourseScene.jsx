@@ -305,7 +305,7 @@ export default function CourseScene({
     const meshes = surfacesRef.current.map(s => s.mesh);
     const hits = raycasterRef.current.intersectObjects(meshes, false);
     if (hits.length > 0) {
-      const layer = project._meshes.find(l => l.id === hits[0].object.name);
+      const layer = project._meshes?.find(l => l.id === hits[0].object.name);
       if (onSelect) onSelect(layer);
 
       const bbox = new THREE.Box3().setFromObject(hits[0].object);
