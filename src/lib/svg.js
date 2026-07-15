@@ -53,7 +53,7 @@ export function generateSVG(coursePaths, included = {}) {
     //   return `<image width="${distance}" height="${distance}" id="Satellite-${satellite.source}" preserveAspectRatio="none" xlink:href="${satellite.filePath.slice(trimLength)}" style="display:inline" />`;
     // })
 
-  ].filter(Boolean).join('\n ');
+  ].filter(Boolean);
 
   const satImages = Object.values(openProject?.satellite || {});
   if (!!included?.satellite && satImages?.length) {
@@ -76,7 +76,7 @@ export function generateSVG(coursePaths, included = {}) {
     `<svg ${svgProps} width="${distance}mm" height="${distance}mm" viewBox="0 0 ${distance} ${distance}">`,
     
     '<g id="overlays" inkscape:groupmode="layer">',
-      images,
+      images.join('\n '),
     '</g>',  
   
     '<g id="course" inkscape:groupmode="layer">',
