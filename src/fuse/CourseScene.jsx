@@ -1,6 +1,7 @@
 // src/fuse/CourseScene.jsx
 import React, { useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import * as THREE from 'three/webgpu';
+import { EXRLoader } from 'three/addons/loaders/EXRLoader.js';
 import { vec3, float, texture as tslTexture, uv } from 'three/tsl';
 import CameraControls from 'camera-controls';
 import pMap from 'p-map';
@@ -40,6 +41,7 @@ CameraControls.install({ THREE });
 // ─── Material / geometry helpers ─────────────────────────────────────
 const textureCache = new Map();
 const textureLoader = new THREE.TextureLoader();
+const exrLoader = new EXRLoader();
 
 function loadTexture(url, colorSpace = THREE.NoColorSpace) {
   const fullUrl = `${RESOURCES_FILE_PROTOCOL}://textures/${url}`;
@@ -209,6 +211,7 @@ export default function CourseScene({
   const cameraRef = useRef();
   const controlsRef = useRef();
   const sceneRef = useRef();      // { renderer, scene, camera, controls, meshLoader }
+  const lightRef = useRef();      // { renderer, scene, camera, controls, meshLoader }
   const planterRef = useRef(null);
   const grassAssets = useRef();
   const surfacesRef = useRef([]);    // [{ mesh, geometry, material }] for cleanup
@@ -324,31 +327,88 @@ export default function CourseScene({
     }
   }, [project._meshes]);
 
-
-  useEffect(() => {
+  const removeClouds = useCallback(() => {
     const ctx = sceneRef.current;
-    if (!ctx || !rendererReady || !skySettings) return;
+    if (!ctx || !cloudsRef.current) return;
+    ctx.scene.remove(cloudsRef.current.object);
+    cloudsRef.current.object.geometry.dispose();
+    cloudsRef.current.material.dispose();
+    cloudsRef.current = null;
+  }, []);  
+
+  const rebuildClouds = useCallback((cloudSettings) => {
+    const ctx = sceneRef.current;
+    if (!ctx) return;
     const { scene, camera } = ctx;
-    console.log("SKY SETTINGS CHANGED");
-    // Update background
-    scene.background = new THREE.Color(skySettings.clouds.skyColor);
-
-    // Recreate clouds with new settings
-    if (cloudsRef.current) {
-      scene.remove(cloudsRef.current.object);
-    }
-
+    scene.background = new THREE.Color(cloudSettings.skyColor);
+    removeClouds();
     const clouds = new VolumetricClouds(camera, {
       radius: 800,
-      skyColor: new THREE.Color(skySettings.clouds.skyColor),
-      cloudColor: new THREE.Color(skySettings.clouds.cloudColor),
-      fogColor: new THREE.Color(skySettings.clouds.fogColor),
-      density: skySettings.clouds.density,
+      skyColor: new THREE.Color(cloudSettings.skyColor),
+      cloudColor: new THREE.Color(cloudSettings.cloudColor),
+      fogColor: new THREE.Color(cloudSettings.fogColor),
+      density: cloudSettings.density,
       scale: 4,
     });
     scene.add(clouds.object);
     cloudsRef.current = clouds;
-  }, [skySettings, rendererReady]);
+  }, [removeClouds]);
+
+  useEffect(() => {
+    const ctx = sceneRef.current;
+    if (!ctx || !rendererReady || !skySettings) {
+      console.log('Sky not ready yet');
+      return;
+    }
+    const { scene, camera } = ctx;
+    
+    if (lightRef.current) {
+      scene.remove(lightRef.current);
+    }
+    scene.environment = null;
+
+    let lightSettings = {
+      qualityLevel,
+      ambient: { enabled: true },
+      directional: { enabled: true },
+    }
+    let cancelled = false;
+
+    if (skySettings.type === 'clouds') {
+      rebuildClouds(skySettings.clouds);
+    } else if (skySettings.type === 'hdri' && skySettings.hdri?.url) {
+      removeClouds();
+
+      exrLoader.setDataType(THREE.HalfFloatType).loadAsync(skySettings.hdri.url).then(exr => {
+        if (cancelled) return;
+        console.log('HDRI LOADED!');
+        exr.mapping = THREE.EquirectangularReflectionMapping;
+        scene.background = exr;
+        scene.environment = exr; // free IBL for your PBR materials
+        scene.environmentIntensity = 0.1;  // start here, tune to taste
+      });
+    } else {
+      console.warn('Unknown sky type...', skySettings);
+    }
+
+    lightRef.current = new CourseLight(lightSettings);
+    scene.add(lightRef.current);
+    return () => { cancelled = true; };
+
+  }, [skySettings.type, skySettings.hdri?.url, rendererReady, rebuildClouds, removeClouds]);
+
+  // Rebuild clouds when cloud values change — debounced, clouds only
+  useEffect(() => {
+    const ctx = sceneRef.current;
+    if (!ctx || !rendererReady || skySettings?.type !== 'clouds') return;
+
+    const t = setTimeout(() => {
+      rebuildClouds(skySettings.clouds);
+
+    }, 250);
+
+    return () => clearTimeout(t);
+  }, [skySettings.type, skySettings.clouds, rendererReady, rebuildClouds]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -364,18 +424,13 @@ export default function CourseScene({
      qualityLevel,
    });
 
-    // renderer.renderer.setPixelRatio(window.devicePixelRatio);
-    // renderer.renderer.setSize(container.clientWidth, container.clientHeight);
-    // container.appendChild(renderer.domElement);
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(skySettings.clouds.skyColor);
 
     const camera = new THREE.PerspectiveCamera(
-      50, container.clientWidth / container.clientHeight, 0.5, 3000
+      30, container.clientWidth / container.clientHeight, 0.5, 3000
     );
     cameraRef.current = camera;
-    // camera.position.set(worldSize / 2, 100, worldSize / 2);
-    // camera.lookAt(worldSize / 2, 0, worldSize / 2);
     camera.layers.enable(2);
     
     fuseRenderer.setupPostProcessing(scene, camera);
@@ -386,11 +441,6 @@ export default function CourseScene({
     controls.dollyToCursor = true;
     controlsRef.current = controls;
 
-    // const center = new THREE.Vector3(worldSize / 2, 0, worldSize / 2);
-    // const size = new THREE.Vector3(worldSize, 10, worldSize);
-    // const maxDim = Math.max(size.x, size.z);
-    // controls.maxZoom = 10; 
-    // controls.maxDistance = 500; 
     const center = worldSize / 2;
     controls.setLookAt(
       center + 50,
@@ -400,24 +450,6 @@ export default function CourseScene({
       false
     );
     
-    // controlsRef.current.setLookAt(worldSize / 2, 0, worldSize / 2);
-
-    const dirLight = new CourseLight({ qualityLevel });
-    scene.add(dirLight);
-    
-    // scene.add(new THREE.GridHelper(1500, 150, 0x444444, 0x222222));
-
-    // console.dir('VolumetricClouds', VolumetricClouds);
-    // const clouds = new VolumetricClouds(camera, {
-    //   radius: 800,
-    //   skyColor: new THREE.Color(skySettings.clouds.skyColor),
-    //   cloudColor: new THREE.Color(skySettings.clouds.cloudColor),
-    //   density: skySettings.clouds.density,
-    //   scale: 4,
-    //   // position: new THREE.Vector3(worldSize / 2, 200, worldSize / 2),
-    // });
-    // scene.add(clouds.object);
-    // cloudsRef.current = clouds;
 
     sceneRef.current = { fuseRenderer, scene, camera, controls, meshLoader: null };
 
@@ -433,9 +465,6 @@ export default function CourseScene({
       const meshLoader = new MeshLoader(fuseRenderer, undefined, { ktx2Path });
       sceneRef.current.meshLoader = meshLoader;
       console.log(`${Date.now()} - MeshLoader created, starting compileAsync`);
-
-      // await renderer.compileAsync(scene, camera);
-      // console.log(`${Date.now()} - compileAsync done`);
 
       setRendererReady(true);
       console.log(`${Date.now()} - setRendererReady called`);
@@ -463,7 +492,6 @@ export default function CourseScene({
     };
   }, []);
 
-  // ─── Animation loop — deferred until content is ready ──────────────
   useEffect(() => {
     const ctx = sceneRef.current;
     if (!ctx || !surfacesLoaded) return;
@@ -475,7 +503,6 @@ export default function CourseScene({
     const timer = new THREE.Timer();
 
     fuseRenderer.renderer.setAnimationLoop(() => {
-      // controls.update(clock.getDelta());
       timer.update();
       const delta = timer.getDelta();
       controls.update(delta);
@@ -495,7 +522,6 @@ export default function CourseScene({
 
   }, [surfacesLoaded, treesLoaded]);
 
-  // ─── Selection overlay ─────────────────────────────────────────────
   useEffect(() => {
     const ctx = sceneRef.current;
     if (!ctx) return;
@@ -520,25 +546,6 @@ export default function CourseScene({
       console.warn('No layer entry found!');
       return;
     }
-
-    // Wireframe overlay
-    // const wireMat = new THREE.MeshBasicMaterial({
-    //   color: 'yellow',
-    //   wireframe: true,
-    //   transparent: true,
-    //   opacity: 0.15,
-    //   // depthTest: false,
-    // });
-    // const wireMat = new THREE.MeshBasicNodeMaterial({
-    //   transparent: true,
-    //   depthTest: false,
-    //   wireframe: true,
-    // });
-    // wireMat.colorNode = vec3(1, 1, 0);
-    // wireMat.opacityNode = float(0.15);
-
-    // const wireframe = new THREE.Mesh(entry.geometry, wireMat);
-    // wireframe.position.y = 0.01;
 
     const wireGeo = new THREE.WireframeGeometry(entry.geometry);
     const wireMat = new THREE.LineBasicNodeMaterial({ transparent: true, depthTest: true });
@@ -575,8 +582,6 @@ export default function CourseScene({
     };
   }, [selectedLayer, surfacesLoaded, surfaceVersion]);
 
-  // ─── Surface meshes (replaces CustomMesh R3F components) ───────────
-
   useEffect(() => {
     const ctx = sceneRef.current;
     if (!ctx || !rendererReady) return;
@@ -602,8 +607,6 @@ export default function CourseScene({
         const data = await window.meshery.project.getMeshDataForLayer(layer.id);
         if (!data?.mesh || cancelled) return;
 
-        // const geometry = buildLayerGeometry(data.mesh);
-        // const material = buildSurfaceMaterial(layer.color);
         const geometry = buildLayerGeometry(data.mesh, layer.surface);
 
         const isRough = layer.surface.startsWith('rough');
@@ -675,26 +678,19 @@ export default function CourseScene({
             scaleXZ: 0.6,
             scaleY: 0.65,
             layer: 2,
-            // baseColor: new THREE.Color('#ffffff'),
-            // tipColor1: new THREE.Color('#5c7c2e'),
-            // tipColor2: new THREE.Color('#ffffff'),
           };
           
           const baseMesh = new THREE.Mesh(geometry);          
-          // const grass = new GrassShader(baseMesh, grassAssets.current, grassOptions);
           mesh.receiveShadow = true;
           const grass = new GrassShader(mesh, grassAssets.current, grassOptions);
           scene.add(grass.mesh);
-          grassRef.current.push(grass);
-          // surfacesRef.current.push({ mesh: grass.mesh, geometry, material: grass._material });          
-          // surfacesRef.current.push(child.uuid, grass);          
+          grassRef.current.push(grass);     
         } else {
          const material = buildSurfaceMaterial(layer.surface, layer.color);
          const mesh = new THREE.Mesh(geometry, material);
          mesh.name = layer.id;
          mesh.visible = layer.visible !== false;
          mesh.receiveShadow = true;
-         console.log(`Add base texture ${layer.surface}`, layer.id);
          scene.add(mesh);
          surfacesRef.current.push({ mesh, geometry, material });
        }
@@ -732,8 +728,8 @@ export default function CourseScene({
   useEffect(() => {
     console.log('[state] meshDataState changed!', project._meshes);
   }, [meshDataState]);
-  // ─── Tree planting ─────────────────────────────────────────────────
 
+  // ─── Tree planting ─────────────────────────────────────────────────
   useEffect(() => {
     const ctx = sceneRef.current;
     if (!ctx?.meshLoader || !rendererReady) return;
@@ -742,10 +738,7 @@ export default function CourseScene({
     const treeLayers = project.trees;
     const heightScale = project.stats?.heightScale ?? project.stats?.relief ?? 10;
 
-    // if (!heightMap?.data || !treeLayers?.length) return;
     if (!treeLayers?.length) return;
-
-
 
     let cancelled = false;
 

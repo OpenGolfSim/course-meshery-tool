@@ -20,6 +20,7 @@ import {
   TextField,
   Typography,
   CircularProgress,
+  Divider,
 } from "@mui/material";
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import VisibilityIcon from '@mui/icons-material/Visibility';
@@ -126,6 +127,7 @@ export default function Course() {
     project,
     setProjectSettings,
     updateSceneSettings,
+    selectHDRI,
     updateLayerById,
     addTreeLayer,
     removeTreeLayer,
@@ -293,10 +295,23 @@ export default function Course() {
     // updateTreeLayer
   }, [selectedLayer]);
 
+  const handleSkyTypeChange = useCallback((event) => {
+    const type = event.target.value;
+    console.log('change sky type...', type);
+    setSkySettings(old => ({ ...old, type }))
+  }, []);
+
+  const handleSelectHDRI = useCallback(async () => {
+    const sceneUpdate = await selectHDRI();
+    if (sceneUpdate.sky) {
+      setSkySettings(old => ({ ...old, ...sceneUpdate.sky }))
+    }
+  }, []);
+
   const handleCloudSettingsChange = useCallback((key, newValue) => {
     setSkySettings(old => ({ ...old, clouds: { ...old.clouds, [key]: newValue } }))
-  }, [skySettings]);
-
+  }, []);
+  
   useEffect(() => {
     if (!skySettingsInit.current) {
       skySettingsInit.current = true;
@@ -304,7 +319,7 @@ export default function Course() {
     }
     console.log('sky Settings-changed', skySettings);
     updateSceneSettings({ sky: skySettings });
-  }, [skySettings]);  
+  }, [skySettings]);
 
   useEffect(() => {
     console.log(`${Date.now()} - CourseMap init effect`);
@@ -415,37 +430,54 @@ export default function Course() {
                       value={skySettings.type}
                       size="small"
                       label="Sky"
+                      onChange={handleSkyTypeChange}
                     >
                       <MenuItem value="clouds">Clouds</MenuItem>
-                      <MenuItem disabled value="box">SkyBox (Coming Soon!)</MenuItem>
+                      <MenuItem value="hdri">Skybox / HDRI</MenuItem>
                     </TextField>
 
-                    <NumberField
-                      label="Density"
-                      fullWidth={true}
-                      size="small"
-                      min={0}
-                      max={2}
-                      step={0.05}
-                      onChange={(newValue) => handleCloudSettingsChange('density', newValue)}
-                      value={skySettings.clouds.density}
-                    />
+                    {skySettings.type === 'hdri' ? (
+                      <React.Fragment>
+                        {skySettings.hdri?.name ? (
+                          <Typography>{skySettings.hdri?.name}</Typography>
+                        ) : null}
+                        <Button variant="contained" color="secondary" fullWidth onClick={handleSelectHDRI}>Select HDRI</Button>
+                      </React.Fragment>
+                    ) : null}
 
+                    {skySettings.type === 'clouds' ? (
+                      <React.Fragment>
+                        <NumberField
+                          label="Density"
+                          fullWidth={true}
+                          size="small"
+                          min={0}
+                          max={2}
+                          step={0.05}
+                          onChange={(newValue) => handleCloudSettingsChange('density', newValue)}
+                          value={skySettings.clouds.density}
+                        />
+    
+                        <ColorField
+                          label="Cloud Color"
+                          onChange={(newValue) => handleCloudSettingsChange('cloudColor', newValue)}
+                          value={skySettings.clouds.cloudColor}
+                        />
+                      </React.Fragment>
+                    ) : null}
+                    
+                    <Divider />
                     <ColorField
                       label="Sky Color"
                       onChange={(newValue) => handleCloudSettingsChange('skyColor', newValue)}
                       value={skySettings.clouds.skyColor}
                     />
                     <ColorField
-                      label="Cloud Color"
-                      onChange={(newValue) => handleCloudSettingsChange('cloudColor', newValue)}
-                      value={skySettings.clouds.cloudColor}
-                    />
-                    <ColorField
                       label="Fog Color"
                       onChange={(newValue) => handleCloudSettingsChange('fogColor', newValue)}
                       value={skySettings.clouds.fogColor}
                     />
+
                   </Stack>
                 </AccordionDetails>
               </Accordion>

@@ -48,6 +48,8 @@ contextBridge.exposeInMainWorld('meshery', {
 
     updateScene: (update) => ipcRenderer.invoke('project.updateScene', update),
     getHeightMap: () => ipcRenderer.invoke('project.getHeightMap'),
+
+    selectHDRI: () => ipcRenderer.invoke('project.selectHDRI'),
     // saveWrite: (settings) => ipcRenderer.invoke('project.saveWrite', settings),
 
     // saveProject: (trees) => ipcRenderer.invoke('project.updateTrees', trees)

@@ -3,7 +3,7 @@
 // Texture paths are URIs relative to the output .gltf file.
 export const TEXTURE_MAP = {
   fairway: {
-    tileSize: 3.5,
+    tileSize: 4,
     baseColor: 'gen_fairway_tex.png',
     normal:    'gen_fairway_map.png',
     normalScale: [0.2, 0.5],
@@ -14,7 +14,7 @@ export const TEXTURE_MAP = {
     // tint: 'hsl(21, 42%, 84%)',
   },
   first_cut: {
-    tileSize: 3.5,
+    tileSize: 4.5,
     baseColor: 'gen_fairway_tex.png',
     normal:    'gen_fairway_map.png',
     // tint: 'rgb(240, 233, 204)',
@@ -24,7 +24,7 @@ export const TEXTURE_MAP = {
     tint: 'hsl(20, 50%, 80%)',
   },
   green: {
-    tileSize: 3.2,
+    tileSize: 4,
     baseColor: 'gen_green_tex.png',
     normal:    'gen_green_map.png',
     normalScale: [0.2, 0.3],

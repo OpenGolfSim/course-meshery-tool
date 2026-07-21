@@ -80,7 +80,7 @@ export function setupProtocolHandler() {
     const key = request.url.slice(RESOURCES_FILE_PROTOCOL.length + 3); // removes the extra "://"
     let filePath = path.join(EXTRA_RESOURCE_PATH, key);
 
-    if (key.includes('plant-cache')) {
+    if (key.includes('plant-cache/')) {
       filePath = path.join(PLANT_CACHE, key.replace('plant-cache', ''));
     }
     
@@ -97,16 +97,29 @@ export function setupProtocolHandler() {
           'content-type': 'image/svg+xml'
         }
       });
-    } else if (key.includes(TREE_IMPORT_PREFIX)) {
-      console.log(`Tree import: ${key}`);
-      const treeId = key.slice(TREE_IMPORT_PREFIX.length + 1, -4);
-      console.log(`Tree id: ${treeId}`);
-      const asset = findTreeConfigById(treeId);
-      console.log(`Asset id`, asset);
-      if (asset?.filePath) {
-        const fetchFile = pathToFileURL(asset.filePath).toString();
+    } else if (key.startsWith('hdri')) {
+      console.log('load hdri', openProject.scene.sky.hdri);
+      if (openProject.scene.sky.hdri.filePath){
+        const fetchFile = pathToFileURL(openProject.scene.sky.hdri.filePath).toString();
         return net.fetch(fetchFile);
+      } else {
+        return new Response('Not found', {
+          status: 404,
+          headers: { 
+            'content-type': 'text/plain'
+          }
+        });
       }
+    // } else if (key.includes(TREE_IMPORT_PREFIX)) {
+    //   console.log(`Tree import: ${key}`);
+    //   const treeId = key.slice(TREE_IMPORT_PREFIX.length + 1, -4);
+    //   console.log(`Tree id: ${treeId}`);
+    //   const asset = findTreeConfigById(treeId);
+    //   console.log(`Asset id`, asset);
+    //   if (asset?.filePath) {
+    //     const fetchFile = pathToFileURL(asset.filePath).toString();
+    //     return net.fetch(fetchFile);
+    //   }
     }
 
     if (openProject._workingDir){

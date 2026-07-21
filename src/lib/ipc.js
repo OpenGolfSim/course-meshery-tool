@@ -45,6 +45,7 @@ ipcMain.handle('project.getHeightMap', (_event) => project._heightMapCache);
 
 ipcMain.handle('project.updateHoleByNumber', (_event, holeNumber, update) => project.updateHoleByNumber(holeNumber, update));
 ipcMain.handle('project.updateScene', (_event, update) => project.updateScene(update));
+ipcMain.handle('project.selectHDRI', (_event) => project.selectHDRI());
 
 ipcMain.handle('project.updateTrees', (_event, trees) => project.updateTrees(trees));
 

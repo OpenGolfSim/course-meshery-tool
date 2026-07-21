@@ -302,21 +302,21 @@ export async function write(filePath, project, meshData, imageData) {
   await doc.transform(dedup());
 
 
-  const { sky } = openProject.scene;
+  // const { sky } = openProject.scene;
   
-  let sceneSettings = { sky: { type: sky.type } };
+  // let sceneSettings = { sky };
   
-  // TODO: add support for sky-boxes
-  if (sky.type === 'clouds') {
-    sceneSettings.sky.clouds = sky.clouds;
-  }
+  // // TODO: add support for sky-boxes
+  // if (sky.type === 'clouds') {
+  //   sceneSettings.sky.clouds = sky.clouds;
+  // }
 
   doc.getRoot().setExtras({
     exportedBy: 'OGS-Meshery',
     createdAt: (new Date()).toISOString(),
     courseName: openProject.name,
     courseSize: openProject.settings.distance * 1000,
-    sceneSettings
+    sceneSettings: openProject.scene
   });
 
   consolidateBuffers(doc);
@@ -374,6 +374,14 @@ export async function write(filePath, project, meshData, imageData) {
       .setMimeType('image/jpeg')
       .setImage(new Uint8Array(mapImage))
       .setExtras({ type: 'course_map' });
+  }
+  if (openProject.scene.sky.type === 'hdri' && openProject.scene.sky.hdri.filePath) {
+    console.log(`Adding EXR/HDRI: ${openProject.scene.sky.hdri.filePath}`);
+    const exrBytes = fs.readFileSync(openProject.scene.sky.hdri.filePath);
+    doc.createTexture('skybox_exr')
+      .setImage(new Uint8Array(exrBytes))
+      .setMimeType('image/x-exr')
+      .setExtras({ type: 'hdri' });
   }
   
   broadcast('export.progress', { type: 'progress', percent: -1, status: 'Embedding blend maps...' });

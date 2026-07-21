@@ -9,7 +9,7 @@ import { generateSVG, geoJSONToSvgPaths, parseSVG } from './svg';
 import { parseRaw } from './heightmap';
 import { getHeightMapStats } from './terrain';
 import { buildCourseCDT, generateFlowMapPNG, layerToMesh, smoothLakeShores, smoothRiverBeds, smoothTerrain, svgToCourseLayers } from './workers';
-import { IMAGERY_DIR, PROJECT_FILE_PROTOCOL, TERRAIN_DIR, TREE_IMPORT_PREFIX } from '../constants';
+import { IMAGERY_DIR, PROJECT_FILE_PROTOCOL, RESOURCES_FILE_PROTOCOL, TERRAIN_DIR, TREE_IMPORT_PREFIX } from '../constants';
 import { getDateId } from './utils';
 import { randomUUID } from 'crypto';
 import { buildShapeCache, parseShapeCache } from './cache/shapes';
@@ -43,14 +43,17 @@ const defaultProjectTemplate = {
     sky: {
       type: 'clouds',
       radius: 800,
-      box: { filePath: null, url: null },
+      hdri: {
+        filePath: null,
+        url: null
+      },
       clouds: {
         density: 0.4,
         opacity: 0.8,
         fogColor: '#f8f8f1',
-        skyColor: '#bddae7',
+        skyColor: '#abd3e6',
         cloudColor: '#ffffff',
-        scale: 5.0,
+        scale: 3.0,
         position: [0, 0, 0]
       }
     }, 
@@ -125,7 +128,6 @@ async function parseRawData() {
     return null;
   }
 }
-
 
 export async function saveHeightMap(heightMapData, heightScale) {
   const { filePath, canceled } = await dialog.showSaveDialog({
@@ -793,5 +795,24 @@ export async function updateScene(update) {
     // console.log('     vs', updatedScene);
     // console.log('-------------- - - - -');
   }
-  return openProject;
+  return openProject.scene;
+}
+
+export async function selectHDRI() {
+  const result = await dialog.showOpenDialog({
+    filters: [{ extensions: ['.exr'], name: 'EXR Files' }]
+  });
+  if (result.canceled || !result.filePaths?.length) {
+    return;
+  }
+  const [filePath] = result.filePaths;
+  const name = path.basename(filePath);
+  openProject.scene.sky.hdri = {
+    filePath,
+    name,
+    url: `${PROJECT_FILE_PROTOCOL}://hdri/${name}`,
+  };
+  console.log('Selected HDRI:', openProject.scene);
+  await saveProjectSettings();
+  return openProject.scene;
 }

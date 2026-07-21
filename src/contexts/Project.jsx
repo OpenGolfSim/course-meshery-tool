@@ -14,6 +14,7 @@ const ProjectContext = createContext({
   generateTerrainData: () => {},
   setProjectSettings: () => {},
   updateSceneSettings: () => {},
+  selectHDRI: () => {},
   addHole: () => {},
   removeHole: () => {},
   editHole: () => {},
@@ -60,8 +61,18 @@ export const ProjectProvider = ({ children }) => {
     setProject((old) => ({ ...old, settings: { ...old.settings, ...updated.settings } }))
   }
   const updateSceneSettings = async (update) => {
-    const updated = await window.meshery.project.updateScene(update);
-    setProject((old) => ({ ...old, scene: { ...old.scene, ...updated.scene } }))
+    const updatedScene = await window.meshery.project.updateScene(update);
+    setProject((old) => ({ ...old, scene: updatedScene }))
+  }
+  const selectHDRI = async () => {
+    const updatedScene = await window.meshery.project.selectHDRI();
+    console.log('selected new HDRI', updatedScene);
+    setProject((old) => {
+      console.log('old.scene', old.scene);
+      console.log('updated', updatedScene);
+      return { ...old, scene: updatedScene };
+    });
+    return updatedScene;
   }
   
   const getOpenProject = async () => {
@@ -294,6 +305,7 @@ export const ProjectProvider = ({ children }) => {
       createProject,
       setProjectSettings,
       updateSceneSettings,
+      selectHDRI,
       addHole,
       removeHole,
       editHole,

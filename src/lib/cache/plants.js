@@ -10,19 +10,20 @@ import { randomUUID } from 'crypto';
 
 export const PLANT_CACHE = path.join(app.getPath('userData'), 'plant_cache');
 
+
 const TREES = [
   {
-    id: 'fir-large-v1',
+    id: 'fir-large-v2',
     type: 'tree',
-    thumbnail: 'https://coursedata.opengolfsim.com/assets/trees/FirTreeLarge_v1/FirTreeLarge-ogs.png',
-    asset: 'https://coursedata.opengolfsim.com/assets/trees/FirTreeLarge_v1/FirTreeLarge-ogs.glb',
+    thumbnail: 'https://coursedata.opengolfsim.com/assets/batched/fir_large/fir_large_v3.png',
+    asset: 'https://coursedata.opengolfsim.com/assets/batched/fir_large/fir_large_v3.glb',
     title: 'Fir Tree Large',
   },
   {
-    id: 'oak-med-v1',
+    id: 'oak-med-v2',
     type: 'tree',
-    thumbnail: 'https://coursedata.opengolfsim.com/assets/trees/OakTreeMedium_v1/OakTreeMedium-ogs.png',
-    asset: 'https://coursedata.opengolfsim.com/assets/trees/OakTreeMedium_v1/OakTreeMedium-ogs.glb',
+    thumbnail: 'https://coursedata.opengolfsim.com/assets/batched/oaktree_med/oaktree_med_v3.png',
+    asset: 'https://coursedata.opengolfsim.com/assets/batched/oaktree_med/oaktree_med_v3.glb',
     title: 'Oak Tree Medium',
   },
 ];

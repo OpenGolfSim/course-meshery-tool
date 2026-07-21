@@ -52,7 +52,7 @@
     "@mapbox/mapbox-gl-geocoder": "^5.1.2",
     "@mui/icons-material": "^7.3.6",
     "@mui/material": "^7.3.9",
-    "@opengolfsim/fuse": "github:opengolfsim/fuse#feat/webgpu",
+    "@opengolfsim/fuse": "github:opengolfsim/fuse",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.1",
     "@turf/turf": "^7.3.4",
@@ -80,6 +80,7 @@
     "martinez-polygon-clipping": "^0.7.4",
     "osmtogeojson": "^3.0.0-beta.5",
     "p-map": "^7.0.4",
+    "pica": "^10.0.2",
     "pngjs": "^7.0.0",
     "poisson-disk-sampling": "^2.3.1",
     "poly2tri": "^1.5.0",
@@ -95,7 +96,7 @@
     "svg-transform-parser": "^0.0.1",
     "tar": "^7.5.13",
     "threads": "^1.7.0",
-    "three": "^0.184.0",
+    "three": "^0.185.1",
     "transformation-matrix": "^3.1.0",
     "triangle-wasm": "^1.0.0"
   }
