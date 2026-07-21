@@ -6,12 +6,15 @@ module.exports = {
     name: 'Meshery',
     authors: 'OpenGolfSim',
     description: 'OpenGolfSim Meshery is a tool for converting and building you course meshes',
-    asar: true,
+    // asar: true,
     icon: 'images/Meshery',
     appCategoryType: 'public.app-category.developer-tools',
     extraResource: [
       './extra-resources'
     ],
+    asar: {
+      unpack: '**/.webpack/main/*.worker.js',
+    },
     ...process.env.OSX_SIGN && {
       osxSign: {
         identity: process.env.APPLE_SIGNING_IDENTITY,
@@ -46,12 +49,9 @@ module.exports = {
   ],
   plugins: [
     {
-      name: '@electron-forge/plugin-auto-unpack-natives',
-      config: {},
-    },
-    {
       name: '@electron-forge/plugin-webpack',
       config: {
+        port: 3102,
         mainConfig: './webpack.main.config.js',
         renderer: {
           config: './webpack.renderer.config.js',
@@ -64,8 +64,26 @@ module.exports = {
                 js: './src/preload.js',
               },
             },
+            {
+              html: './src/trees/tree.html',
+              js: './src/trees/tree_renderer.js',
+              name: 'tree_window',
+              preload: {
+                js: './src/trees/preload.js',
+              },
+            }
           ],
         },
+        devContentSecurityPolicy: [
+          "default-src 'self' blob: data: gap:",
+          "style-src 'self' 'unsafe-inline' blob: data: gap:",
+          "script-src 'self' 'unsafe-eval' 'unsafe-inline' blob: data: gap:",
+          "object-src 'self' blob: data: gap:",
+          "img-src 'self' blob: data: gap: *.opengolfsim.com *.openstreetmap.org *.arcgisonline.com mt.google.com *.virtualearth.net",
+          "connect-src 'self' https://*.mapbox.com blob: data: gap: project: laz:",
+          "frame-src 'self' blob: data: gap:",
+          "worker-src 'self' blob: data: gap:"
+        ].join('; ')
       },
     },
     // Fuses are used to enable/disable various Electron functionality

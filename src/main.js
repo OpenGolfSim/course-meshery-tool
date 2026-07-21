@@ -1,73 +1,95 @@
-import { app, session, shell, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, session, shell, BrowserWindow, ipcMain, dialog, protocol, net, clipboard } from 'electron';
 import log from 'electron-log';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import { parseSVG } from './lib/svg';
-import { parsePalette } from './lib/colors';
+// import { parsePalette } from './lib/colors';
 import { parseRaw } from './lib/heightmap';
 import { resourceRoot } from './lib/app';
 import { buildAppMenu } from './lib/menu';
 import { dataCache, smoothTerrainData } from './lib/terrain';
 import { defaultSettings } from './lib/settings';
+import { createWindow } from './lib/window';
+import { pathToFileURL, parse as parseUrl } from 'node:url';
+import { PROJECT_FILE_PROTOCOL, RESOURCES_FILE_PROTOCOL, TREE_MAKER_FILE_PROTOCOL } from './constants';
+import './lib/ipc';
+import './trees/main';
 
 const MAX_FILESIZE = 1e6; // Anything over 1 MB probably has images in it
 
-let mainWindow;
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (require('electron-squirrel-startup')) {
   app.quit();
 }
 
+protocol.registerSchemesAsPrivileged([
+  { 
+    scheme: PROJECT_FILE_PROTOCOL, 
+    privileges: { 
+      standard: true, 
+      secure: true, 
+      supportFetchAPI: true, // This is the magic line!
+      bypassCSP: true,
+      corsEnabled: true 
+    } 
+  },
+  {
+    scheme: RESOURCES_FILE_PROTOCOL, 
+    privileges: { 
+      standard: true, 
+      secure: true, 
+      supportFetchAPI: true,
+      bypassCSP: true,
+      corsEnabled: true 
+    } 
+  },
+  {
+    scheme: TREE_MAKER_FILE_PROTOCOL, 
+    privileges: { 
+      standard: true, 
+      secure: true, 
+      supportFetchAPI: true,
+      bypassCSP: true,
+      corsEnabled: true 
+    } 
+  },
+]);
+
+// app.commandLine.appendSwitch('use-angle', 'metal');
+// if (process.platform === 'darwin') {
+// }
+
 buildAppMenu();
 
-const createWindow = async () => {
-  // Create the browser window.
-  mainWindow = new BrowserWindow({
-    width: 800,
-    height: 600,
-    webPreferences: {
-      preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
-      nodeIntegrationInWorker: true
-      // nodeIntegration: false, // Recommended practice is to keep false in renderer
-      // contextIsolation: true, // Recommended practice is to keep true
-      // nodeIntegrationInWorker: true, // This enables Node.js APIs in the worker
-      // sandbox: false // Must be false for nodeIntegrationInWorker to work
-    },
-  });
-  // const ses = mainWindow.webContents.session
-
-  // console.log('reactDevToolsPath', reactDevToolsPath);
-  // const ext = await mainWindow.webContents.session.extensions.loadExtension(reactDevToolsPath, { allowFileAccess: true });
-  // console.log(ext);
-
-  // and load the index.html of the app.
-  mainWindow.loadURL(MAIN_WINDOW_WEBPACK_ENTRY);
-
-  if (!app.isPackaged) {
-    // Open the DevTools.
-    mainWindow.webContents.openDevTools();
-  }
-};
-
 app.whenReady().then(async () => {
+  // load color palette into memory
+  // await parsePalette();
 
-  if (process.env.REACT_DEVTOOLS) {
-    const ext = await session.defaultSession.extensions.loadExtension(
-      process.env.REACT_DEVTOOLS, { allowFileAccess: true }
-    );
-    if (ext?.version) {
-      log.info(`Loaded dev tools extension: ${ext?.version}`);
-    }
-  }
+  const filter = { urls: ['https://*.tile.openstreetmap.org/*'] };
 
-  createWindow();
+  session.defaultSession.webRequest.onBeforeSendHeaders(filter, (details, cb) => {
+    details.requestHeaders['Referer']    = 'https://help.opengolfsim.com/tools/course-meshery/';
+    details.requestHeaders['User-Agent'] = 'OGSMeshery/2.0.0 (help@opengolfsim.com)';
+    cb({ requestHeaders: details.requestHeaders });
+  });
+
+  // if (process.env.REACT_DEVTOOLS) {
+  //   const ext = await session.defaultSession.extensions.loadExtension(
+  //     process.env.REACT_DEVTOOLS, { allowFileAccess: true }
+  //   );
+  //   if (ext?.version) {
+  //     log.info(`Loaded dev tools extension: ${ext?.version}`);
+  //   }
+  // }
+
+  createWindow(MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY, MAIN_WINDOW_WEBPACK_ENTRY);
 
   // On OS X it's common to re-create a window in the app when the
   // dock icon is clicked and there are no other windows open.
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+      createWindow(MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY, MAIN_WINDOW_WEBPACK_ENTRY);
     }
   });
 });
@@ -76,9 +98,9 @@ app.whenReady().then(async () => {
 // for applications and their menu bar to stay active until the user quits
 // explicitly with Cmd + Q.
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
+  // if (process.platform !== 'darwin') {
     app.quit();
-  }
+  // }
 });
 
 // In this file you can include the rest of your app's specific main process
@@ -87,49 +109,57 @@ app.on('window-all-closed', () => {
 //   return formContext;
 // });
 
-ipcMain.handle('svg.select', async (event) => {
-  const result = await dialog.showOpenDialog({
-    title: 'Select SVG File',
-    filters: [
-      { name: 'SVG Files', extensions: ['svg'] },
-    ]
-  });
+// TODO: move and reorganize
+// ipcMain.handle('svg.select', async (event) => {
+//   const result = await dialog.showOpenDialog({
+//     title: 'Select SVG File',
+//     filters: [
+//       { name: 'SVG Files', extensions: ['svg'] },
+//     ]
+//   });
 
-  const [svgPath] = result.filePaths;
-  if (result.canceled || !svgPath) {
-    return;
-  }
+//   const [svgPath] = result.filePaths;
+//   if (result.canceled || !svgPath) {
+//     return;
+//   }
 
-  try {
+//   try {
 
-    log.info(`Parsing SVG (${svgPath})`);
-    const palette = await parsePalette();
+//     log.info(`Parsing SVG (${svgPath})`);
+//     const palette = await parsePalette();
 
-    const stats = await fs.promises.stat(svgPath);
-    if (stats.size > MAX_FILESIZE) {
-      throw new Error(`SVG file should not be larger than 1MB. Make sure you link any image layers rather than embedding them.`);
-    }
-    const svgData = await fs.promises.readFile(svgPath, 'utf-8');
+//     const stats = await fs.promises.stat(svgPath);
+//     if (stats.size > MAX_FILESIZE) {
+//       throw new Error(`SVG file should not be larger than 1MB. Make sure you link any image layers rather than embedding them.`);
+//     }
+//     const svgData = await fs.promises.readFile(svgPath, 'utf-8');
 
-    const { layers, width, height } = await parseSVG(svgData, palette);
-    log.info('got svg info', { width, height });
-    return {
-      path: svgPath,
-      palette,
-      layers,
-      svgSize: [width, height],
-      layerSettings: { ...defaultSettings }
-    };
-  } catch (error) {
-    log.error('SVG error', error);
-    event.sender.send('error', error.message);
-  }
-});
+//     const { layers, width, height } = await parseSVG(svgData, palette);
+//     log.info('got svg info', { width, height });
+//     return {
+//       path: svgPath,
+//       palette,
+//       layers,
+//       svgSize: [width, height],
+//       layerSettings: { ...defaultSettings }
+//     };
+//   } catch (error) {
+//     log.error('SVG error', error);
+//     event.sender.send('error', error.message);
+//   }
+// });
 
 ipcMain.handle('url.open', async (_, href) => {
   log.debug(`Opening url: ${href}`);
   if (href) {
     shell.openExternal(href);
+  }
+});
+
+ipcMain.handle('clipboard.copy', async (_, text) => {
+  log.debug(`Copy text: ${text}`);
+  if (text) {
+    clipboard.writeText(text);
   }
 });
 
@@ -199,3 +229,8 @@ ipcMain.handle('mesh.export', async (event, meshData) => {
     }
   }
 });
+
+// ipcMain.handle('terrain.token', () => {
+//   const authToken = Buffer.from('mbt').toString('base64');
+//   return fetch(`https://api.opengolfsim.com/mapbox/token?token=${authToken}`).then(res => res.json());
+// });
