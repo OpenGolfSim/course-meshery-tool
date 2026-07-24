@@ -43,6 +43,7 @@ export default function TreeImportDialog(props) {
 
   const handlePlantChange = (update) => {
     console.log('update', update);
+    refreshPlantCache();
   }
   const handleImportAsset = async (plant) => {
     onClose(plant);
@@ -57,16 +58,19 @@ export default function TreeImportDialog(props) {
     }
     setDownloadPending(undefined);
   }
-
-  useEffect(() => {
+  const refreshPlantCache = () => {
     window.meshery.trees.getAvailablePlants().then(plants => {
       console.log('plants', plants);
       setAvailablePlants(plants);
     });
-    // window.meshery.on('plant.change', handlePlantChange);
-    // return () => {
-    //   window.meshery.off('plant.change', handlePlantChange);
-    // }
+  }
+
+  useEffect(() => {
+    refreshPlantCache();
+    window.meshery.on('plant.change', handlePlantChange);
+    return () => {
+      window.meshery.off('plant.change', handlePlantChange);
+    }
   }, []);
 
   return (
@@ -103,7 +107,7 @@ export default function TreeImportDialog(props) {
             <Grid container spacing={3}>
               {filteredPlants.map(tree => {
                 return (
-                  <Grid size={3} key={tree.title}>
+                  <Grid size={3} key={tree.id}>
                     <Card variant="outlined">
                       <CardMedia
                         sx={{ height: 150 }}

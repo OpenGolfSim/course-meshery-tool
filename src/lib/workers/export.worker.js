@@ -66,12 +66,21 @@ async function resizeTexture(decoded, size) {
 
 function decodeImage(data) {
   const buf = Buffer.from(data);
+  
+  console.log('[decode] magic:', buf.subarray(0, 4).toString('hex'), buf.subarray(8, 12).toString('ascii'));
+
   // JPEG magic bytes: 0xFF 0xD8
   if (buf[0] === 0xFF && buf[1] === 0xD8) {
     const { width, height, data: pixels } = jpeg.decode(buf, { useTArray: true });
     return { width, height, data: new Uint8Array(pixels) };
   }
-  const png = PNG.sync.read(buf);
+
+  // Some exporters leave junk after the PNG IEND chunk; pngjs is strict — truncate there
+  const iend = buf.indexOf('IEND');
+  const pngBuf = iend !== -1 ? buf.subarray(0, iend + 8) : buf; // IEND(4) + CRC(4)
+  const png = PNG.sync.read(pngBuf);
+
+  // const png = PNG.sync.read(buf);
   return { width: png.width, height: png.height, data: new Uint8Array(png.data) };
 }
 
@@ -133,9 +142,15 @@ async function compressTexture(rawImageBuffer, ktx2Options = {}) {
 }
 
 
-export async function exportTreePackage(inputFiles, outputFile, ktx2Options = {}) {
+export async function exportTreePackage(inputFiles, outputFile, treeOptions = {}, ktx2Options = {}) {
   if (inputFiles.length < 1 || !outputFile?.endsWith(".glb")) {
     throw new Error('Invalid input or output files');
+  }
+
+  // Auto-generated billboard arrives as an ArrayBuffer; append as the last LOD input
+  const inputs = inputFiles.map((p) => ({ path: p }));
+  if (treeOptions.generatedBillboard) {
+    inputs.push({ binary: new Uint8Array(treeOptions.generatedBillboard) });
   }
   
   const io = new NodeIO().registerExtensions(EXTENSIONS);
@@ -147,42 +162,50 @@ export async function exportTreePackage(inputFiles, outputFile, ktx2Options = {}
   
   const buffer = doc.createBuffer();
   const scene = doc.createScene("OGSTree");
-  // const root = doc.createNode("Tree").setExtras({ lod_count: inputFiles.length });
-//  const root = doc.createNode("Tree").setExtras({
-//     lod_count: inputFiles.length,
-//     texture_size: 1024,
-//     format_version: 1,
-//   });  
+  
   const root = doc.createNode("Tree").setExtras({
-    lod_count: inputFiles.length,
+    // lod_count: inputFiles.length,
+    lod_count: inputs.length,
     texture_size: TREE_TEXTURE_SIZE,
     format_version: 1,
   });
 
   scene.addChild(root);
   
-  for (let i = 0; i < inputFiles.length; i++) {
-    const ext = path.extname(inputFiles[i]).toLowerCase();
+  // for (let i = 0; i < inputFiles.length; i++) {
+    // const ext = path.extname(inputFiles[i]).toLowerCase();
+  for (let i = 0; i < inputs.length; i++) {
+    const input = inputs[i];
+    const ext = input.binary ? '.glb' : path.extname(input.path).toLowerCase();
+
     const name = `LOD${i}`;
     const lodNode = doc.createNode(name).setExtras({ lod_level: i });
     switch (ext) {
       case '.obj':
-        addOBJ(doc, inputFiles[i], lodNode, name, buffer);
+        addOBJ(doc, input.path, lodNode, name, buffer);
+        // addOBJ(doc, inputFiles[i], lodNode, name, buffer);
         break;
       case '.glb':
-        await addGLB(doc, inputFiles[i], lodNode, name, io);
+        await addGLB(doc, input.binary ?? input.path, lodNode, name, io);
+        // await addGLB(doc, inputFiles[i], lodNode, name, io);
         break;
       default:
         throw new Error(`Unsupported input type: ${ext}`);
-  
     }
-    root.addChild(lodNode);   // attach the LOD to the Tree
+    if (treeOptions.scale) {
+      const [x, y, z] = lodNode.getScale();
+      lodNode.setScale([x * treeOptions.scale, y * treeOptions.scale, z * treeOptions.scale]);
+    }
+
+    root.addChild(lodNode);
   }
   
   // Each merged GLB brought its own buffer; GLB needs exactly one binary chunk.
   // Repoint every accessor at the original buffer, then prune the now-unused
   // buffers/orphan nodes and dedupe textures shared across LODs.
-  for (const a of doc.getRoot().listAccessors()) a.setBuffer(buffer);
+  for (const a of doc.getRoot().listAccessors()) {
+    a.setBuffer(buffer);
+  }
   await doc.transform(dedup(), prune());
   
   // Batching requires every geometry to have the same channel set
@@ -207,23 +230,9 @@ export async function exportTreePackage(inputFiles, outputFile, ktx2Options = {}
     mat.setExtras({ ...mat.getExtras(), batch: cutout ? 'foliage' : 'trunk' });
   }
 
-  // // Informational: log UV range (tiling is OK with texture arrays)
-  // for (const mesh of doc.getRoot().listMeshes()) {
-  //   for (const prim of mesh.listPrimitives()) {
-  //     const uv = prim.getAttribute('TEXCOORD_0');
-  //     if (!uv) continue;
-  //     const min = uv.getMin([]), max = uv.getMax([]);
-  //     if (min[0] < -0.01 || min[1] < -0.01 || max[0] > 1.01 || max[1] > 1.01) {
-  //       // throw new Error(`"${mesh.getName()}": texture UVs outside 0–1 — model not compatible`);
-  //       console.warn(
-  //         `"${mesh.getName()}": UVs span [${min[0].toFixed(2)},${min[1].toFixed(2)}] – ` +
-  //         `[${max[0].toFixed(2)},${max[1].toFixed(2)}] (tiling — fine for texture arrays)`
-  //       );
-  //     }
-  //   }
-  // }  
 
   for (const texture of doc.getRoot().listTextures()) {
+    console.log('Texture type: ', texture.getMimeType());
     if (texture.getMimeType() === 'image/ktx2') continue;
     const image = texture.getImage();
     if (!image) continue;

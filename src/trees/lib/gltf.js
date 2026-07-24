@@ -1,8 +1,12 @@
 import { mergeDocuments, flatten, prune, dedup } from "@gltf-transform/functions";
 
-export async function addGLB(doc, glbPath, lodNode, name, io) {
-  const src = await io.read(glbPath);
-
+// export async function addGLB(doc, glbPath, lodNode, name, io) {
+  // const src = await io.read(glbPath);
+export async function addGLB(doc, glbSource, lodNode, name, io) {
+  // glbSource: file path (string) or in-memory GLB (Uint8Array)
+  const src = (glbSource instanceof Uint8Array)
+    ? await io.readBinary(glbSource)
+    : await io.read(glbSource);
   // Bake node transforms into mesh data so geometry lives in identity space,
   // matching how your OBJ path emits it. (Blender's +Y-up export usually leaves
   // transforms at identity, but this makes it bulletproof.)

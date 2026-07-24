@@ -553,6 +553,19 @@ export default function TreeLayerDialog({ onClose, onSave, open, tree }) {
               />
             </Box>
             <Box>
+              <NumberField
+                fullWidth
+                label="Density"
+                value={brushValue}
+                format={{ useGrouping: false }} 
+                onChange={(newVal) => setBrushValue(newVal)}
+                min={1}
+                step={1}
+                max={255}
+                helperText="Change the density of the planting"
+              />
+            </Box>
+            <Box>
               <Button onClick={handleUndo}>Undo</Button>
               <Button onClick={handleClearData}>Clear All</Button>
             </Box>

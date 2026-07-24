@@ -7,6 +7,7 @@ import { pathToFileURL } from 'url';
 import { exportTreePackage } from '../lib/workers/index';
 import { PLANT_CACHE } from '../lib/cache/plants';
 import { cachePlant } from '../lib/app';
+import { broadcast } from '../lib/window';
 
 let treeMakerScope = new Map();
 export let treeWindow;
@@ -59,19 +60,12 @@ export function createTreeMakerWindow() {
   treeWindow.show();
 }
 
-ipcMain.handle('treeMaker.export', async (event, thumbnailUri, plantOptions = {}) => {
-  const thumbnailRaw = thumbnailUri.split('base64,')?.[1];
+ipcMain.handle('treeMaker.export', async (event, plantOptions = {}) => {
+  const { thumbnail, name, scale, billboard } = plantOptions;
+  const thumbnailRaw = thumbnail.split('base64,')?.[1];
   if (!thumbnailRaw?.length) {
     throw new Error('Missing thumbnail data');
   }
-
-  // const result = await dialog.showSaveDialog({
-  //   defaultPath: 'TreePack'
-  //   // filters: [{ extensions: ['.glb'] }]
-  // });
-  // if (result.canceled || !result.filePath?.length) {
-  //   return;
-  // }
 
   const treeId = randomUUID();
   const filename = `custom-${treeId}.glb`;
@@ -84,6 +78,9 @@ ipcMain.handle('treeMaker.export', async (event, thumbnailUri, plantOptions = {}
     .sort((a, b) => a.lod < b.lod ? -1 : 1)
     .map(tree => tree.path);
   
+  const hasUserBillboard = [...treeMakerScope.values()].some(t => t.lod === 3);
+  const billboardBuffer = (billboard && !hasUserBillboard) ? billboard : null;
+
   // const outputFile = filePath;
   // const outputFileGLB = `${outputFile}.glb`;
   // const outputFilePNG = `${outputFile}.png`;
@@ -94,13 +91,13 @@ ipcMain.handle('treeMaker.export', async (event, thumbnailUri, plantOptions = {}
   await fs.promises.writeFile(outputFilePNG, Buffer.from(thumbnailRaw, 'base64'));
 
   // can take a while for compressing textures...
-  await exportTreePackage(inputFiles, outputFileGLB);
+  await exportTreePackage(inputFiles, outputFileGLB, { scale, generatedBillboard: billboard });
 
   cachePlant({
     id: treeId,
     key: treeId,
     type: 'custom',
-    title: plantOptions.title ?? 'Custom Plant',
+    title: name ?? 'Custom Plant',
     addedAt: new Date(),
     thumbnail: outputFilePNG,
     filePath: outputFileGLB,
@@ -108,6 +105,7 @@ ipcMain.handle('treeMaker.export', async (event, thumbnailUri, plantOptions = {}
 
   // shell.showItemInFolder(outputFileGLB);
 
+  broadcast('plant.change');
 });
 
 ipcMain.handle('treeMaker.get', () => {

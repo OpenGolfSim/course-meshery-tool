@@ -6,5 +6,5 @@ import 'electron-log/preload';
 contextBridge.exposeInMainWorld('trees', {
   getTrees: () => ipcRenderer.invoke('treeMaker.get'),
   selectTree: (lodNum) => ipcRenderer.invoke('treeMaker.select', lodNum),
-  export: (thumbnail) => ipcRenderer.invoke('treeMaker.export', thumbnail),
+  export: (payload) => ipcRenderer.invoke('treeMaker.export', payload),
 });
