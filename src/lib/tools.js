@@ -48,6 +48,9 @@ const REQUIRED_BINARIES = {
   },
   gdaldem: {
     windowsPath: 'Library/bin',
+  },
+  gdalinfo: {
+    windowsPath: 'Library/bin',
   }
 };
 
