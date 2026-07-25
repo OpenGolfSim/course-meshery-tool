@@ -51,7 +51,10 @@ const REQUIRED_BINARIES = {
   },
   gdalinfo: {
     windowsPath: 'Library/bin',
-  }
+  },
+  gdal_calc: {
+    windowsPath: 'Scripts',
+  },
 };
 
 // Helper: throw if the signal has been aborted
