@@ -83,6 +83,9 @@ export default function ExportCourseDialog(props) {
               {data.mapImage ? (
                 <img src={data.mapImage} width={200} />
               ) : null}
+              {/* {data.lightMapImage ? (
+                <img src={data.lightMapImage} width={200} />
+              ) : null} */}
             </Grid>
             <Grid flex={1}>
               <Stack spacing={3} sx={{ py: 2 }}>

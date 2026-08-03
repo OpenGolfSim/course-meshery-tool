@@ -47,7 +47,7 @@ export const TEXTURE_MAP = {
     normalScale: [0.8, 1],
     // tint:'rgb(220, 234, 199)',
     roughnessFactor: 0.98,
-    tint: 'hsl(20, 60%, 83%)',
+    tint: 'hsl(19, 83%, 88%)',
   },
   rough: {
     tileSize: 3.0,
@@ -100,6 +100,13 @@ export const TEXTURE_MAP = {
     normal:    'pine_straw_normal.png',
     roughnessFactor: 1.0,
     tint: 'hsl(68, 27%, 63%)',
+  },
+  concrete: {
+    tileSize: 2.5,
+    baseColor: 'concrete_tex.png',
+    normal:    'concrete_normal.png',
+    roughnessFactor: 1.0,
+    tint: 'hsl(67, 30%, 83%)',
   },
   // Fallback for layers whose surface isn't textured yet — uses layer.color.
   _default: { tileSize: 2.0, roughnessFactor: 0.9 },

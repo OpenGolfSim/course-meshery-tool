@@ -176,8 +176,14 @@ export async function compressTextures(doc, onProgress = () => {}) {
 
   await pMap(textures, async (texture) => {
     const rawImage = texture.getImage();
+    // Normal/ORM are data — sRGB transfer decodes them wrong on the GPU
+    // (bent normals + skewed roughness = white speckle at distance).
+    // const srgb = !/(_normal|_orm)$/.test(texture.getName() ?? '');
+    // Data textures (normals, ORM, lightmap) must not get the sRGB transfer flag
+    const srgb = !/(_normal|_orm|light_map)$/.test(texture.getName() ?? '');    
     const ktx2Buffer = await pool.queue(worker =>
-      worker.compressTexture(Transfer(rawImage.buffer), { wasmPath })
+      // worker.compressTexture(Transfer(rawImage.buffer), { wasmPath })
+      worker.compressTexture(Transfer(rawImage.buffer), { wasmPath, srgb })
     );
 
     texture.setImage(new Uint8Array(ktx2Buffer));

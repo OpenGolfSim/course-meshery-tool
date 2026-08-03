@@ -80,7 +80,8 @@ function digMesh(mesh, shape, layer) {
 
   return {
     ...mesh,
-    points: copy
+    points: copy,
+    normals: computeSmoothNormals(copy, mesh.triangles),
   }
 }
 
@@ -945,11 +946,35 @@ function computeSmoothNormals(points, triangles) {
     const nx = uy*vz - uz*vy;
     const ny = uz*vx - ux*vz;
     const nz = ux*vy - uy*vx;
-    for (const idx of [a, b, c]) {
-      norms[idx*3]   += nx;
-      norms[idx*3+1] += ny;
-      norms[idx*3+2] += nz;
+    // Normalize the face normal, then weight per-vertex by corner angle.
+    // Area weighting (raw cross product) lets huge flat fairway triangles
+    // drown out thin bunker-wall triangles at shared vertices — walls ended
+    // up with near-vertical normals and could never shade.
+    const nlen = Math.sqrt(nx*nx + ny*ny + nz*nz) || 1;
+    const fnx = nx/nlen, fny = ny/nlen, fnz = nz/nlen;
+
+    const corners = [
+      [a, bx-ax, by-ay, bz-az, cx-ax, cy-ay, cz-az],
+      [b, cx-bx, cy-by, cz-bz, ax-bx, ay-by, az-bz],
+      [c, ax-cx, ay-cy, az-cz, bx-cx, by-cy, bz-cz],
+    ];
+    for (const [idx, e1x, e1y, e1z, e2x, e2y, e2z] of corners) {
+      const l1 = Math.sqrt(e1x*e1x + e1y*e1y + e1z*e1z) || 1;
+      const l2 = Math.sqrt(e2x*e2x + e2y*e2y + e2z*e2z) || 1;
+      const cosA = Math.max(-1, Math.min(1,
+        (e1x*e2x + e1y*e2y + e1z*e2z) / (l1 * l2)
+      ));
+      const angle = Math.acos(cosA);
+      norms[idx*3]   += fnx * angle;
+      norms[idx*3+1] += fny * angle;
+      norms[idx*3+2] += fnz * angle;
     }
+
+    // for (const idx of [a, b, c]) {
+    //   norms[idx*3]   += nx;
+    //   norms[idx*3+1] += ny;
+    //   norms[idx*3+2] += nz;
+    // }
   }
 
   for (let i = 0; i < count; i++) {

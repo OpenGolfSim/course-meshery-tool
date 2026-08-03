@@ -156,8 +156,11 @@ export const defaultSettings = {
   concrete: {
     spacing: 2,
     // spacingEdge: 2,
-    blend: 0,
-    blending: { ...defaultBlend },
+    blend: 0.5,
+    blending: {
+      enabled: true,
+      distance: 0.2,
+    },
     dig: { ...defaultDig }
   },
   dirt: {

@@ -56,7 +56,11 @@ const defaultProjectTemplate = {
         scale: 3.0,
         position: [0, 0, 0]
       }
-    }, 
+    },
+    sun: {
+      elevation: 40,   // degrees above horizon; 90 = noon overhead
+      azimuth: 225     // compass direction light comes from; 225 = southwest
+    },
   },
   trees: []
 };

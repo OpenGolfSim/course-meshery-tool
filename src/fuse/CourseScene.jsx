@@ -21,7 +21,8 @@ import { positionsToMaskData, heightmapToMesh } from '../utils/treeMask';
 import { useProject } from '../contexts/Project';
 import { RESOURCES_FILE_PROTOCOL } from '../constants.js';
 import { TEXTURE_MAP } from '../lib/textures.js';
-import { captureMap } from './captureMap';
+import { captureLightmap, captureMap } from './captureMap';
+import { sunDirectionFromAngles } from '../utils/sun.js';
 
 // Shared noise texture — loaded once, used by all blended surfaces
 let noiseTexturePromise = null;
@@ -222,10 +223,64 @@ export default function CourseScene({
   const [treesLoaded, setTreesLoaded] = useState(false);
   const [surfaceVersion, setSurfaceVersion] = useState(0);
   const cloudsRef     = useRef(null);
-  const selectionRef  = useRef(null);   // { wireframe, box } meshes
+  const selectionRef  = useRef(null);   // { wireframuseImperativeHandlee, box } meshes
   const raycasterRef  = useRef(new THREE.Raycaster());
   const pointerRef    = useRef(new THREE.Vector2());
+  const lightmapPreviewRef = useRef(null); // THREE.Texture while preview active
+  const bakingRef = useRef(false);         // suppress editor frames mid-bake
 
+
+  const runLightmapBake = useCallback(async (size = 2048) => {
+    const ctx = sceneRef.current;
+    if (!ctx) return;
+    const { fuseRenderer, scene } = ctx;
+
+    const { elevation = 40, azimuth = 225 } = project.scene?.sun ?? {};
+    const sunDirection = sunDirectionFromAngles(elevation, azimuth);
+    const toHide = [
+      cloudsRef.current?.object,
+      ...grassRef.current.map(g => g.object),
+      ...waterRef.current.map(s => s.water),
+    ].filter(Boolean);
+
+    bakingRef.current = true;
+    try {
+      const dataUrl = await captureLightmap(
+        fuseRenderer.renderer, scene, worldSize, sunDirection, toHide, size, planterRef.current
+      );
+      if (!dataUrl) return;
+
+      // Clear previous preview, swap in new texture
+      for (const { mesh } of surfacesRef.current) {
+        if (mesh.material?.aoMap) { mesh.material.aoMap = null; mesh.material.needsUpdate = true; }
+      }
+      lightmapPreviewRef.current?.dispose();
+
+      const tex = await new THREE.TextureLoader().loadAsync(dataUrl);
+      tex.colorSpace = THREE.NoColorSpace;
+      tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+      tex.channel = 1;
+      tex.flipY = false; // match FUSE's createImageBitmap path
+      tex.needsUpdate = true;
+      lightmapPreviewRef.current = tex;
+
+      for (const { mesh } of surfacesRef.current) {
+        const pos = mesh.geometry?.attributes.position;
+        if (!pos || !mesh.material?.isMeshStandardMaterial) continue;
+        const uv1 = new Float32Array(pos.count * 2);
+        for (let i = 0, j = 0; i < pos.count; i++, j += 2) {
+          uv1[j] = pos.getX(i) / worldSize;
+          uv1[j + 1] = pos.getZ(i) / worldSize; // mirror any flip you settled on in FUSE
+        }
+        mesh.geometry.setAttribute('uv1', new THREE.BufferAttribute(uv1, 2));
+        mesh.material.aoMap = tex;
+        mesh.material.aoMapIntensity = 1.0;
+        mesh.material.needsUpdate = true;
+      }
+    } finally {
+      bakingRef.current = false;
+    }
+  }, [worldSize, project.scene?.sun]);
 
   useImperativeHandle(ref, () => ({
     async capture(size = 512) {
@@ -242,8 +297,24 @@ export default function CourseScene({
         mesh: surface.water,
         color: '#1a3534',
       }));
+      return captureMap(fuseRenderer.renderer, scene, worldSize, toHide, waterSwaps, size, planterRef.current);
+    },
+    async captureLightmap(size = 4096) {
+      const ctx = sceneRef.current;
+      if (!ctx) return null;
+      const { fuseRenderer, scene } = ctx;
 
-      return captureMap(fuseRenderer.renderer, scene, worldSize, toHide, waterSwaps, size);
+      const { elevation = 40, azimuth = 225 } = project.scene?.sun ?? {};
+      const sunDirection = sunDirectionFromAngles(elevation, azimuth);
+
+      // Hide non-shadow-relevant objects: clouds, grass blades, water
+      const toHide = [
+        cloudsRef.current?.object,
+        ...grassRef.current.map(g => g.object),
+        ...waterRef.current.map(s => s.water),
+      ].filter(Boolean);
+
+      return captureLightmap(fuseRenderer.renderer, scene, worldSize, sunDirection, toHide, size, planterRef.current);
     },
     async refreshLayer(layerId) {
       const ctx = sceneRef.current;
@@ -428,11 +499,11 @@ export default function CourseScene({
     scene.background = new THREE.Color(skySettings.clouds.skyColor);
 
     const camera = new THREE.PerspectiveCamera(
-      30, container.clientWidth / container.clientHeight, 0.5, 3000
+      30, container.clientWidth / container.clientHeight, 0.5, 5000
     );
     cameraRef.current = camera;
     camera.layers.enable(2);
-    
+    camera.layers.enable(3); // editor overlays (selection wireframe/box)
     fuseRenderer.setupPostProcessing(scene, camera);
 
     const controls = new CameraControls(camera, canvas);
@@ -449,8 +520,21 @@ export default function CourseScene({
       center, 5, center,
       false
     );
-    
 
+    const outerGeometry = new THREE.PlaneGeometry(10000, 10000, 1, 1);
+    const map = loadTexture(TEXTURE_MAP.base.baseColor, THREE.SRGBColorSpace);
+    map.wrapS = THREE.RepeatWrapping;
+    map.wrapT = THREE.RepeatWrapping;
+    map.repeat.set(500, 500);
+    const outerMaterial = new THREE.MeshStandardMaterial({ color: TEXTURE_MAP.base.tint ?? 0x353f17, map });
+
+
+    const plane = new THREE.Mesh(outerGeometry, outerMaterial);
+    plane.rotation.x = -Math.PI / 2;
+    plane.position.set(0, -5, 0);
+    scene.add(plane);
+
+  
     sceneRef.current = { fuseRenderer, scene, camera, controls, meshLoader: null };
 
     console.log(`${Date.now()} - Init renderer`);
@@ -503,6 +587,7 @@ export default function CourseScene({
     const timer = new THREE.Timer();
 
     fuseRenderer.renderer.setAnimationLoop(() => {
+      if (bakingRef.current) return; // don't draw white-out/LOD0 bake state
       timer.update();
       const delta = timer.getDelta();
       controls.update(delta);
@@ -521,6 +606,24 @@ export default function CourseScene({
     return () => fuseRenderer.renderer.setAnimationLoop(null);
 
   }, [surfacesLoaded, treesLoaded]);
+
+  // ─── Lightmap preview bake: on load and whenever the scene changes ──
+  useEffect(() => {
+    if (!surfacesLoaded) return;
+    const hasTrees = project.trees?.length > 0 && heightMap?.data;
+    if (hasTrees && !treesLoaded) return;
+
+    // Debounce: refreshLayer bumps surfaceVersion per edit — coalesce bursts.
+    const t = setTimeout(async () => {
+      onLoadingChange?.({ phase: 'lightmap' });
+      try {
+        await runLightmapBake(2048);
+      } finally {
+        onLoadingChange?.({ phase: 'ready' });
+      }
+    }, 600);
+    return () => clearTimeout(t);
+  }, [surfacesLoaded, treesLoaded, surfaceVersion, runLightmapBake]);
 
   useEffect(() => {
     const ctx = sceneRef.current;
@@ -555,6 +658,7 @@ export default function CourseScene({
     wireframe.position.y = 0.01;
 
     wireframe.raycast = () => {};
+    wireframe.layers.set(3); // editor-overlay layer: invisible to capture cameras
     scene.add(wireframe);
 
     // Bounding box
@@ -567,6 +671,7 @@ export default function CourseScene({
     const box = new THREE.LineSegments(boxGeo, boxMat);
     box.position.copy(center);
     box.raycast = () => {};
+    box.layers.set(3); // editor-overlay layer: invisible to capture cameras
     scene.add(box);
 
     selectionRef.current = { wireframe, box };
@@ -628,7 +733,6 @@ export default function CourseScene({
 
           surfacesRef.current.push({ mesh: surface.water, geometry, material: surface.material });
         } else if (data.mesh.blendMap) {
-          console.log('LAKE BLEND', data);
 
           const baseMaterial = buildSurfaceMaterial(layer.surface, layer.color);
           const mesh = new THREE.Mesh(geometry, baseMaterial);
@@ -697,8 +801,8 @@ export default function CourseScene({
 
         onLoadingChange?.({ phase: 'surfaces', loaded: i + 1, total: layers.length });
         await yieldToMain();
-      // }
-      }, { concurrency: 10 });      
+
+      }, { concurrency: 12 });
 
       console.log(`${Date.now()} - Finished loading meshes`);
 

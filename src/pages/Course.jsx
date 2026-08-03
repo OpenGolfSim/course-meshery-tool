@@ -44,7 +44,11 @@ import NumberField from '../components/NumberField.jsx';
 import TreeImportDialog from '../dialogs/TreeImportDialog.jsx';
 import ColorField from '../components/ColorField.jsx';
 
-// extend(THREE);
+const PHASE_LABELS = {
+  surfaces: (l) => `Loading surfaces… ${l.loaded}/${l.total}`,
+  trees: (l) => `Planting trees… ${l.loaded}/${l.total}`,
+  lightmap: () => 'Generating shadow map…',
+};
 
 function SetCamera({ controlsRef }) {
   const [set, setSet] = useState(false);
@@ -189,7 +193,9 @@ export default function Course() {
     // -- Capture course image here?
     // const mapImage = captureRef.current?.capture(4096);
     const mapImage = await courseSceneRef.current?.capture(4096);
-    setExportCourseData(old => ({ ...old, mapImage }));
+    // setExportCourseData(old => ({ ...old, mapImage }));
+    const lightMapImage = await courseSceneRef.current?.captureLightmap(4096);
+    setExportCourseData(old => ({ ...old, mapImage, lightMapImage }));
   }
 
   // const loadRawData = async (uri) => {
@@ -517,9 +523,7 @@ export default function Course() {
            >
              <CircularProgress size={16} color="inherit" />
              <Typography variant="body2">
-               {loading.phase === 'surfaces'
-                 ? `Loading surfaces… ${loading.loaded}/${loading.total}`
-                 : `Planting trees… ${loading.loaded}/${loading.total}`}
+              {PHASE_LABELS[loading.phase]?.(loading) ?? 'Loading…'}
              </Typography>
            </Stack>
          )}

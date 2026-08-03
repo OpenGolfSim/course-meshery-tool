@@ -122,7 +122,8 @@ async function encodeTexture(rawImageData, ktx2Options = {}) {
   try {
     encoder.setUASTC(true);
     encoder.setCreateKTX2File(true);
-    encoder.setKTX2SRGBTransferFunc(true);
+    // encoder.setKTX2SRGBTransferFunc(true);
+    encoder.setKTX2SRGBTransferFunc(ktx2Options.srgb !== false);
     encoder.setKTX2UASTCSupercompression(true);
     encoder.setMipGen(true);
     encoder.setSliceSourceImage(0, new Uint8Array(decoded.data), decoded.width, decoded.height, 0);

@@ -334,6 +334,16 @@ export async function write(filePath, project, meshData, imageData) {
   // const finalDoc = await io.readBinary(new Uint8Array(compressedGlb));
   broadcast('export.progress', { type: 'progress', percent: -1, status: 'Compressing textures to KTX2 format' });
 
+  // Lightmap embeds BEFORE compression: it's GPU-sampled (unlike masks /
+  // course map, which are CPU-read and stay PNG below).
+  if (imageData.lightMapImage) {
+    const lm = Buffer.from(imageData.lightMapImage.split('base64,')[1], 'base64');
+    doc.createTexture('light_map')
+      .setMimeType('image/png')
+      .setImage(new Uint8Array(lm))
+      .setExtras({ type: 'light_map', worldSize: project.worldSize });
+  }
+ 
   await compressTextures(
     doc,
     (progress) => {
