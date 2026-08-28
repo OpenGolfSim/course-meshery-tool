@@ -7,6 +7,7 @@ import { PROJECT_FILE_PROTOCOL, TERRAIN_DIR } from '../constants';
 import { broadcast } from './window';
 import { getLidarSummary } from './lidar';
 import { getGeoTIFFSummary } from './imagery';
+import { generateRandomTerrain } from './workers';
 
 const log = logger.scope('TERRAIN');
 
@@ -281,11 +282,39 @@ export async function importTerrainData() {
   return results;
 }
 
-export async function generateTerrain() {
-  const height = 0;
+
+function computeStats(heightmap) {
+  let min = Infinity, max = -Infinity, sum = 0;
+  for (const v of heightmap) {
+    if (v < min) min = v;
+    if (v > max) max = v;
+    sum += v;
+  }
+  const mean = sum / heightmap.length;
+  let varSum = 0;
+  for (const v of heightmap) varSum += (v - mean) ** 2;
+  return { min, max, mean, stddev: Math.sqrt(varSum / heightmap.length) };
+}
+
+
+/**
+ * 
+ * @param {'flat'|'random'} type - The type of terrain to generate (flat or random)
+ * @returns 
+ */
+export async function generateTerrain(type) {
   const size = 4096;
-  const heightmap = new Uint16Array(size * size);
-  heightmap.fill(height);
+  let heightmap;
+  
+  if (type === 'random') {
+    heightmap = await generateRandomTerrain(size);
+  } else {
+    heightmap = new Uint16Array(size * size);
+    const height = 0;
+    // 'flat': Uint16Array is zero-initialized, test if fill is unneeded
+    heightmap.fill(height);
+  }
+  
 
   const generatedFile = `gen_${Date.now().toString(16)}.raw`;
   const imageryFolder = path.join(openProject._workingDir, TERRAIN_DIR);
@@ -302,13 +331,12 @@ export async function generateTerrain() {
     filePath: outputRaw,
     uri: `${PROJECT_FILE_PROTOCOL}:///${path.join(TERRAIN_DIR, generatedFile)}`
   };
+
+  const s = computeStats(heightmap);
   const stats = {
-    min: 0,
-    max: 0,
-    mean: 0,
+    ...s,
     heightScale: 100,
-    relief: 0,
-    stddev: 0,
+    relief: s.max - s.min,
   };
   openProject.raw = raw;
   openProject.stats = stats;

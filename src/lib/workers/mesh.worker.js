@@ -2,7 +2,7 @@ import { expose } from 'threads/worker';
 import PoissonDiskSampling from 'poisson-disk-sampling';
 import { Delaunay } from 'd3-delaunay';
 import poly2tri from 'poly2tri';
-import { lerp, smootherstep, smoothstep } from './utils';
+import { lerp, smootherstep, smoothstep, pointInRing } from './utils';
 import cdt2d from 'cdt2d';
 import cleanPSLG from 'clean-pslg';
 import { SurfacePalette } from '../colors';
@@ -38,7 +38,13 @@ function digMesh(mesh, shape, layer) {
 
     const pt2D = [x, z]; // [x,z] for polygon
     if (isPointInPolygon(pt2D, polygon, holes)) {
-      const dist = distanceToPolygonEdge(pt2D, polygon);
+      // const dist = distanceToPolygonEdge(pt2D, polygon);
+      let dist = distanceToPolygonEdge(pt2D, polygon);
+      for (const hole of (holes || [])) {
+        const hd = distanceToPolygonEdge(pt2D, hole);
+        if (hd < dist) dist = hd;
+      }
+
       if (dist > maxDist) maxDist = dist;
       insideList.push({ idx: i / 3, dist, point: [x, y, z] });
     }
@@ -166,19 +172,6 @@ function triangleArea2D(p0, p1, p2) {
   );
 }
 
-function pointInRing(point, ring) {
-  const [x, y] = point;
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const xi = ring[i][0], yi = ring[i][1];
-    const xj = ring[j][0], yj = ring[j][1];
-    const intersect =
-      ((yi > y) !== (yj > y)) &&
-      x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-12) + xi;
-    if (intersect) inside = !inside;
-  }
-  return inside;
-}
 
 function isPointInPolygon(point, ring, holes) {
   if (!pointInRing(point, ring)) return false;

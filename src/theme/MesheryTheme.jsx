@@ -50,7 +50,7 @@ const darkTheme = createTheme({
       fontWeight: 800
     }
   },
-  spacing: 5,
+  spacing: 4,
   shape: {
     borderRadius: 3
   }

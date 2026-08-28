@@ -1,25 +1,27 @@
 import React, { useMemo, useCallback, useRef, useState, useEffect, useImperativeHandle } from 'react';
-import { Dialog, DialogTitle, DialogActions, Button, Box, Typography, Grid, Stack, TextField, ButtonGroup, IconButton, Divider } from '@mui/material';
+import { Dialog, DialogTitle, DialogActions, Button, Box, Typography, Grid, Stack, TextField, ButtonGroup, IconButton, Divider, MenuItem } from '@mui/material';
 import BrushIcon from '@mui/icons-material/Brush';
 import EraseIcon from '@mui/icons-material/Delete';
 import { useProject } from '../contexts/Project';
 import { Stage, Layer, Image as KonvaImage, Rect } from 'react-konva';
 import NumberField from '../components/NumberField';
-import { SIZE, positionsToMaskData } from '../utils/treeMask';
+import { positionsToMaskData, maskSizeOf } from '../utils/treeMask';
+import { MASK_SIZES } from '../constants';
 import { SidebarAccordionGroup } from '../components/Accordion';
 
 const MAX_UNDO = 30;
 
-// Build a full SIZE×SIZE mask array from a sparse positions Map
-function generateMaskData(positions) {
-  const data = new Uint8ClampedArray(SIZE * SIZE);
-  for (const [i, val] of positions) {
-    data[i] = val;
-  }
-  return data;
-}
+// // Build a full SIZE×SIZE mask array from a sparse positions Map
+// function generateMaskData(positions) {
+//   const data = new Uint8ClampedArray(SIZE * SIZE);
+//   for (const [i, val] of positions) {
+//     data[i] = val;
+//   }
+//   return data;
+// }
 
-function TreeCanvas({ satelliteLayer, svgBuffer, positions, onStrokeEnd, brushSize = 5, brushValue = 255, brushOpacity = 1.0, ref }) {
+// function TreeCanvas({ satelliteLayer, svgBuffer, positions, onStrokeEnd, brushSize = 5, brushValue = 255, brushOpacity = 1.0, ref }) {
+function TreeCanvas({ satelliteLayer, svgBuffer, positions, size, onStrokeEnd, brushSize = 5, brushValue = 255, brushOpacity = 1.0, ref }) {  
   const stageRef = useRef(null);
   const containerRef = useRef(null);
   const maskCanvasRef = useRef(null);
@@ -38,10 +40,13 @@ function TreeCanvas({ satelliteLayer, svgBuffer, positions, onStrokeEnd, brushSi
   useEffect(() => {
     const canvas = document.createElement('canvas');
     canvas.style = { imageRendering: 'pixelated' };
-    canvas.width = SIZE;
-    canvas.height = SIZE;
+    canvas.width = size;
+    canvas.height = size;
     maskCanvasRef.current = canvas;
-  }, []);
+    maskImageRef.current?.image(canvas);
+    setInitialized(false);
+    refreshMask();
+  }, [size]);
 
   useEffect(() => {
     if (!satelliteLayer?.uri) return;
@@ -66,16 +71,16 @@ function TreeCanvas({ satelliteLayer, svgBuffer, positions, onStrokeEnd, brushSi
   useImperativeHandle(ref, () => ({
     clear() {
       const ctx = maskCanvasRef.current.getContext('2d');
-      ctx.clearRect(0, 0, SIZE, SIZE);
+      ctx.clearRect(0, 0, size, size);
       refreshMask();
     },
     applyDiff(diff) {
       const canvas = maskCanvasRef.current;
       const ctx = canvas.getContext('2d');
-      let minX = SIZE, minY = SIZE, maxX = 0, maxY = 0;
+      let minX = size, minY = size, maxX = 0, maxY = 0;
       for (const { i } of diff) {
-        const x = i % SIZE;
-        const y = Math.floor(i / SIZE);
+        const x = i % size;
+        const y = Math.floor(i / size);
         if (x < minX) minX = x;
         if (x > maxX) maxX = x;
         if (y < minY) minY = y;
@@ -86,8 +91,8 @@ function TreeCanvas({ satelliteLayer, svgBuffer, positions, onStrokeEnd, brushSi
       const imgData = ctx.getImageData(minX, minY, w, h);
       const data = imgData.data;
       for (const { i, oldVal } of diff) {
-        const x = i % SIZE - minX;
-        const y = Math.floor(i / SIZE) - minY;
+        const x = i % size - minX;
+        const y = Math.floor(i / size) - minY;
         const ci = (y * w + x) * 4;
         data[ci] = oldVal;
         data[ci + 1] = oldVal;
@@ -100,13 +105,13 @@ function TreeCanvas({ satelliteLayer, svgBuffer, positions, onStrokeEnd, brushSi
     rebuildFromPositions(posMap) {
       const canvas = maskCanvasRef.current;
       const ctx = canvas.getContext('2d');
-      ctx.clearRect(0, 0, SIZE, SIZE);
+      ctx.clearRect(0, 0, size, size);
 
       if (posMap.size === 0) { refreshMask(); return; }
 
-      const { data } = positionsToMaskData(posMap, SIZE);
+      const { data } = positionsToMaskData(posMap, size);
       console.log('data', data);
-      ctx.putImageData(new ImageData(data, SIZE, SIZE), 0, 0);
+      ctx.putImageData(new ImageData(data, size, size), 0, 0);
       refreshMask();
     },
   }));
@@ -120,8 +125,8 @@ function TreeCanvas({ satelliteLayer, svgBuffer, positions, onStrokeEnd, brushSi
 
     const x0 = Math.max(0, Math.floor(cx - r));
     const y0 = Math.max(0, Math.floor(cy - r));
-    const x1 = Math.min(SIZE, Math.ceil(cx + r));
-    const y1 = Math.min(SIZE, Math.ceil(cy + r));
+    const x1 = Math.min(size, Math.ceil(cx + r));
+    const y1 = Math.min(size, Math.ceil(cy + r));
     if (x1 <= x0 || y1 <= y0) return;
 
     const r2 = r * r;
@@ -135,7 +140,7 @@ function TreeCanvas({ satelliteLayer, svgBuffer, positions, onStrokeEnd, brushSi
         const dy = py - cy;
         if (dx * dx + dy * dy > r2) continue;
 
-        const pi = py * SIZE + px;
+        const pi = py * size + px;
         const ci = ((py - y0) * w + (px - x0)) * 4;
 
         const existing = positions.current.get(pi) || 0;
@@ -160,7 +165,7 @@ function TreeCanvas({ satelliteLayer, svgBuffer, positions, onStrokeEnd, brushSi
       }
     }
     ctx.putImageData(imgData, x0, y0);
-  }, [brushSize, brushValue, brushOpacity, positions]);
+  }, [brushSize, brushValue, brushOpacity, positions, size]);
 
   const getCanvasPos = useCallback((e) => {
     const stage = stageRef.current;
@@ -275,17 +280,17 @@ function TreeCanvas({ satelliteLayer, svgBuffer, positions, onStrokeEnd, brushSi
     if (initialized || !stageRef.current || stageSize.width <= 1) return;
     const padding = 40;
     const scale = Math.min(
-      (stageSize.width - padding * 2) / SIZE,
-      (stageSize.height - padding * 2) / SIZE,
+      (stageSize.width - padding * 2) / size,
+      (stageSize.height - padding * 2) / size,
     );
     stageRef.current.scale({ x: scale, y: scale });
     stageRef.current.position({
-      x: (stageSize.width - SIZE * scale) / 2,
-      y: (stageSize.height - SIZE * scale) / 2,
+      x: (stageSize.width - size * scale) / 2,
+      y: (stageSize.height - size * scale) / 2,
     });
     stageRef.current.batchDraw();
     setInitialized(true);
-  }, [stageSize, initialized]);
+  }, [stageSize, initialized, size]);
 
   return (
     <div
@@ -309,14 +314,14 @@ function TreeCanvas({ satelliteLayer, svgBuffer, positions, onStrokeEnd, brushSi
         onContextMenu={(e) => e.evt.preventDefault()}
       >
         <Layer>
-          <Rect x={0} y={0} width={SIZE} height={SIZE} fill="#aaa" />
-          {satImage && <KonvaImage image={satImage} width={SIZE} height={SIZE} />}
-          {svgImage && <KonvaImage image={svgImage} width={SIZE} height={SIZE} />}
+          <Rect x={0} y={0} width={size} height={size} fill="#aaa" />
+          {satImage && <KonvaImage image={satImage} width={size} height={size} />}
+          {svgImage && <KonvaImage image={svgImage} width={size} height={size} />}
           <KonvaImage
             ref={maskImageRef}
             image={maskCanvasRef.current}
-            width={SIZE}
-            height={SIZE}
+            width={size}
+            height={size}
             opacity={0.75}
           />
         </Layer>
@@ -336,6 +341,10 @@ export default function TreeLayerDialog({ onClose, onSave, open, tree }) {
   const [editTree, setEditTree] = useState({});
   const positionsRef = useRef(new Map());
   const canvasRef = useRef(null);
+
+  // Falls back to the layer's own stamp so the canvas gets the right size on
+  // the first render, before the load effect populates editTree.  
+  const maskSize = editTree.maskSize ?? maskSizeOf(tree);
 
   const viewBoxSize = useMemo(() => {
     return project.settings.distance * 1000;
@@ -402,6 +411,18 @@ export default function TreeLayerDialog({ onClose, onSave, open, tree }) {
     setEditTree(old => ({ ...old, randomSeed: newValue }));
   }
 
+  const handleMaskSizeChange = (e) => {
+    const newSize = Number(e.target.value);
+    if (newSize === maskSize) return;
+    // positions are indexed as y * maskSize + x, so existing paint can't be
+    // reinterpreted at a different resolution
+    if (positionsRef.current.size > 0 && !window.confirm(
+      'Changing mask resolution will clear the painted mask for this layer. Continue?'
+    )) return;
+    if (positionsRef.current.size > 0) handleClearData();
+    setEditTree(old => ({ ...old, maskSize: newSize }));
+  };
+
   const handleSave = useCallback(() => {
     const positions = Array.from(positionsRef.current.entries()).map(
       ([i, val]) => ({ i, val })
@@ -432,6 +453,7 @@ export default function TreeLayerDialog({ onClose, onSave, open, tree }) {
       setEditTree({
         name: tree.name,
         randomSeed: tree.randomSeed,
+        maskSize: maskSizeOf(tree),
       });
       console.log('tree.positions', tree.positions);
       setHistory([]);
@@ -527,6 +549,19 @@ export default function TreeLayerDialog({ onClose, onSave, open, tree }) {
             </Box>
             
             <Box>
+              <TextField
+                fullWidth={true}
+                select={true}
+                label="Mask Resolution"
+                value={maskSize}
+                onChange={handleMaskSizeChange}
+              >
+                {MASK_SIZES.map(s => (
+                  <MenuItem key={s} value={s}>{s}</MenuItem>
+                ))}
+              </TextField>
+            </Box>
+            <Box>
               <NumberField
                 fullWidth
                 label="Random Seed"
@@ -598,6 +633,7 @@ export default function TreeLayerDialog({ onClose, onSave, open, tree }) {
             brushSize={brushSize}
             brushValue={brushValue}
             positions={positionsRef}
+            size={maskSize}
             onStrokeEnd={handleStrokeEnd}
           />
         </Box>

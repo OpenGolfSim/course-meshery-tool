@@ -24,10 +24,11 @@ import { hexToRGB01 } from '../colors';
 import { TEXTURE_MAP } from '../textures';
 import { TEXTURES_PATH } from '../app';
 import { CACHE_DIR, PROJECT_FILE_PROTOCOL, RESOURCES_FILE_PROTOCOL } from '../../constants';
-import { openProject, saveProjectSettings } from '../project';
+import { openProject, saveProjectSettings, getSurfaceConfig } from '../project';
+
 import { broadcast } from '../window';
 import { compressTextures, generateFlowMapPNG } from '../workers';
-
+import { maskSizeOf } from '../../utils/treeMask';
 
 const EXTENSIONS = [
   // KHRDracoMeshCompression,
@@ -43,8 +44,11 @@ const EXTENSIONS = [
   EXTMeshGPUInstancing,
 ];
 
+// Cached per document+URI so surfaces sharing files share one texture entry.
+const _texCache = new WeakMap();
 
-function positionsToPngBuffer(positions, size = 512) {
+
+function positionsToPngBuffer(positions, size) {
   const png = new PNG({ width: size, height: size, colorType: 0 }); // grayscale
 
   // pngjs grayscale: 2 bytes per pixel (value + alpha)
@@ -65,12 +69,18 @@ function positionsToPngBuffer(positions, size = 512) {
 // Read a PNG from disk and attach it under a relative URI. gltf-transform
 // will write the bytes to that URI alongside the .gltf when writing.
 function loadTexture(doc, sourceDir, uriPath, name) {
+  let cache = _texCache.get(doc);
+  if (!cache) { cache = new Map(); _texCache.set(doc, cache); }
+  if (cache.has(uriPath)) return cache.get(uriPath);
   const ext = path.extname(uriPath).toLowerCase();
   const mime = ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : 'image/png';
-  return doc.createTexture(name)
+  // return doc.createTexture(name)
+  const tex = doc.createTexture(name)
     .setImage(fs.readFileSync(path.join(sourceDir, uriPath)))
     .setMimeType(mime)
     .setURI(uriPath);
+  cache.set(uriPath, tex);
+  return tex;
 }
 
 // World-space planar UVs from XZ. Y is up.
@@ -84,20 +94,39 @@ function generateUVs(points, tileSize) {
 }
 
 function createSurfaceMaterial(doc, surface, fallbackHex) {
-  const cfg = TEXTURE_MAP[surface] ?? TEXTURE_MAP._default;
+  // const cfg = TEXTURE_MAP[surface] ?? TEXTURE_MAP._default;
+  const cfg = getSurfaceConfig(surface);
   const mat = doc.createMaterial(`surface_${surface}`)
     .setMetallicFactor(0.0)
     .setRoughnessFactor(cfg.roughnessFactor ?? 1.0);
 
-  if (cfg.baseColor) {
+  if (cfg.baseColorFile) {
+    // Custom user texture: absolute path on disk (cfg.baseColor is a
+    // renderer-only protocol URL here — never readable by the export)
+    mat.setBaseColorTexture(
+      loadTexture(doc, path.dirname(cfg.baseColorFile), path.basename(cfg.baseColorFile), `${surface}_albedo`)
+    );
+    if (cfg?.tint) {
+      mat.setBaseColorFactor(hexToRGB01(new Color(cfg.tint).getHexString()));
+    }
+  } else if (cfg.baseColor) {
     mat.setBaseColorTexture(loadTexture(doc, TEXTURES_PATH, cfg.baseColor, `${surface}_albedo`));
     if (cfg?.tint) {
       mat.setBaseColorFactor(hexToRGB01(new Color(cfg.tint).getHexString()));
     }
+  } else if (cfg?.tint) {
+    // Textureless surface: tint IS the color (matches editor preview)
+    mat.setBaseColorFactor(hexToRGB01(new Color(cfg.tint).getHexString()));
   } else if (fallbackHex) {
     mat.setBaseColorFactor(hexToRGB01(fallbackHex));
   }
-  if (cfg.normal) {
+
+  if (cfg.normalFile) {
+    mat.setNormalTexture(
+      loadTexture(doc, path.dirname(cfg.normalFile), path.basename(cfg.normalFile), `${surface}_normal`)
+    );
+  } else if (cfg.normal) {
+
     mat.setNormalTexture(loadTexture(doc, TEXTURES_PATH, cfg.normal, `${surface}_normal`));
   }
   if (cfg.orm) {
@@ -163,7 +192,12 @@ export function meshNodeForLayer(doc, buffer, layer, mesh, cfg = {}, material) {
       name: layer.name,
       id: layer.id,
       tileSize: cfg?.tileSize,
+      grassSettings: cfg?.grass,
       blendSettings: layer.blending,
+      neighbor: layer.neighbor,
+      neighborTileSize: TEXTURE_MAP[layer.neighbor]?.tileSize,
+      neighborTint: TEXTURE_MAP[layer.neighbor]?.tint,
+
     })
     .setMesh(finalMesh);
   
@@ -225,13 +259,26 @@ export async function write(filePath, project, meshData, imageData) {
 
     const surface = layer.surface ?? '_default';
     const cfg = TEXTURE_MAP[surface] ?? TEXTURE_MAP._default;
-    const matKey = TEXTURE_MAP[surface] ? surface : `_default:${layer.color}`;
+    // const matKey = TEXTURE_MAP[surface] ? surface : `_default:${layer.color}`;
+
+    // Blending layers embed their neighbor's albedo on their own material
+    // (emissive slot, factor 0 = renders as nothing), so runtime blending
+    // needs no scene lookups. Material is keyed per (surface, neighbor).
+    const blendNeighbor = layer.blending?.enabled ? layer.neighbor : null;
+    const matKey = (TEXTURE_MAP[surface] ? surface : `_default:${layer.color}`) + (blendNeighbor ? `+${blendNeighbor}` : '');
 
     console.log(`Exporting layer: ${layer.id}`);
 
     let material = materialMap.get(matKey);
     if (!material) {
       material = createSurfaceMaterial(doc, surface, layer.color);
+      const nCfg = blendNeighbor && TEXTURE_MAP[blendNeighbor];
+      if (nCfg?.baseColor) {
+        material.setEmissiveTexture(
+          loadTexture(doc, TEXTURES_PATH, nCfg.baseColor, `${blendNeighbor}_albedo`)
+        );
+      }
+
       materialMap.set(matKey, material);
     }
     
@@ -286,6 +333,7 @@ export async function write(filePath, project, meshData, imageData) {
             treeLayerId: tree.id,
             configId: config.id,
             density: config.density,
+            minDistance: config.minDistance,
             randomSeed: config.randomSeed,
             scaleRange: config.scaleRange,
           }
@@ -316,6 +364,7 @@ export async function write(filePath, project, meshData, imageData) {
     createdAt: (new Date()).toISOString(),
     courseName: openProject.name,
     courseSize: openProject.settings.distance * 1000,
+    gameMode: openProject.gameSettings.gameMode,
     sceneSettings: openProject.scene
   });
 
@@ -364,7 +413,7 @@ export async function write(filePath, project, meshData, imageData) {
 
   if (project.trees?.length) {
     for (const tree of project.trees) {
-      const pngBuffer = positionsToPngBuffer(tree.positions);
+      const pngBuffer = positionsToPngBuffer(tree.positions, maskSizeOf(tree));
       const texture = doc.createTexture(tree.id)
         .setMimeType('image/png')
         .setImage(new Uint8Array(pngBuffer))

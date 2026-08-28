@@ -21,36 +21,29 @@ export const defaultSettings = {
   base: {
     spacing: 5,
     // spacingEdge: 0,
-    blend: 0,
     blending: { ...defaultBlend },
     dig: { ...defaultDig }
   },
   deep_rough: {
-    spacing: 4,
+    spacing: 3,
     // spacingEdge: 0,
-    blend: 0.5,
     blending: { ...defaultBlend },
     dig: { ...defaultDig }
   },
   rough: {
-    spacing: 3,
+    spacing: 1.5,
     // spacingEdge: 0,
-    blend: 0.5,
     blending: { ...defaultBlend },
     dig: { ...defaultDig }
   },
   fairway: {
     spacing: 1,
-    // spacingEdge: 0.3,
-    blend: 1,
     blending: { ...defaultBlend },
-    // blending: { enabled: true, distance: 0.25, spacing: 0.5 },
-    dig: { ...defaultDig }
+    dig: { ...defaultDig },
   },
   tee: {
     spacing: 0.3,
     // spacingEdge: 0.2,
-    blend: 0.3,
     // blending: { enabled: true, distance: 0.1, spacing: 0.1 },
     blending: { ...defaultBlend },
     dig: { ...defaultDig }
@@ -58,46 +51,34 @@ export const defaultSettings = {
   first_cut: {
     spacing: 0.5,
     // spacingEdge: 0.5,
-    blend: 0.5,
     // blending: { enabled: true, distance: 0.25, spacing: 0.5 },
-    blending: { ...defaultBlend },
+    // blending: { ...defaultBlend },
+    blending: {
+      enabled: false,
+      distance: 0.5,       // narrow blend zone
+      noiseFreq: 0.4,      // gentle undulation
+      noiseAmp: 0.2,      // subtle edge wander
+    },    
     dig: { ...defaultDig }
   },
   green: {
     spacing: 0.5,
     // spacingEdge: 0.3,
-    blend: 0.5,
     blending: { ...defaultBlend },
-    // blending: {
-    //   enabled: true,
-    //   distance: 1.0,       // narrow blend zone
-    //   noiseFreq: 0.9,      // gentle undulation
-    //   noiseAmp: 0.4,      // subtle edge wander
-    //   lipDarken: 0,
-    //   dirtTint: '#5a4a32',
-    //   dirtWidth: 0,
-    //   dirtStrength: 0,
-    //   sandNoiseFreq: 0.15,          // scale of sand color variation
-    //   sandVariationStrength: 0.3,    // how much dark patches show (0-1)
-    //   sandLowDarken: 0.25,           // how much lower spots darken (0-1)
-    //   sandBaseHeight: 0,             // reference height — set to bunker floor Y
-    // },    
-    dig: { ...defaultDig }
+    dig: { ...defaultDig },
   },
   fringe: {
     spacing: 0.6,
     // spacingEdge: 0.3,
-    blend: 0.5,
     // blending: { enabled: true, distance: 0.25, spacing: 0.25 },
     blending: { ...defaultBlend },
     dig: { ...defaultDig }
   },
   sand: {
     spacing: 0.1,
-    blend: 0.5,
     blending: {
       enabled: true,
-      distance: 0.45,       // narrow blend zone
+      distance: 0.7,       // narrow blend zone
       noiseFreq: 0.8,      // gentle undulation
       noiseAmp: 0.8,      // subtle edge wander
       lipDarken: 0.35,
@@ -113,15 +94,15 @@ export const defaultSettings = {
     dig: {
       enabled: true,
       depth: 0.25,
-      distance: 0.25,
+      distance: 0.5,
       curve: 'bezier',
-      curvePoints: [[0, 1], [0, 0.75], [0.25, 0], [1, 0]]
+      curvePoints: [[0, 1], [0.3, 1], [0.05, 0], [1, 0]]
+      // curvePoints: [[0, 1], [0, 0.75], [0.25, 0], [1, 0]]
     }
   },
   water: {
     spacing: 2.5,
     // spacingEdge: 0.5,
-    blend: 0.5,
     // blending: { enabled: true, distance: 0.2, spacing: 0.5 },
     blending: {
       enabled: true,
@@ -134,12 +115,18 @@ export const defaultSettings = {
       dirtStrength: 0.5,
     },
     // blending: { ...defaultBlend },
-    dig: { enabled: true, depth: 6, distance: 0.1, curve: 'bezier', curvePoints: [[0, 1], [0.05, 1], [0.5, 0], [1, 0]] }
+    dig: {
+      enabled: true,
+      depth: 6,
+      distance: 0.1,
+      curve: 'bezier',
+      curvePoints: [[0, 1], [0.8, 1], [0.4, 0], [1, 0]]
+      // curvePoints: [[0, 1], [0.05, 1], [0.5, 0], [1, 0]]
+    }
   },
   river: {
     spacing: 0.2,
     // spacingEdge: 0.25,
-    blend: 0.5,
     blending: {
       enabled: true,
       distance: 0.25,       // narrow blend zone
@@ -154,19 +141,17 @@ export const defaultSettings = {
     dig: { enabled: true, depth: 0.5, distance: 0.25, curve: 'bezier', curvePoints: [[0, 1], [0.05, 1], [0.5, 0], [1, 0]] }
   },
   concrete: {
-    spacing: 2,
+    spacing: 0.2,
     // spacingEdge: 2,
-    blend: 0.5,
     blending: {
-      enabled: true,
+      enabled: false,
       distance: 0.2,
     },
-    dig: { ...defaultDig }
+    dig: { enabled: true, depth: -0.2, distance: 0.15, curve: 'linear' }
   },
   dirt: {
     spacing: 2,
     // spacingEdge: 0.5,
-    blend: 0.5,
     // blending: { enabled: true, distance: 0.25, spacing: 0.5 },
     blending: { ...defaultBlend },
     dig: { ...defaultDig }
@@ -174,14 +159,12 @@ export const defaultSettings = {
   plane_river: {
     spacing: 1,
     // spacingEdge: 0,
-    blend: 0,
     blending: { ...defaultBlend },
     dig: { ...defaultDig }
   },
   plane_lake: {
     spacing: 2,
     // spacingEdge: 0,
-    blend: 0,
     blending: { ...defaultBlend },
     dig: { ...defaultDig }
   },
@@ -190,7 +173,6 @@ export const defaultSettings = {
     // spacingEdge: 0,
     // blend: 0,
     // blending: { ...defaultBlend },
-    blend: 0.5,
     // blending: { ...defaultBlend },
     blending: {
       enabled: true,
@@ -207,5 +189,30 @@ export const defaultSettings = {
       sandBaseHeight: 0,             // reference height — set to bunker floor Y
     },
     dig: { ...defaultDig }
-  }
+  },
+  custom1: {
+    spacing: 2,
+    blending: {
+      enabled: false,
+      distance: 0.1
+    },
+    dig: { ...defaultDig }
+  },
+  custom2: {
+    spacing: 2,
+    blending: {
+      enabled: false,
+      distance: 0.1
+    },
+    dig: { ...defaultDig }
+  },
+  custom3: {
+    spacing: 2,
+    blend: 0,
+    blending: {
+      enabled: false,
+      distance: 0.1
+    },
+    dig: { ...defaultDig }
+  },
 }

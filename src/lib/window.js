@@ -97,6 +97,24 @@ export function setupProtocolHandler() {
           'content-type': 'image/svg+xml'
         }
       });
+    } else if (key.startsWith('custom-texture')) {
+      // custom-texture/<basename> → find the surface record referencing it.
+      // URLs are built from path.basename(), so match on basename here too.
+      const name = decodeURIComponent(key.split('/')[1] ?? '');
+      const surfaces = openProject.surfaces || {};
+      for (const record of Object.values(surfaces)) {
+        for (const fileKey of ['baseColorFile', 'normalFile']) {
+          const filePath = record?.[fileKey];
+          if (filePath && path.basename(filePath) === name) {
+            return net.fetch(pathToFileURL(filePath).toString());
+          }
+        }
+      }
+      return new Response('Not found', {
+        status: 404,
+        headers: { 'content-type': 'text/plain' },
+      });
+
     } else if (key.startsWith('hdri')) {
       console.log('load hdri', openProject.scene.sky.hdri);
       if (openProject.scene.sky.hdri.filePath){
@@ -110,16 +128,6 @@ export function setupProtocolHandler() {
           }
         });
       }
-    // } else if (key.includes(TREE_IMPORT_PREFIX)) {
-    //   console.log(`Tree import: ${key}`);
-    //   const treeId = key.slice(TREE_IMPORT_PREFIX.length + 1, -4);
-    //   console.log(`Tree id: ${treeId}`);
-    //   const asset = findTreeConfigById(treeId);
-    //   console.log(`Asset id`, asset);
-    //   if (asset?.filePath) {
-    //     const fetchFile = pathToFileURL(asset.filePath).toString();
-    //     return net.fetch(fetchFile);
-    //   }
     }
 
     if (openProject._workingDir){

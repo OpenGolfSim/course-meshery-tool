@@ -31,7 +31,7 @@ export default function SurfaceSettings(props) {
   const [curveEditorOpen, setCurveEditorOpen] = useState(false);
 
   const showDig = useMemo(() => {
-    return ['water','sand','river'].includes(layer.surface);
+    return ['water', 'sand', 'river', 'concrete'].includes(layer.surface);
   }, [layer.surface]);
 
   const onSpacingChange = (newValue) => {
@@ -43,6 +43,7 @@ export default function SurfaceSettings(props) {
   }
 
   const handleCurveEditClose = (points) => {
+    console.log('Save points', points);
     setTempPrefs(old => ({ ...old, dig: { ...old.dig, curvePoints: points } }));
     setCurveEditorOpen(false);
   }
@@ -93,13 +94,19 @@ export default function SurfaceSettings(props) {
         
         {showDig ? (
           <React.Fragment>
+            <Switch
+              label="Dig Enabled"
+              checked={!!tempPrefs.dig.enabled}
+              onChange={(event) => onDigChange('enabled', event.target.checked)}
+            />
+            {tempPrefs.dig.enabled ? 'yes': 'no'}
             <NumberField
               fullWidth={true}
               disabled={disabled}
               label="Dig Depth"
               value={tempPrefs.dig.depth}
               size="small"
-              min={0.05}
+              min={-8}
               max={8}
               step={0.05}
               onChange={(newValue) => onDigChange('depth', newValue)}
@@ -110,11 +117,33 @@ export default function SurfaceSettings(props) {
               label="Dig Distance"
               value={tempPrefs.dig.distance}
               size="small"
-              min={0.1}
+              min={0}
               max={6}
-              step={0.1}
+              step={0.05}
               onChange={(newValue) => onDigChange('distance', newValue)}
             />
+
+            <Stack direction="row">
+              <TextField
+                select={true}
+                value={tempPrefs.dig.curve}
+                onChange={(e) => onDigChanged('curve', e.target.value)}
+                fullWidth={true}
+                size="small"
+              >
+                <MenuItem value="smooth">Smoothstep</MenuItem>
+                <MenuItem value="linear">Linear</MenuItem>
+                <MenuItem value="sine">Sine</MenuItem>
+                <MenuItem value="bezier">Bezier</MenuItem>
+              </TextField>
+
+              <IconButton
+                disabled={tempPrefs.dig.curve !== 'bezier'}
+                onClick={() => setCurveEditorOpen(true)}
+              >
+                <RouteIcon />
+              </IconButton>
+            </Stack>
           </React.Fragment>
         ) : null}
         {/* <pre>{JSON.stringify(tempPrefs, null, 1)}</pre> */}

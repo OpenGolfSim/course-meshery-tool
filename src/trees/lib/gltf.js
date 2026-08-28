@@ -1,4 +1,4 @@
-import { mergeDocuments, flatten, prune, dedup } from "@gltf-transform/functions";
+import { mergeDocuments, flatten, prune, dedup, transformMesh } from '@gltf-transform/functions';
 
 // export async function addGLB(doc, glbPath, lodNode, name, io) {
   // const src = await io.read(glbPath);
@@ -11,7 +11,14 @@ export async function addGLB(doc, glbSource, lodNode, name, io) {
   // matching how your OBJ path emits it. (Blender's +Y-up export usually leaves
   // transforms at identity, but this makes it bulletproof.)
   await src.transform(flatten());
-
+  for (const scene of src.getRoot().listScenes()) {
+    for (const node of scene.listChildren()) {
+      const mesh = node.getMesh();
+      if (!mesh) continue;
+      transformMesh(mesh, node.getMatrix());
+      node.setMatrix([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+    }
+  }
   // Merge brings in all meshes/materials/textures/accessors as NEW props in `doc`.
   // Snapshot first so we can find exactly what got added (version-robust; doesn't
   // rely on mergeDocuments' return value).

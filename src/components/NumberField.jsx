@@ -48,6 +48,7 @@ function NumberField({ id: idProp, label, error, onChange, fullWidth, size = 'me
         render={(props, state) => (
           <OutlinedInput
             label={label}
+            size={size}
             fullWidth={fullWidth}
             inputRef={props.ref}
             value={state.inputValue}

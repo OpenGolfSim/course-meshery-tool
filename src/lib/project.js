@@ -7,15 +7,26 @@ import { broadcast, mainWindow } from './window';
 import { ensureRecent } from './app';
 import { generateSVG, geoJSONToSvgPaths, parseSVG } from './svg';
 import { parseRaw } from './heightmap';
-import { getHeightMapStats } from './terrain';
-import { buildCourseCDT, generateFlowMapPNG, layerToMesh, smoothLakeShores, smoothRiverBeds, smoothTerrain, svgToCourseLayers } from './workers';
-import { IMAGERY_DIR, PROJECT_FILE_PROTOCOL, RESOURCES_FILE_PROTOCOL, TERRAIN_DIR, TREE_IMPORT_PREFIX } from '../constants';
+import { generateTerrain, getHeightMapStats } from './terrain';
+import { generateFlowMapPNG, layerToMesh, smoothLakeShores, smoothRiverBeds, smoothTerrain, svgToCourseLayers } from './workers';
+import {
+  DEFAULT_MASK_SIZE,
+  IMAGERY_DIR,
+  LEGACY_MASK_SIZE,
+  PROJECT_FILE_PROTOCOL,
+  RESOURCES_FILE_PROTOCOL,
+  TERRAIN_DIR,
+  TREE_IMPORT_PREFIX
+} from '../constants';
 import { getDateId } from './utils';
 import { randomUUID } from 'crypto';
 import { buildShapeCache, parseShapeCache } from './cache/shapes';
 import { buildMeshCache, parseMeshCache } from './cache/meshes';
+import { TEXTURE_MAP } from './textures';
 
 const log = logger.scope('PROJECT');
+
+const GAME_MODE = { course: 1, minigolf: 2 };
 
 const defaultProjectSettings = {
   centerPoint: null,
@@ -39,13 +50,19 @@ const defaultProjectTemplate = {
   coursePaths: null,
   settings: defaultProjectSettings,
   holes: new Map(),
+  gameSettings: {
+    gameMode: 'course',
+  },
   scene: {
     sky: {
       type: 'clouds',
       radius: 800,
       hdri: {
         filePath: null,
-        url: null
+        url: null,
+        rotation: 0,
+        environmentIntensity: 0.15,
+        backgroundIntensity: 1.0,
       },
       clouds: {
         density: 0.4,
@@ -58,11 +75,23 @@ const defaultProjectTemplate = {
       }
     },
     sun: {
+      color: '#ffffee',
       elevation: 40,   // degrees above horizon; 90 = noon overhead
       azimuth: 225     // compass direction light comes from; 225 = southwest
     },
+    ocean: {
+      enabled: false,
+      yOffset: 0
+    },
+    bloom: {
+      enabled: true,
+      strength: 0.12,
+      radius: 0.1,
+      threshold: 0.25,
+    },
   },
-  trees: []
+  trees: [],
+  surfaces: {}
 };
 
 export let openProject = { ...defaultProjectTemplate };
@@ -264,7 +293,7 @@ async function updateSVGData() {
     throw new Error('SVG must be square!');
   }
   openProject._layers = layers;
-  
+  resolveSurfaces();
   broadcast('project.opened', openProject);
 }
 
@@ -347,6 +376,17 @@ export async function loadProjectFile(filePath) {
         config.name = path.basename(config.filePath);
       }
     });
+    if (!treeLayer.maskSize) {
+      let max = -1;
+      for (const { i } of treeLayer.positions || []) {
+        if (i > max) max = i;
+      }
+      let inferred = LEGACY_MASK_SIZE;
+      while (inferred * inferred <= max) inferred *= 2;
+      treeLayer.maskSize = inferred;
+      log.info(`Stamped maskSize ${inferred} on tree layer ${treeLayer.id} (max index ${max})`);
+    }
+
   });
   // openProject = {
   //   name: filePathInfo.name,
@@ -397,6 +437,7 @@ export async function open() {
 
 export async function saveProjectSettings() {
   if (!openProject._filePath) {
+    console.warn('[PROJECT] saveProjectSettings skipped: no _filePath (project never saved)');
     return;
   }
   const outputProject = _.omitBy(openProject, (value, key) => key.startsWith('_'));
@@ -451,6 +492,7 @@ export async function createProjectFolder(_event) {
 }
 
 export function getOpenProject() {
+  if (!openProject?._surfaces) resolveSurfaces();
   // fields starting with $ should stay server-side
   return _.omitBy(openProject, (value, key) => key.startsWith('$'));
 }
@@ -642,6 +684,7 @@ export async function addTreeLayer() {
       name: `Layer ${(openProject.trees.length || 0) + 1}`,
       id: `layer-${randomUUID()}`,
       randomSeed: 12345,
+      maskSize: DEFAULT_MASK_SIZE,
       positions: [],
       treeConfigs: []
     }
@@ -654,7 +697,7 @@ export async function updateTreeLayer(layerId, layerUpdate) {
   const toUpdate = openProject.trees.findIndex(layer => layer.id === layerId);
   if (toUpdate > -1) {
     console.log(`updating index:${toUpdate}, id:${layerId}`, layerUpdate);
-    openProject.trees[toUpdate] = _.merge({ ...openProject.trees[toUpdate] }, layerUpdate);
+    openProject.trees[toUpdate] = { ...openProject.trees[toUpdate], ...layerUpdate };
   }
   await saveProjectSettings();
   return openProject;
@@ -785,6 +828,16 @@ export async function updateHoleByNumber(holeNumber, update) {
   broadcast('project.opened', openProject); 
 }
 
+export async function updateGameSettings(update) {
+  // const updatedScene = _.merge({ ...openProject.scene }, update);
+  const changed = !_.isEqual(update, openProject.gameSettings);
+  if (changed) {
+    openProject.gameSettings = { ...openProject.gameSettings, ...update };
+    console.log('Project gameSettings changed!', openProject.gameSettings);
+    await saveProjectSettings();
+  }
+  return openProject.gameSettings;
+}
 export async function updateScene(update) {
   // const updatedScene = _.merge({ ...openProject.scene }, update);
   const changed = !_.isEqual(update, openProject.scene);
@@ -804,7 +857,7 @@ export async function updateScene(update) {
 
 export async function selectHDRI() {
   const result = await dialog.showOpenDialog({
-    filters: [{ extensions: ['.exr'], name: 'EXR Files' }]
+    filters: [{ extensions: ['exr'], name: 'EXR Files' }]
   });
   if (result.canceled || !result.filePaths?.length) {
     return;
@@ -812,6 +865,7 @@ export async function selectHDRI() {
   const [filePath] = result.filePaths;
   const name = path.basename(filePath);
   openProject.scene.sky.hdri = {
+    ...openProject.scene.sky?.hdri || {},
     filePath,
     name,
     url: `${PROJECT_FILE_PROTOCOL}://hdri/${name}`,
@@ -819,4 +873,92 @@ export async function selectHDRI() {
   console.log('Selected HDRI:', openProject.scene);
   await saveProjectSettings();
   return openProject.scene;
+}
+
+export async function saveCapture(dataUrl) {
+  const result = await dialog.showSaveDialog({
+    title: 'Save Poster',
+    defaultPath: path.join(openProject._workingDir, `course-${Date.now()}.jpg`),
+    filters: [{ name: 'JPEG Image', extensions: ['jpg', 'jpeg'] }],
+  });
+  if (result.canceled || !result.filePath) return { saved: false };
+  const base64 = dataUrl.split('base64,')[1];
+  fs.writeFileSync(result.filePath, Buffer.from(base64, 'base64'));
+  return { saved: true, filePath: result.filePath };
+
+}
+
+// Deep merge; null overrides mean "use default", arrays replace wholesale
+const surfaceMergeRules = (baseValue, overrideValue) => {
+  if (overrideValue === null) return baseValue;
+  if (Array.isArray(overrideValue)) return overrideValue;
+  return undefined; // fall through to lodash's default deep merge
+};
+
+function mergeSurface(surface) {
+  const base = TEXTURE_MAP[surface] ?? TEXTURE_MAP._default;
+  // const o = openProject?.settings?.surfaceOverrides?.[surface];
+  const o = openProject?.surfaces?.[surface];
+  if (!o) return base;
+  // mergeWith mutates its first arg — pass {} so TEXTURE_MAP stays pristine
+  return _.mergeWith({}, base, o, surfaceMergeRules);
+}
+
+export function resolveSurfaces() {
+  if (!openProject) return;
+  // Only surfaces actually used by this course: each layer's surface plus
+  // the outer terrain plane ('base').
+  const used = new Set(['base']);
+  for (const layer of openProject._layers || []) {
+    if (layer.surface) used.add(layer.surface);
+  }
+  openProject._surfaces = Object.fromEntries(
+    [...used].filter((s) => TEXTURE_MAP[s]).map((s) => [s, mergeSurface(s)])
+  );
+}
+
+export function getSurfaceConfig(surface) {
+  if (!openProject?._surfaces) resolveSurfaces();
+  return openProject?._surfaces?.[surface] ?? TEXTURE_MAP[surface] ?? TEXTURE_MAP._default;
+}
+
+export async function updateSurfaces(update) {
+  openProject.surfaces = _.merge({ ...openProject.surfaces }, update);
+  console.log('openProject.surfaces', openProject.surfaces);
+  resolveSurfaces();
+  await saveProjectSettings();
+  return { surfaces: openProject.surfaces, _surfaces: openProject._surfaces };
+}
+
+export async function selectSurfaceTexture(surface, textureType = 'color') {
+  const result = await dialog.showOpenDialog({
+    filters: [{ extensions: ['png', 'jpg', 'jpeg'], name: 'Image File' }]
+  });
+  if (result.canceled || !result.filePaths?.length) {
+    return;
+  }
+  const [filePath] = result.filePaths;
+  const name = path.basename(filePath);
+  const url = `${PROJECT_FILE_PROTOCOL}://custom-texture/${name}`;
+
+  if (textureType === 'normal') {
+    return updateSurfaces({
+      [surface]: {
+        normalFile: filePath,
+        normal: url,
+      },
+    });
+  } else {
+    return updateSurfaces({
+      [surface]: {
+        baseColorFile: filePath,
+        baseColor: url,
+      },
+    });
+  }  
+}
+export async function generateHeightMap(type) {
+  const res = await generateTerrain(type);
+  await refreshRawData();
+  return res;
 }

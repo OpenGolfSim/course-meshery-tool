@@ -20,6 +20,7 @@ import {
   Paper,
   Slider,
   Stack,
+  TextField,
   Tooltip,
   Typography
 } from "@mui/material";
@@ -269,7 +270,8 @@ export default function Map() {
     removeHole,
     addTree,
     removeTree,
-    updateTree
+    updateTree,
+    updateGameSettings
     // lidarFile,
   } = useProject();
   const containerRef = useRef(null);
@@ -541,6 +543,11 @@ export default function Map() {
     const halfMeters = sizeMeters / 2;
     const clickLng = clickLatLng.lng;
     const clickLat = clickLatLng.lat;
+    if (!centerPoint) {
+      console.warn('No center point found!');
+      return;
+    }
+    console.log('centerPoint', centerPoint);
     // X axis: horizontal distance in meters (east = positive)
     const xDist = turf.distance(
       turf.point([centerPoint.lng, centerPoint.lat]),
@@ -565,38 +572,8 @@ export default function Map() {
       // x: Math.max(-halfMeters, Math.min(halfMeters, x)),
       // y: Math.max(-halfMeters, Math.min(halfMeters, y))
     };
-  }, [project.settings.centerPoint]);
-  
-  const handleMapClick = useCallback((evt) => {
-    if (isEditingCenter) {
-      console.log('map clicked: ', isEditingCenter, evt.latlng);
-      setIsEditingCenter(false);
-      setCenterPoint(evt.latlng);
-      return;
-    }
-    if (isEditingHolePoint) {
-      const position = latLngToLocalXY(evt.latlng);
-      editHole(isEditingHolePoint.hole, {
-        [isEditingHolePoint.waypoint]: { latlng: L.GeoJSON.latLngToCoords(evt.latlng), position }
-      });
-      // e.layer.getElement().classList.toggle('hole-marker-edit');      
-      setIsEditingHolePoint(null);
-      console.log('clicked in hole edit mode: ', isEditingHolePoint, evt.latlng, position);
-    }
-  }, [isEditingCenter, isEditingHolePoint]);
+  }, [project.settings]);
 
-  const handleLayerChange = (event) => {
-    console.log("Base layer changed to: " + event.name);
-    window.localStorage.setItem(LOCAL_STORAGE_BASE_LAYER, event.name);
-  }
-
-  const handleZoomChange = (e) => {
-    const newZoom = e.target.getZoom();
-    setZoomLevel(newZoom);
-  }
-  const handleOpenTerrainEdit = () => {
-    setTerrainEditDialogOpen(true);
-  }
   const setCenterPoint = useCallback((latlng) => {
     if (centerPointLayer.current) {
       mapRef.current.removeLayer(centerPointLayer.current);
@@ -616,6 +593,38 @@ export default function Map() {
     });
   }, [project.settings.centerPoint, project.settings.distance]);
 
+  
+  const handleMapClick = useCallback((evt) => {
+    console.log(`handleMapClick - shiftKey:${evt.originalEvent.shiftKey},isEditingCenter:${isEditingCenter},isEditingHolePoint:${isEditingHolePoint}`, evt.latlng);
+    const autoSetCenter = !project.dem && evt.originalEvent.shiftKey;
+    if (isEditingCenter || autoSetCenter) {
+      setIsEditingCenter(false);
+      setCenterPoint(evt.latlng);
+      return;
+    }
+    if (isEditingHolePoint) {
+      const position = latLngToLocalXY(evt.latlng);
+      editHole(isEditingHolePoint.hole, {
+        [isEditingHolePoint.waypoint]: { latlng: L.GeoJSON.latLngToCoords(evt.latlng), position }
+      });
+      // e.layer.getElement().classList.toggle('hole-marker-edit');      
+      setIsEditingHolePoint(null);
+      console.log('clicked in hole edit mode: ', isEditingHolePoint, evt.latlng, position);
+    }
+  }, [project.dem, isEditingCenter, isEditingHolePoint, setCenterPoint, latLngToLocalXY, editHole]);
+
+  const handleLayerChange = (event) => {
+    console.log("Base layer changed to: " + event.name);
+    window.localStorage.setItem(LOCAL_STORAGE_BASE_LAYER, event.name);
+  }
+
+  const handleZoomChange = (e) => {
+    const newZoom = e.target.getZoom();
+    setZoomLevel(newZoom);
+  }
+  const handleOpenTerrainEdit = () => {
+    setTerrainEditDialogOpen(true);
+  }
   const availableLidar = useMemo(() => {
     if (!project.settings.centerPoint?.lng || !project.settings.centerPoint?.lat) {
       return;
@@ -814,6 +823,9 @@ export default function Map() {
       removeHole(hole.number);
     }
   }
+  const handleGameModeChange = async (event) => {
+    await updateGameSettings({ gameMode: event.target.value });
+  }
   const handleZoomToHole = (hole) => {
     console.log('removhandleZoomToHolee', hole);
     const points = [hole.tee?.latlng, hole.aim?.latlng, hole.pin?.latlng]
@@ -876,16 +888,6 @@ export default function Map() {
     updateOutlineBox();
   }, [project.settings.centerPoint, project.settings.distance, project.holes]);
 
-  useEffect(() => {
-    if (!mapRef.current) {
-      return;
-    }
-    mapRef.current.getContainer().style.cursor = (isEditingCenter || isEditingHolePoint) ? 'crosshair' : ''; // Change map cursor
-    mapRef.current.on('click', handleMapClick);
-    return () => {
-      mapRef.current.off('click', handleMapClick);
-    }
-  }, [isEditingCenter, isEditingHolePoint]);
 
   useEffect(() => {
     if (!mapRef.current || !project.hillShade?.uri) {
@@ -924,12 +926,13 @@ export default function Map() {
         zoom: project.settings.centerPoint?.lat ? 15 : 5,
         minZoom: 3,
         maxZoom: 22,
+        boxZoom: false,
         layers: mapLayers
     });
     
     mapRef.current.on('zoomend', handleZoomChange);
     mapRef.current.on('baselayerchange', handleLayerChange)
-
+    
     L.control.layers(tileLayers).addTo(mapRef.current);
 
     drawnItems.current.addTo(mapRef.current);
@@ -1107,6 +1110,21 @@ export default function Map() {
     }
   }, [isEditingHolePoint]);
 
+
+  useEffect(() => {
+    if (!mapRef.current) {
+      console.log('No map ref yet');
+      return;
+    }
+    mapRef.current.getContainer().style.cursor = (isEditingCenter || isEditingHolePoint) ? 'crosshair' : ''; // Change map cursor
+    
+    console.log(`Rebind click handler: isEditingCenter:${isEditingCenter}, isEditingHolePoint:${isEditingHolePoint}`);
+    mapRef.current.on('click', handleMapClick);
+    return () => {
+      mapRef.current.off('click', handleMapClick);
+    }
+  }, [handleMapClick]);
+  
   return (
     <React.Fragment>
       <Box sx={{ display: 'flex', flexDirection: 'row', height: '100%' }}>
@@ -1127,7 +1145,6 @@ export default function Map() {
             >
               <AccordionSummary id="course-area-header">
                 <AccordionHeader sx={{ flex: 1, alignContent: 'center' }} variant="h5" color="textSecondary">Course Area</AccordionHeader>
-                {/* {project.settings.centerPoint ? (<CheckIcon />) : null} */}
               </AccordionSummary>
               <AccordionDetails>
                 <Stack sx={{ p: 2 }} spacing={4}>
@@ -1204,10 +1221,6 @@ export default function Map() {
                   ) : null}
                   
 
-                  {/* <Stack direction="row" alignItems="center" spacing={2}>
-                    <Typography sx={{ flexShrink: 0 }}>{settings.distance} km</Typography>
-                    <Slider />
-                  </Stack> */}
                 </Stack>
 
               </AccordionDetails>
@@ -1459,6 +1472,21 @@ export default function Map() {
               <AccordionDetails
                 sx={{ overflowY: 'auto' }}
               >
+                <Box sx={{ padding: 2 }}>
+                  <TextField
+                    label="Game Mode"
+                    select={true}
+                    fullWidth={true}
+                    size="small"
+                    value={project.gameSettings.gameMode}
+                    onChange={handleGameModeChange}
+                  >
+                    <MenuItem value="course">Course</MenuItem>
+                    <MenuItem value="range">Range</MenuItem>
+                    <MenuItem value="practice">Practice</MenuItem>
+                    <MenuItem value="minigolf">Minigolf</MenuItem>
+                  </TextField>
+                </Box>
 
                 <HolesList
                   holeData={holeData}

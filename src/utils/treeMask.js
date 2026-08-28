@@ -1,17 +1,30 @@
 import * as THREE from 'three';
+import { LEGACY_MASK_SIZE } from '../constants';
 
-export const SIZE = 512;
+// export const SIZE = 1024;
+export function maskSizeOf(layer) {
+  return layer?.maskSize ?? LEGACY_MASK_SIZE;
+}
 
-export function positionsToMaskData(posMap, size = SIZE) {
+export function positionsToMaskData(posMap, size = LEGACY_MASK_SIZE) {
   const data = new Uint8ClampedArray(size * size * 4);
+  const limit = size * size;
+  let dropped = 0;
   for (const entry of posMap) {
     const i   = Array.isArray(entry) ? entry[0] : entry.i;
     const val = Array.isArray(entry) ? entry[1] : entry.val;
+    if (i >= limit) { dropped++; continue; }
     const ci = i * 4;
     data[ci] = val;
     data[ci + 1] = val;
     data[ci + 2] = val;
     data[ci + 3] = val > 0 ? 255 : 0;
+  }
+  if (dropped) {
+    console.error(
+      `[treeMask] ${dropped} positions out of range for a ${size}x${size} mask — ` +
+      `the layer's maskSize doesn't match how its indices were encoded`
+    );
   }
   return { data, width: size, height: size };
 }

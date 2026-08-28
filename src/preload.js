@@ -47,9 +47,13 @@ contextBridge.exposeInMainWorld('meshery', {
     updateHoleByNumber: (holeNumber, update) => ipcRenderer.invoke('project.updateHoleByNumber', holeNumber, update),
 
     updateScene: (update) => ipcRenderer.invoke('project.updateScene', update),
+    updateGameSettings: (update) => ipcRenderer.invoke('project.updateGameSettings', update),
+    updateSurfaces: (update) => ipcRenderer.invoke('project.updateSurfaces', update),
+    selectSurfaceTexture: (update, textureType) => ipcRenderer.invoke('project.selectSurfaceTexture', update, textureType),
     getHeightMap: () => ipcRenderer.invoke('project.getHeightMap'),
 
     selectHDRI: () => ipcRenderer.invoke('project.selectHDRI'),
+    saveCapture: (data) => ipcRenderer.invoke('project.saveCapture', data),
     // saveWrite: (settings) => ipcRenderer.invoke('project.saveWrite', settings),
 
     // saveProject: (trees) => ipcRenderer.invoke('project.updateTrees', trees)

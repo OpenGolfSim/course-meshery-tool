@@ -5,8 +5,10 @@ export const MiniTabs = styled(props => <Tabs {...props} />)(theme => ({
   minHeight: 32,
   // Adjusts the overall container height
   "&.MuiTabs-root": { minHeight: 32, height: 32 },
+  // Adjusts the overall container height
+  "&.MuiTabs-root": { minHeight: 32, height: 32 },
   // Adjusts the individual tab clickable area
-  "& .MuiTab-root": { minHeight: 32, height: 32 },
+  "& .MuiTab-root": { minHeight: 32, height: 32, minWidth: 0 },
 }));
 
 export const MiniTab = styled(props => <Tab disableRipple {...props} />)(theme => ({
@@ -19,7 +21,7 @@ export const MiniTab = styled(props => <Tab disableRipple {...props} />)(theme =
 }));
 
 export function MiniTabPanel(props) {
-  const { children, value, index, ...other } = props;
+  const { children, value, index, sx, ...other } = props;
   return (
     <div
       role="tabpanel"
@@ -28,7 +30,7 @@ export function MiniTabPanel(props) {
       aria-labelledby={`mini-tab-${index}`}
       {...other}
     >
-      {value === index && <Box sx={{ p: 3 }}>{children}</Box>}
+      {value === index && <Box sx={{ p: 3, ...(sx || {}) }}>{children}</Box>}
     </div>
   );
 }

@@ -110,6 +110,15 @@ export async function smoothRiverBeds(heightMapData, project, riverShapes = []) 
   return smoothed;
 }
 
+export async function generateRandomTerrain(size) {
+  const generateWorker = await getWorker('terrain.worker.js');
+  console.log(`Generating terrain...`);
+  const buffer = await generateWorker.generateRandomTerrain(size);
+  await Thread.terminate(generateWorker);
+  console.log(`Done generating terrain`);
+  return new Uint16Array(buffer);
+}
+
 // export async function conformMesh(layer, mesh, project, heightMap) {
 //   const conformWorker = await getWorker('mesh.worker.js');
 //   const conformed = await conformWorker.conformMeshToTerrain(layer, mesh, project, heightMap);

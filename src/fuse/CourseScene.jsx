@@ -1,193 +1,36 @@
 // src/fuse/CourseScene.jsx
 import React, { useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import * as THREE from 'three/webgpu';
-import { EXRLoader } from 'three/addons/loaders/EXRLoader.js';
+import { GroundedSkybox } from 'three/addons/objects/GroundedSkybox.js';
 import { vec3, float, texture as tslTexture, uv } from 'three/tsl';
+import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
 import CameraControls from 'camera-controls';
 import pMap from 'p-map';
 import {
   CourseLight,
   TreePlanter,
   MeshLoader,
-  LakeSurface,
-  RiverSurface,
   FuseRenderer,
   VolumetricClouds,
-  GrassShader,
-  SandMaterial
+  GrassBlades,
+  FlagStick,
+  SkyBox,
+  OceanSurface
 } from '@opengolfsim/fuse';
 import perlinNoise from '@opengolfsim/fuse/src/images/perlinnoise.webp'
-import { positionsToMaskData, heightmapToMesh } from '../utils/treeMask';
+import { loadTexture, getNoiseTexture, getGrainTexture, buildSingleLayer, buildSurfaceMaterial, rebuildBlendMaterial } from './surfaces';
+import { positionsToMaskData, heightmapToMesh, maskSizeOf } from '../utils/treeMask';
 import { useProject } from '../contexts/Project';
-import { RESOURCES_FILE_PROTOCOL } from '../constants.js';
-import { TEXTURE_MAP } from '../lib/textures.js';
-import { captureLightmap, captureMap } from './captureMap';
-import { sunDirectionFromAngles } from '../utils/sun.js';
+import { RESOURCES_FILE_PROTOCOL } from '../constants';
+import { TEXTURE_MAP } from '../lib/textures';
+import { captureLightmap, captureMap, captureView, buildPostPipeline } from './captureMap';
+import { sunDirectionFromAngles } from '../utils/sun';
 
-// Shared noise texture — loaded once, used by all blended surfaces
-let noiseTexturePromise = null;
-function getNoiseTexture() {
-  if (!noiseTexturePromise) {
-    noiseTexturePromise = new Promise((resolve) => {
-      const tex = new THREE.TextureLoader().load(perlinNoise, () => resolve(tex));
-      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-      tex.colorSpace = THREE.NoColorSpace;
-    });
-  }
-  return noiseTexturePromise;
-}
+THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
+THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
+THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
 CameraControls.install({ THREE });
-
-// ─── Material / geometry helpers ─────────────────────────────────────
-const textureCache = new Map();
-const textureLoader = new THREE.TextureLoader();
-const exrLoader = new EXRLoader();
-
-function loadTexture(url, colorSpace = THREE.NoColorSpace) {
-  const fullUrl = `${RESOURCES_FILE_PROTOCOL}://textures/${url}`;
-  if (textureCache.has(fullUrl)) return textureCache.get(fullUrl);
-  const tex = textureLoader.load(fullUrl);
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.anisotropy = 8;
-  if (colorSpace !== THREE.NoColorSpace) tex.colorSpace = colorSpace;
-  textureCache.set(fullUrl, tex);
-  return tex;
-}
-
-function buildSurfaceMaterial(surfaceName, fallbackHex) {
-  const cfg = TEXTURE_MAP[surfaceName];
-  // const mat = new THREE.MeshStandardNodeMaterial();
-  const mat = new THREE.MeshStandardMaterial();
-  mat.roughness = cfg?.roughnessFactor ?? 0.9;
-
-  if (cfg?.baseColor) {
-    const tex = loadTexture(cfg.baseColor, THREE.SRGBColorSpace);
-    mat.map = tex;
-    
-    // let colorNode = tslTexture(tex, uv());
-    if (cfg?.tint) {
-      // const t = new THREE.Color(cfg.tint);
-      // colorNode = colorNode.mul(vec3(t.r, t.g, t.b));
-      mat.color = new THREE.Color(cfg.tint);
-    }
-    // mat.colorNode = colorNode;
-  } else {
-    const c = new THREE.Color(`#${fallbackHex}`);
-    // mat.colorNode = vec3(c.r, c.g, c.b);
-    mat.userData = { baseTexture: tex, tint: cfg.tint ? new THREE.Color(cfg.tint) : null };
-    mat.color = c;
-  }
-
-  if (cfg?.normal) {
-    const normalMap = loadTexture(cfg.normal, THREE.SRGBColorSpace);
-    mat.normalMap = normalMap;
-    if (cfg?.normalScale) mat.normalScale = new THREE.Vector2(...cfg.normalScale);
-  }
-  if (cfg.roughnessFactor) {
-    mat.roughness = cfg.roughnessFactor;
-  }
-
-  return mat;
-}
-
-function buildLayerGeometry(meshData, surfaceName) {
-  const geo = new THREE.BufferGeometry();
-  if (!meshData?.points || !meshData?.triangles) return geo;
-
-  const points = meshData.points;
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
-  geo.setIndex(meshData.triangles);
-
-  const tile = TEXTURE_MAP[surfaceName]?.tileSize ?? 2.0;
-  const uvs = new Float32Array((points.length / 3) * 2);
-  for (let i = 0, j = 0; i < points.length; i += 3, j += 2) {
-    uvs[j]     = points[i]     / tile;
-    uvs[j + 1] = points[i + 2] / tile;
-  }
-  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-
-  if (meshData.normals) {
-    geo.setAttribute('normal', new THREE.Float32BufferAttribute(meshData.normals, 3));
-  }
-
-  geo.computeBoundingSphere();
-  return geo;
-}
-
-
-async function buildSingleLayer(layer, scene, refs, fuseRenderer) {
-  const data = await window.meshery.project.getMeshDataForLayer(layer.id);
-  if (!data?.mesh) return null;
-
-  const geometry = buildLayerGeometry(data.mesh, layer.surface);
-  const isRough = layer.surface.startsWith('rough');
-  const isLake = layer.surface.startsWith('plane_lake');
-  const isRiver = layer.surface.startsWith('plane_river');
-  const isSand = layer.surface === 'sand';
-  const noiseTex = await getNoiseTexture();
-
-  if (isLake || isRiver) {
-    const baseMesh = new THREE.Mesh(geometry);
-    const surface = isRiver ? new RiverSurface(baseMesh, layer.flowMap) : new LakeSurface(baseMesh);
-    surface.water.name = layer.id;
-    scene.add(surface.water);
-    refs.water.push(surface);
-    if (fuseRenderer.environment) {
-      surface.updateEnvironment(fuseRenderer.environment);
-    }
-    return { mesh: surface.water, geometry, material: surface.material };
-
-  } else if (data.mesh.blendMap) {
-    const baseMaterial = buildSurfaceMaterial(layer.surface, layer.color);
-    const mesh = new THREE.Mesh(geometry, baseMaterial);
-    mesh.userData.tileSize = TEXTURE_MAP[layer.surface]?.tileSize || 2.5;
-
-    const neighborSurface = layer.neighbor || 'rough';
-    const neighborMaterial = buildSurfaceMaterial(neighborSurface, layer.color);
-    const neighborMesh = new THREE.Mesh(new THREE.BufferGeometry(), neighborMaterial);
-    neighborMesh.userData.tileSize = TEXTURE_MAP[neighborSurface]?.tileSize || 2.0;
-
-    new SandMaterial(mesh, noiseTex, data.mesh.blendMap, neighborMesh,
-      layer.blending || { noiseFreq: 0.3, noiseAmp: 0.15, patchy: false });
-
-    neighborMesh.geometry.dispose();
-    neighborMaterial.dispose();
-
-    mesh.name = layer.id;
-    mesh.visible = layer.visible !== false;
-    scene.add(mesh);
-    return { mesh, geometry, material: mesh.material };
-
-  } else if (isRough) {
-    const material = buildSurfaceMaterial(layer.surface, layer.color);
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.name = layer.id;
-    mesh.visible = layer.visible !== false;
-    mesh.receiveShadow = true;
-    scene.add(mesh);
-
-    if (refs.grassAssets) {
-      const grass = new GrassShader(mesh, refs.grassAssets, {
-        density: 11, renderDistance: 25, cellSize: 5, lean: 0.01,
-        heightVariation: 0.5, maxNewCellsPerFrame: 10,
-        scaleXZ: 0.6, scaleY: 0.65, layer: 2,
-      });
-      scene.add(grass.mesh);
-      refs.grass.push(grass);
-    }
-    return { mesh, geometry, material };
-
-  } else {
-    const material = buildSurfaceMaterial(layer.surface, layer.color);
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.name = layer.id;
-    mesh.visible = layer.visible !== false;
-    mesh.receiveShadow = true;
-    scene.add(mesh);
-    return { mesh, geometry, material };
-  }
-}
 
 // ─── Component ───────────────────────────────────────────────────────
 
@@ -200,7 +43,9 @@ export default function CourseScene({
   ref,
   meshDataState,
   heightMap,
+  sunSettings,
   skySettings,
+  oceanSettings,
   worldSize = 1000,
   onSelect,
   selectedLayer,
@@ -218,6 +63,8 @@ export default function CourseScene({
   const surfacesRef = useRef([]);    // [{ mesh, geometry, material }] for cleanup
   const waterRef = useRef([]);
   const grassRef = useRef([]);
+  const oceanRef = useRef(null);
+  const flagsRef = useRef([]);
   const [rendererReady, setRendererReady] = useState(false);
   const [surfacesLoaded, setSurfacesLoaded] = useState(false);
   const [treesLoaded, setTreesLoaded] = useState(false);
@@ -228,7 +75,22 @@ export default function CourseScene({
   const pointerRef    = useRef(new THREE.Vector2());
   const lightmapPreviewRef = useRef(null); // THREE.Texture while preview active
   const bakingRef = useRef(false);         // suppress editor frames mid-bake
+  const blendRebuildTimer = useRef(null);
+  const grassRebuildTimer = useRef(null);
+  // const envTextureRef = useRef(null);
+  const skyboxRef = useRef(null);
+  const hdriParamsRef = useRef({ intensity: 1, rotation: 0 });
 
+  // Project-derived config for surface builders — ref so imperative
+  // handles (refreshLayer) always read current values
+  const surfaceCtxRef = useRef({ surfaces: {}, sun: {} });
+
+  useEffect(() => {
+    surfaceCtxRef.current = {
+      surfaces: project?._surfaces || {},
+      sun: project?.scene?.sun || {},
+    };
+  }, [project?._surfaces, project?.scene?.sun]);
 
   const runLightmapBake = useCallback(async (size = 2048) => {
     const ctx = sceneRef.current;
@@ -297,8 +159,21 @@ export default function CourseScene({
         mesh: surface.water,
         color: '#1a3534',
       }));
+      if (oceanRef.current) {
+        waterSwaps.push({ mesh: oceanRef.current.water, color: '#042a34' });
+      }
       return captureMap(fuseRenderer.renderer, scene, worldSize, toHide, waterSwaps, size, planterRef.current);
     },
+    async captureView(scale = 2) {
+      const ctx = sceneRef.current;
+      if (!ctx) return null;
+      const { fuseRenderer, scene, camera } = ctx;
+      // const w = Math.round(canvasRef.current.clientWidth * scale);
+      // WebGPU readback rows pad to 256 bytes — keep width a multiple of 64
+      const w = Math.round(canvasRef.current.clientWidth * scale) & ~63;
+      const h = Math.round(canvasRef.current.clientHeight * scale);
+      return captureView(fuseRenderer, scene, camera, w, h, project?.scene?.bloom);
+    },    
     async captureLightmap(size = 4096) {
       const ctx = sceneRef.current;
       if (!ctx) return null;
@@ -350,7 +225,7 @@ export default function CourseScene({
         water: waterRef.current,
         grass: grassRef.current,
         grassAssets: grassAssets.current,
-      }, fuseRenderer);
+      }, fuseRenderer, surfaceCtxRef.current);
 
       if (entry) {
         surfacesRef.current.push(entry);
@@ -369,7 +244,7 @@ export default function CourseScene({
     console.log(hits);
     const layer = hits.length > 0 ? project._meshes.find(l => l.id === hits[0].object.name) : null;
     if (onSelect) onSelect(layer);
-  }, [project._meshes]);
+  }, [project._meshes, onSelect]);
 
   const onCanvasDblClick = useCallback((e) => {
     const rect = canvasRef.current.getBoundingClientRect();
@@ -396,7 +271,7 @@ export default function CourseScene({
 
       // controls.fitToBox(new THREE.Box3().setFromObject(hits[0].object), true);
     }
-  }, [project._meshes]);
+  }, [project._meshes, onSelect]);
 
   const removeClouds = useCallback(() => {
     const ctx = sceneRef.current;
@@ -437,8 +312,11 @@ export default function CourseScene({
       scene.remove(lightRef.current);
     }
     scene.environment = null;
+    skyboxRef.current?.dispose();   // removes mesh, clears scene.environment, disposes texture
+    skyboxRef.current = null;
 
     let lightSettings = {
+      color: sunSettings?.color,
       qualityLevel,
       ambient: { enabled: true },
       directional: { enabled: true },
@@ -449,15 +327,20 @@ export default function CourseScene({
       rebuildClouds(skySettings.clouds);
     } else if (skySettings.type === 'hdri' && skySettings.hdri?.url) {
       removeClouds();
+      fetch(skySettings.hdri.url)
+        .then(res => res.arrayBuffer())
+        .then(async (buffer) => {
+          if (cancelled) return;
+          const skyBox = new SkyBox();
+          await skyBox.load(scene, buffer, {
+            rotation: hdriParamsRef.current.rotation ?? 0,
+            environmentIntensity: hdriParamsRef.current.environmentIntensity ?? 0.15,
+            backgroundIntensity: hdriParamsRef.current.backgroundIntensity ?? 1,
+          });
+          if (cancelled) { skyBox.dispose(); return; }
+          skyboxRef.current = skyBox;
+        });
 
-      exrLoader.setDataType(THREE.HalfFloatType).loadAsync(skySettings.hdri.url).then(exr => {
-        if (cancelled) return;
-        console.log('HDRI LOADED!');
-        exr.mapping = THREE.EquirectangularReflectionMapping;
-        scene.background = exr;
-        scene.environment = exr; // free IBL for your PBR materials
-        scene.environmentIntensity = 0.1;  // start here, tune to taste
-      });
     } else {
       console.warn('Unknown sky type...', skySettings);
     }
@@ -466,7 +349,47 @@ export default function CourseScene({
     scene.add(lightRef.current);
     return () => { cancelled = true; };
 
-  }, [skySettings.type, skySettings.hdri?.url, rendererReady, rebuildClouds, removeClouds]);
+  }, [
+    skySettings.type,
+    skySettings.hdri?.url,
+    worldSize,
+    sunSettings?.color,
+    rendererReady,
+    rebuildClouds,
+    removeClouds
+  ]);
+
+  // Cheap param updates — no texture reload
+  useEffect(() => {
+    hdriParamsRef.current = {
+      intensity: skySettings?.hdri?.intensity,
+      rotation: skySettings?.hdri?.rotation,
+    };
+
+    if (skySettings?.type !== 'hdri' || !skyboxRef.current) return;
+    skyboxRef.current.setRotation(skySettings.hdri.rotation);
+    skyboxRef.current.setEnvironmentIntensity(skySettings.hdri.environmentIntensity);
+    skyboxRef.current.setBackgroundIntensity(skySettings.hdri.backgroundIntensity);
+
+  }, [
+    skySettings?.hdri?.environmentIntensity,
+    skySettings?.hdri?.backgroundIntensity,
+    skySettings?.hdri?.rotation,
+    skySettings?.type
+  ]);
+
+  // Projection rebuild — reuses decoded texture, debounced
+  useEffect(() => {
+    if (skySettings?.type !== 'hdri' || !skyboxRef.current) return;
+    const t = setTimeout(() => {
+      skyboxRef.current?.buildProjection({
+        height: skySettings.hdri?.height ?? 10,
+        radius: skySettings.hdri?.radius ?? worldSize * 2.5,
+        center: { x: worldSize / 2, z: worldSize / 2 },
+      });
+    }, 250);
+    return () => clearTimeout(t);
+  }, [skySettings?.type, skySettings?.hdri?.height, skySettings?.hdri?.radius, worldSize]);
 
   // Rebuild clouds when cloud values change — debounced, clouds only
   useEffect(() => {
@@ -490,7 +413,8 @@ export default function CourseScene({
     const fuseRenderer = new FuseRenderer({
      canvas,
      container,
-     antialias: true,
+     adaptive: false,
+    //  antialias: true,
      renderMode: 'webgpu',
      qualityLevel,
    });
@@ -504,8 +428,11 @@ export default function CourseScene({
     cameraRef.current = camera;
     camera.layers.enable(2);
     camera.layers.enable(3); // editor overlays (selection wireframe/box)
-    fuseRenderer.setupPostProcessing(scene, camera);
-
+    // fuseRenderer.setupPostProcessing(scene, camera);
+    // Editor-built post chain: same structure as FUSE's setupPostProcessing
+    // but bloom comes from project scene settings. Assigned to the
+    // renderer's public pipeline slot so fuseRenderer.render() uses it.
+    fuseRenderer.pipeline = buildPostPipeline(fuseRenderer, scene, camera, project?.scene?.bloom);
     const controls = new CameraControls(camera, canvas);
 
     controls.infinityDolly = true;
@@ -521,18 +448,21 @@ export default function CourseScene({
       false
     );
 
-    const outerGeometry = new THREE.PlaneGeometry(10000, 10000, 1, 1);
-    const map = loadTexture(TEXTURE_MAP.base.baseColor, THREE.SRGBColorSpace);
-    map.wrapS = THREE.RepeatWrapping;
-    map.wrapT = THREE.RepeatWrapping;
-    map.repeat.set(500, 500);
-    const outerMaterial = new THREE.MeshStandardMaterial({ color: TEXTURE_MAP.base.tint ?? 0x353f17, map });
+    // const outerGeometry = new THREE.PlaneGeometry(10000, 10000, 1, 1);
+    // // const map = loadTexture(TEXTURE_MAP.base.baseColor, THREE.SRGBColorSpace);
+    // const map = loadTexture(TEXTURE_MAP.base.baseColor, THREE.SRGBColorSpace).clone();
+    // map.wrapS = THREE.RepeatWrapping;
+    // map.wrapT = THREE.RepeatWrapping;
+    // map.repeat.set(500, 500);
+    // map.needsUpdate = true;
+    // const outerMaterial = new THREE.MeshStandardMaterial({ color: TEXTURE_MAP.base.tint ?? 0x353f17, map });
 
 
-    const plane = new THREE.Mesh(outerGeometry, outerMaterial);
-    plane.rotation.x = -Math.PI / 2;
-    plane.position.set(0, -5, 0);
-    scene.add(plane);
+    // const plane = new THREE.Mesh(outerGeometry, outerMaterial);
+    // plane.rotation.x = -Math.PI / 2;
+    // plane.position.set(0, -5, 0);
+    // scene.add(plane);
+
 
   
     sceneRef.current = { fuseRenderer, scene, camera, controls, meshLoader: null };
@@ -541,7 +471,7 @@ export default function CourseScene({
     fuseRenderer.init().then(async () => {
       console.log(`${Date.now()} - Render initialized`);
 
-      grassAssets.current = await GrassShader.loadAssets({
+      grassAssets.current = await GrassBlades.loadAssets({
         // modelPath: grassBladesModel,
         noisePath: perlinNoise
       });
@@ -561,20 +491,106 @@ export default function CourseScene({
     });
     obs.observe(container);
 
-
-    canvas.addEventListener('click', onCanvasClick);
-    canvas.addEventListener('dblclick', onCanvasDblClick);
+    // // if ocean in scene settings...
+    // oceanRef.current = new OceanSurface({
+    //   size: 4000,
+    //   uvTiling: [2, 2],
+    //   yOffset: -15,
+    //   depthRange: 0.1,
+    //   envMapIntensity: 0.1,
+    //   opacity: 0.99,
+    //   shallowColor: new THREE.Color('#185f57'),
+    //   deepColor: new THREE.Color('#042a34'),
+    // });
+    // scene.add(oceanRef.current.water);
 
     return () => {
       fuseRenderer.renderer.setAnimationLoop(null);
       fuseRenderer.renderer.dispose();
       controls.dispose();
       obs.disconnect();
-      canvas.removeEventListener('click', onCanvasClick);
-      canvas.removeEventListener('dblclick', onCanvasDblClick);
       container.removeChild(canvas);
     };
   }, []);
+
+  // ─── Infinite ocean: add/remove per scene setting ──────────────────
+  const removeOcean = useCallback(() => {
+    const ctx = sceneRef.current;
+    const ocean = oceanRef.current;
+    if (!ctx || !ocean) return;
+    ctx.scene.remove(ocean.water);
+    ocean.water.geometry.dispose();
+    ocean.material.dispose();
+    oceanRef.current = null;
+  }, []);
+
+   // Build/remove on the enabled flag only
+  useEffect(() => {
+    const ctx = sceneRef.current;
+    if (!ctx || !rendererReady) return;
+
+    if (!oceanSettings?.enabled) {
+      removeOcean();
+      return;
+    }
+    if (oceanRef.current) return; // already built
+    const ocean = new OceanSurface({
+      size: 4000,
+      uvTiling: [2, 2],
+      yOffset: oceanSettings.yOffset ?? -15,
+      depthRange: 0.1,
+      envMapIntensity: 0.1,
+      opacity: 0.99,
+      shallowColor: new THREE.Color('#185f57'),
+      deepColor: new THREE.Color('#042a34'),
+    });
+    ctx.scene.add(ocean.water);
+    if (ctx.fuseRenderer.environment) {
+      ocean.updateEnvironment(ctx.fuseRenderer.environment);
+    }
+    oceanRef.current = ocean;
+  }, [oceanSettings?.enabled, rendererReady, removeOcean]);
+
+  // Cheap yOffset update — no rebuild (mirrors constructor's sign handling)
+  useEffect(() => {
+    const ocean = oceanRef.current;
+    if (!ocean || !oceanSettings?.enabled) return;
+    ocean.water.position.y = -(oceanSettings.yOffset ?? 0);
+  }, [oceanSettings?.yOffset, oceanSettings?.enabled]);
+  //   // Debounced rebuild while dragging yOffset
+  //   const t = setTimeout(() => {
+  //     removeOcean();
+  //     const ocean = new OceanSurface({
+  //       size: 4000,
+  //       uvTiling: [2, 2],
+  //       yOffset: oceanSettings.yOffset ?? -15,
+  //       depthRange: 0.1,
+  //       envMapIntensity: 0.1,
+  //       opacity: 0.99,
+  //       shallowColor: new THREE.Color('#185f57'),
+  //       deepColor: new THREE.Color('#042a34'),
+  //     });
+  //     ocean.water.renderOrder = -1; // blend under grass/trees, same as lakes
+  //     ctx.scene.add(ocean.water);
+  //     if (ctx.fuseRenderer.environment) {
+  //       ocean.updateEnvironment(ctx.fuseRenderer.environment);
+  //     }
+  //     oceanRef.current = ocean;
+  //   }, 250);
+
+  //   return () => clearTimeout(t);
+  // }, [oceanSettings?.enabled, oceanSettings?.yOffset, rendererReady, removeOcean]);  
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    canvas.addEventListener('click', onCanvasClick);
+    canvas.addEventListener('dblclick', onCanvasDblClick);
+    return () => {
+      canvas.removeEventListener('click', onCanvasClick);
+      canvas.removeEventListener('dblclick', onCanvasDblClick);
+    };
+  }, [onCanvasClick, onCanvasDblClick]);
 
   useEffect(() => {
     const ctx = sceneRef.current;
@@ -600,6 +616,10 @@ export default function CourseScene({
       for (const surface of grassRef.current) {
         surface.update(delta, camera);
       }
+      for (const flag of flagsRef.current) {
+        flag.update(delta);
+      }
+      oceanRef.current?.update();
       fuseRenderer.render(scene, camera);
     });
 
@@ -708,96 +728,21 @@ export default function CourseScene({
       // for (let i = 0; i < layers.length; i++) {
         if (cancelled) return;
 
-        // const layer = layers[i];
-        const data = await window.meshery.project.getMeshDataForLayer(layer.id);
-        if (!data?.mesh || cancelled) return;
+        const entry = await buildSingleLayer(layer, scene, {
+          water: waterRef.current,
+          grass: grassRef.current,
+          grassAssets: grassAssets.current,
+        }, fuseRenderer, surfaceCtxRef.current);
+        if (!entry) return;
 
-        const geometry = buildLayerGeometry(data.mesh, layer.surface);
-
-        const isRough = layer.surface.startsWith('rough');
-        const isLake = layer.surface.startsWith('plane_lake');
-        const isRiver = layer.surface.startsWith('plane_river');
-        const isLakeOrRiverBed = layer.surface.startsWith('river') || layer.surface.startsWith('water');
-        const isSand = layer.surface === 'sand';
-        const noiseTex = await getNoiseTexture();
-
-        if (isLake || isRiver) {
-          // Water classes create their own material + mesh internally
-          const baseMesh = new THREE.Mesh(geometry);
-          const surface = isRiver ? new RiverSurface(baseMesh, layer.flowMap) : new LakeSurface(baseMesh);
-          surface.water.name = layer.id;
-          scene.add(surface.water);
-          waterRef.current.push(surface);
-
-          surface.updateEnvironment(fuseRenderer.environment);
-
-          surfacesRef.current.push({ mesh: surface.water, geometry, material: surface.material });
-        } else if (data.mesh.blendMap) {
-
-          const baseMaterial = buildSurfaceMaterial(layer.surface, layer.color);
-          const mesh = new THREE.Mesh(geometry, baseMaterial);
-          mesh.userData.tileSize = TEXTURE_MAP[layer.surface]?.tileSize || 2.5;
-
-          // Build neighbor mesh (temporary — just carries the material info)
-          const neighborSurface = layer.neighbor || 'rough';
-          const neighborMaterial = buildSurfaceMaterial(neighborSurface, layer.color);
-          const neighborMesh = new THREE.Mesh(new THREE.BufferGeometry(), neighborMaterial);
-          neighborMesh.userData.tileSize = TEXTURE_MAP[neighborSurface]?.tileSize || 2.0;
-
-          mesh.receiveShadow = true;
-
-          // SandMaterial reads from both meshes and replaces the material
-          new SandMaterial(
-            mesh,
-            noiseTex,
-            data.mesh.blendMap,
-            neighborMesh,
-            layer.blending || { noiseFreq: 0.3, noiseAmp: 0.15, patchy: false },
-          );
-
-          // Clean up temp neighbor mesh
-          neighborMesh.geometry.dispose();
-          neighborMaterial.dispose();
-
-          mesh.name = layer.id;
-          mesh.visible = layer.visible !== false;
-          // mesh.renderOrder = 10; // render after grass surfaces so transparency works
-          scene.add(mesh);
-          surfacesRef.current.push({ mesh, geometry, material: mesh.material });
-        } else if (isRough) {
-          const material = buildSurfaceMaterial(layer.surface, layer.color);
-          const mesh = new THREE.Mesh(geometry, material);
-          mesh.name = layer.id;
-          mesh.visible = layer.visible !== false;
-          scene.add(mesh);
-          surfacesRef.current.push({ mesh, geometry, material });
-
-          const grassOptions = {
-            density: 11,
-            renderDistance: 25,
-            cellSize: 5,
-            lean: 0.01,
-            heightVariation: 0.5,
-            maxNewCellsPerFrame: 10,
-            scaleXZ: 0.6,
-            scaleY: 0.65,
-            layer: 2,
-          };
-          
-          const baseMesh = new THREE.Mesh(geometry);          
-          mesh.receiveShadow = true;
-          const grass = new GrassShader(mesh, grassAssets.current, grassOptions);
-          scene.add(grass.mesh);
-          grassRef.current.push(grass);     
-        } else {
-         const material = buildSurfaceMaterial(layer.surface, layer.color);
-         const mesh = new THREE.Mesh(geometry, material);
-         mesh.name = layer.id;
-         mesh.visible = layer.visible !== false;
-         mesh.receiveShadow = true;
-         scene.add(mesh);
-         surfacesRef.current.push({ mesh, geometry, material });
-       }
+        if (cancelled) {
+          // Built after teardown started — dispose immediately
+          scene.remove(entry.mesh);
+          entry.geometry.dispose();
+          entry.material.dispose();
+          return;
+        }
+        surfacesRef.current.push(entry);
 
         onLoadingChange?.({ phase: 'surfaces', loaded: i + 1, total: layers.length });
         await yieldToMain();
@@ -805,6 +750,38 @@ export default function CourseScene({
       }, { concurrency: 12 });
 
       console.log(`${Date.now()} - Finished loading meshes`);
+      
+      oceanRef.current?.updateEnvironment(fuseRenderer.environment);
+      // Flag sticks — static per course; created once terrain exists,
+      // torn down with the meshes below
+      console.log('FLAGS', JSON.stringify(project.holes.entries()));
+      if (!cancelled && project.holes) {
+        const waterMeshes = new Set(waterRef.current.map((w) => w.water));
+        const groundMeshes = surfacesRef.current
+          .map((s) => s.mesh)
+          .filter((m) => !waterMeshes.has(m));
+        const raycaster = new THREE.Raycaster();
+        const down = new THREE.Vector3(0, -1, 0);
+        for (const hole of project.holes.values()) {
+          const pin = hole?.pin?.position;
+          if (!pin) continue;
+          // pin.y is world Z (map coords); elevation from terrain raycast —
+          // same convention as FUSE's runtime loader
+          raycaster.set(new THREE.Vector3(pin.x, 5000, pin.y), down);
+          const hits = raycaster.intersectObjects(groundMeshes);
+          const position = new THREE.Vector3(pin.x, 10, pin.y);
+          let surfaceNormal;
+          if (hits.length > 0) {
+            position.y = hits[0].point.y;
+            surfaceNormal = hits[0].face
+              ? hits[0].face.normal.clone().transformDirection(hits[0].object.matrixWorld)
+              : undefined;
+          }
+          const flag = new FlagStick(position, `${hole.number}`, undefined, surfaceNormal);
+          scene.add(flag.object);
+          flagsRef.current.push(flag);
+        }
+      }
 
       if (!cancelled) {
         setSurfacesLoaded(true);
@@ -816,6 +793,15 @@ export default function CourseScene({
       cancelled = true;
       console.log(`${Date.now()} - Mesh loading cancelled`);
       waterRef.current = [];
+      for (const flag of flagsRef.current) {
+        scene.remove(flag.object);
+        flag.flag.geometry.dispose();
+        flag.flag.material.dispose();
+        flag.stick.geometry.dispose();
+        flag.stick.material.dispose();
+      }
+      flagsRef.current = [];
+
       for (const { mesh, geometry, material } of surfacesRef.current) {
         scene.remove(mesh);
         geometry.dispose();
@@ -833,33 +819,152 @@ export default function CourseScene({
     console.log('[state] meshDataState changed!', project._meshes);
   }, [meshDataState]);
 
+  // Live-apply resolved surface configs (currently: tint) to built materials.
+  // Newly built materials read surfaceMap at build time.
+  useEffect(() => {
+    const surfaces = project?._surfaces || {};
+    const scene = sceneRef.current?.scene;
+    if (!scene) return;
+    const blendRebuilds = [];
+    const grassRebuilds = [];
+    scene.traverse((obj) => {
+      // Blend meshes bake tints into the shader; collect the ones whose
+      // effective tints changed for a material-only rebuild below.
+      const rb = obj.userData?.blendRebuild;
+      if (rb) {
+        const nSurface = rb.layer.neighbor || 'rough';
+        // const base = (surfaceMap[rb.layer.surface] ?? TEXTURE_MAP[rb.layer.surface])?.tint;
+        // const nTint = (surfaceMap[nSurface] ?? TEXTURE_MAP[nSurface])?.tint;
+        const base = (surfaces[rb.layer.surface] ?? TEXTURE_MAP[rb.layer.surface])?.tint;
+        const nTint = (surfaces[nSurface] ?? TEXTURE_MAP[nSurface])?.tint;        
+        if (obj.userData.appliedTints?.base !== base || obj.userData.appliedTints?.neighbor !== nTint) {
+          blendRebuilds.push({ obj, rb, nSurface, base, nTint });
+        }
+        return;
+      }
+
+      const mat = obj.material;
+      const surface = mat?.userData?.surface;
+      if (!surface) return;
+      // const cfg = surfaceMap[surface];
+      const cfg = surfaces[surface];
+      // Grass shader params are baked at construction — config change
+      // requires a material rebuild (debounced below)
+      const wantGrass = JSON.stringify(cfg?.grass ?? null);
+      if (mat.userData.appliedGrass !== undefined && mat.userData.appliedGrass !== wantGrass) {
+        grassRebuilds.push({ obj, surface });
+      }
+
+      if (cfg?.tint) {
+        mat.color.set(cfg.tint);
+        mat.userData.tint = new THREE.Color(cfg.tint);
+      }
+
+      // Live tile-size: rescale baked UVs in place (sanitized same as build)
+      const tile = Number(cfg?.tileSize);
+      const geo = obj.geometry;
+      const applied = geo?.userData?.appliedTileSize;
+      if (tile > 0 && applied > 0 && applied !== tile) {
+        const uvAttr = geo.getAttribute('uv');
+        if (uvAttr) {
+          const scale = applied / tile;
+          for (let i = 0; i < uvAttr.count; i++) {
+            uvAttr.setXY(i, uvAttr.getX(i) * scale, uvAttr.getY(i) * scale);
+          }
+          uvAttr.needsUpdate = true;
+        }
+        geo.userData.appliedTileSize = tile;
+        if (obj.userData.tileSize) obj.userData.tileSize = tile;
+      }
+      // Live texture swap (custom textures selected/cleared)
+      if (cfg?.baseColor && mat.userData.appliedMap !== cfg.baseColor) {
+        mat.map = loadTexture(cfg.baseColor, THREE.SRGBColorSpace);
+        mat.userData.appliedMap = cfg.baseColor;
+        mat.needsUpdate = true;
+      }
+      if (cfg?.normal && mat.userData.appliedNormal !== cfg.normal) {
+        mat.normalMap = loadTexture(cfg.normal);
+        mat.userData.appliedNormal = cfg.normal;
+        mat.needsUpdate = true;
+      }
+
+    });
+
+    // Grass blades sample the ground tint via a uniform — update in place
+    for (const grass of grassRef.current) {
+      const tint = surfaces[grass.surface]?.tint;
+      if (tint) grass.terrainTint = tint;
+    }
+    if (grassRebuilds.length) {
+      clearTimeout(grassRebuildTimer.current);
+      grassRebuildTimer.current = setTimeout(async () => {
+        const grainTex = await getGrainTexture();
+        for (const { obj, surface } of grassRebuilds) {
+          const layer = project._meshes?.find((l) => l.id === obj.name);
+          const old = obj.material;
+          obj.material = buildSurfaceMaterial(surface, layer?.color, grainTex, surfaceCtxRef.current);
+          // Preserve lightmap preview across the swap
+          obj.material.aoMap = old.aoMap;
+          obj.material.aoMapIntensity = old.aoMapIntensity;
+          old.dispose();
+          const rec = surfacesRef.current?.find((r) => r.mesh === obj);
+          if (rec) rec.material = obj.material;
+        }
+      }, 300);
+    }
+    if (!blendRebuilds.length) return;
+    let canceled = false;
+
+    // Debounced: shader recompiles are too heavy for per-drag-tick rebuilds
+    clearTimeout(blendRebuildTimer.current);
+    blendRebuildTimer.current = setTimeout(async () => {
+
+      const noiseTex = await getNoiseTexture();
+      if (canceled) return;
+      for (const { obj, rb, nSurface, base, nTint } of blendRebuilds) {
+        rebuildBlendMaterial(obj, rb, noiseTex, surfaceCtxRef.current);
+        obj.userData.appliedTints = { base, neighbor: nTint };
+        // Keep the cleanup registry pointing at the live material
+        const rec = surfacesRef.current?.find((r) => r.mesh === obj);
+        if (rec) rec.material = obj.material;
+      }
+
+    }, 300);
+    return () => { canceled = true; };
+  }, [project?._surfaces]);
+
+
   // ─── Tree planting ─────────────────────────────────────────────────
   useEffect(() => {
     const ctx = sceneRef.current;
-    if (!ctx?.meshLoader || !rendererReady) return;
+    // if (!ctx?.meshLoader || !rendererReady) return;
+    if (!ctx?.meshLoader || !rendererReady || !surfacesLoaded) return;
     console.log(`${Date.now()} - Tree planting useEffect`);
     const { scene, meshLoader } = ctx;
     const treeLayers = project.trees;
-    const heightScale = project.stats?.heightScale ?? project.stats?.relief ?? 10;
+    // const heightScale = project.stats?.heightScale ?? project.stats?.relief ?? 10;
 
     if (!treeLayers?.length) return;
 
     let cancelled = false;
 
     (async () => {
-      const heightMap = await window.meshery.project.getHeightMap();
-      if (!heightMap?.data || cancelled) return;
       onLoadingChange?.({ phase: 'trees', loaded: 0, total: treeLayers.length });
 
-      const groundMesh = heightmapToMesh(
-        heightMap.data, heightMap.size, worldSize, 64, heightScale
-      );
-      scene.add(groundMesh);
-
+      // Raycast against the actual course geometry, not a heightmap proxy.
+      // Exclude water surfaces so trees don't plant on lakes/rivers.
+      const waterMeshes = new Set(waterRef.current.map((w) => w.water));
+      const groundMeshes = surfacesRef.current
+        .map((s) => s.mesh)
+        .filter((m) => !waterMeshes.has(m));
+      // One-time BVH build per geometry; makes per-tree raycasts ~log(n)
+      for (const m of groundMeshes) {
+        if (!m.geometry.boundsTree) m.geometry.computeBoundsTree();
+      }
       const planter = new TreePlanter({
         scene,
         worldSize,
-        groundMeshes: groundMesh,
+        groundMeshes,
       });
 
       for (let i = 0; i < treeLayers.length; i++) {
@@ -881,7 +986,7 @@ export default function CourseScene({
           await yieldToMain();
         }
 
-        const maskData = positionsToMaskData(layer.positions);
+        const maskData = positionsToMaskData(layer.positions, maskSizeOf(layer));
         planter.plantFromMask(configs, maskData, layer.randomSeed ?? 12345);
 
         onLoadingChange?.({ phase: 'trees', loaded: i + 1, total: treeLayers.length });
@@ -890,9 +995,9 @@ export default function CourseScene({
 
       if (cancelled) return;
 
-      scene.remove(groundMesh);
-      groundMesh.geometry.dispose();
-      groundMesh.material.dispose();
+      // scene.remove(groundMesh);
+      // groundMesh.geometry.dispose();
+      // groundMesh.material.dispose();
       
       console.log(`${Date.now()} - Tree planting done`);
       planterRef.current = planter;
@@ -917,7 +1022,8 @@ export default function CourseScene({
         planterRef.current = null;
       }
     };
-  }, [project.trees, heightMap, worldSize, rendererReady]);
+  // }, [project.trees, heightMap, worldSize, rendererReady]);
+  }, [project.trees, worldSize, rendererReady, surfacesLoaded]);
 
   return <div ref={containerRef} style={{ width: '100%', height: '100%' }} />;
 }

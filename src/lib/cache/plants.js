@@ -77,6 +77,7 @@ export async function importPlantAsset(layerId, plant) {
     id,
     randomSeed: 12345,
     scaleRange: { min: 0.6, max: 1.8 },
+    minDistance: 5,
     density: 0.2,
   });
 }

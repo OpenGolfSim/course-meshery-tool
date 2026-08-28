@@ -14,6 +14,7 @@ const ProjectContext = createContext({
   generateTerrainData: () => {},
   setProjectSettings: () => {},
   updateSceneSettings: () => {},
+  updateGameSettings: () => {},
   selectHDRI: () => {},
   addHole: () => {},
   removeHole: () => {},
@@ -27,6 +28,7 @@ const ProjectContext = createContext({
   importTreeModel: () => {},
   removeTreeModel: () => {},
   generateMeshes: () => {},
+  saveHeightMap: () => {},
   lidarSources: null,
   lidarFile: null,
   palette: null
@@ -63,6 +65,10 @@ export const ProjectProvider = ({ children }) => {
   const updateSceneSettings = async (update) => {
     const updatedScene = await window.meshery.project.updateScene(update);
     setProject((old) => ({ ...old, scene: updatedScene }))
+  }
+  const updateGameSettings = async (update) => {
+    const updatedGameSettings = await window.meshery.project.updateGameSettings(update);
+    setProject((old) => ({ ...old, gameSettings: updatedGameSettings }))
   }
   const selectHDRI = async () => {
     const updatedScene = await window.meshery.project.selectHDRI();
@@ -223,9 +229,9 @@ export const ProjectProvider = ({ children }) => {
     return rest;
   }
 
-  const saveTerrainData = async (terrainData, heightScale) => {
+  const saveHeightMap = async (terrainData, heightScale) => {
     // const res = await window.meshery.trees.addLayer();
-    const res = await window.meshery.terrain.saveHeightMap(heightMap.current, heightScale);
+    const res = await window.meshery.terrain.saveHeightMap(terrainData, heightScale);
     // console.log('remove-res', res);
     if (res) {
       setProject((old) => ({ ...old, stats: res.stats, raw: res.raw }))
@@ -274,6 +280,15 @@ export const ProjectProvider = ({ children }) => {
 
   }, [project?.holes]);
   
+  const updateSurfaces = async (update) => {
+    const updated = await window.meshery.project.updateSurfaces(update);
+    setProject((old) => ({ ...old, surfaces: updated.surfaces, _surfaces: updated._surfaces }))
+  }
+  const selectSurfaceTexture = async (surface, textureType) => {
+    const updated = await window.meshery.project.selectSurfaceTexture(surface, textureType);
+    if (!updated) return; // dialog canceled
+    setProject((old) => ({ ...old, surfaces: updated.surfaces, _surfaces: updated._surfaces }))
+  }
 
   useEffect(() => {
     console.log('[PROJECT] scope load')
@@ -305,6 +320,9 @@ export const ProjectProvider = ({ children }) => {
       createProject,
       setProjectSettings,
       updateSceneSettings,
+      updateGameSettings,
+      updateSurfaces,
+      selectSurfaceTexture,
       selectHDRI,
       addHole,
       removeHole,
@@ -323,6 +341,7 @@ export const ProjectProvider = ({ children }) => {
       palette,
       updateLayerById,
       generateMeshes,
+      saveHeightMap,
     }}>
       {children}
     </ProjectContext.Provider>

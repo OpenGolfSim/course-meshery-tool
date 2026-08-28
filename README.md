@@ -1,18 +1,21 @@
-Meshery is a tool that generates base course meshes from an SVG file and raw height map.
-
 <img src="images/Meshery.iconset/icon_128x128@2x.png" width="128" height="128" />
 
+Meshery is OpenGolfSim's all-in-one course building tool. It makes creating real-world or fictional courses quick and easy.
 
-Head over to our [Meshery guide](https://help.opengolfsim.com/tools/course-building/course-meshes/) in our help docs to learn more.
+Head over to our [Course Building Guide](https://help.opengolfsim.com/tools/course-building/) in our help docs to learn more.
 
 
-
-Logs:
+## Logs:
 
 - MacOS: `~/Library/Logs/ogs-meshery/main.log`
 - Windows: `%USERPROFILE%/AppData/Roaming/ogs-meshery/main.log`
 
+### Debugging via Logs
 
+You can live tail the logs on windows using the following command:
+```powershell
+Get-Content "$env:USERPROFILE\AppData\Roaming\ogs-meshery\logs\main.log" -Wait -Tail 30
+```
 
 ## Development
 
@@ -45,7 +48,7 @@ git push origin vx.x.x
 ```
 
 
-To install/unpack python tools:
+To manually install/unpack python tools:
 ```bash
 mkdir myenv
 tar -xf example.tar.gz -C myenv
@@ -58,21 +61,22 @@ cd myenv
 
 ### Trees
 
-We recommend creating trees with LODs and billboards in SpeedTree, exporting as OBJ, and then using the below script to convert to a single GLB that can be used with Meshery tree planting.
+We recommend creating tree LODs in [EZ-Tree](https://www.eztree.dev/) or SpeedTree and then using the **Tree Maker** tool within Meshery to convert and import the tree to your library.
 
+
+
+## FUSE
+
+We install `@opengolfsim/fuse` as an npm module dependency.
+
+To install from the production/main branch:
+
+```bash
+npm install github:opengolfsim/fuse
 ```
-Usage:
 
-npm run generate-tree -- \
-/path/to/tree/Oak_LOD1.obj \
-/path/to/tree/Oak_LOD2.obj \
-/path/to/tree/Oak_LOD3.obj \
-/path/to/tree/OakTree.glb
- ```
+To install from a specific branch:
 
-
- ## Debug Logs
-
- ```powershell
- Get-Content "$env:USERPROFILE\AppData\Roaming\ogs-meshery\logs\main.log" -Wait -Tail 30
- ```
+```bash
+npm install github:opengolfsim/fuse#feat/branch-name
+```

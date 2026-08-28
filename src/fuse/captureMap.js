@@ -1,4 +1,25 @@
 import * as THREE from 'three/webgpu';
+import { pass } from 'three/tsl';
+import { bloom } from 'three/addons/tsl/display/BloomNode.js';
+
+// Post chain for the editor viewport AND captures, so they can't drift.
+// Same structure as FUSE's setupPostProcessing, but bloom values come from
+// project scene settings (main guarantees the key exists — the load path
+// deep-merges saved projects with defaultProjectTemplate). The runtime will
+// eventually read the same values from the course file.
+export function buildPostPipeline(fuseRenderer, scene, camera, bloomSettings) {
+  const pipeline = new THREE.RenderPipeline(fuseRenderer.renderer);
+  const scenePass = pass(scene, camera, { samples: 4 });
+  const scenePassColor = scenePass.getTextureNode('output');
+  if (bloomSettings?.enabled) {
+    pipeline.outputNode = scenePassColor.add(
+      bloom(scenePassColor, bloomSettings.strength, bloomSettings.radius, bloomSettings.threshold)
+    );
+  } else {
+    pipeline.outputNode = scenePassColor;
+  }
+  return pipeline;
+}
 
 export async function captureMap(renderer, scene, worldSize, hiddenObjects = [], materialSwaps = [], size = 512, planter = null) {
 
@@ -106,8 +127,9 @@ export async function captureLightmap(renderer, scene, worldSize, sunDirection, 
   cam.rotation.set(-Math.PI / 2, 0, 0);
   cam.updateMatrixWorld();
 
-  const rt = new THREE.RenderTarget(size, size, { colorSpace: THREE.SRGBColorSpace });
-
+  // const rt = new THREE.RenderTarget(size, size, { colorSpace: THREE.SRGBColorSpace });
+  const ss = 2; // bake-time supersample; output stays `size`
+  const rt = new THREE.RenderTarget(size * ss, size * ss, { colorSpace: THREE.SRGBColorSpace });
   // ── Save state ──
   const prevFog = scene.fog;
   const disabledLights = [];
@@ -118,8 +140,8 @@ export async function captureLightmap(renderer, scene, worldSize, sunDirection, 
   const prevToneMapping = renderer.toneMapping;
 
   const dir = new THREE.Vector3(...sunDirection).normalize();
-  const sun = new THREE.DirectionalLight(0xffffff, 2.5);
-  const fill = new THREE.AmbientLight(0xffffff, 0.15);
+  const sun = new THREE.DirectionalLight(0xffffff, 3);
+  const fill = new THREE.AmbientLight(0xffffff, 0.1);
 
   try {
     forceTreesLOD0(planter);
@@ -171,13 +193,15 @@ export async function captureLightmap(renderer, scene, worldSize, sunDirection, 
     sun.shadow.camera.left = -r; sun.shadow.camera.right = r;
     sun.shadow.camera.top = r;   sun.shadow.camera.bottom = -r;
     sun.shadow.camera.near = 1;  sun.shadow.camera.far = 2000;
-    sun.shadow.bias = -0.0005;
-    sun.shadow.normalBias = 0.3;
+    // sun.shadow.bias = -0.0005;
+    sun.shadow.bias = -0.0002;
+    // sun.shadow.normalBias = 0.3;
+    sun.shadow.normalBias = 0.05; 
     sun.shadow.camera.updateProjectionMatrix();
     scene.add(sun, sun.target, fill);
 
     if (renderer.shadowMap) renderer.shadowMap.enabled = true;
-    if (renderer.shadowMap) renderer.shadowMap.type = THREE.PCFShadowMap;
+    if (renderer.shadowMap) renderer.shadowMap.type = THREE.BasicShadowMap;
 
     renderer.toneMapping = THREE.NoToneMapping;
 
@@ -186,23 +210,33 @@ export async function captureLightmap(renderer, scene, worldSize, sunDirection, 
     renderer.render(scene, cam);
     renderer.setRenderTarget(null);
 
-    const pixels = await renderer.readRenderTargetPixelsAsync(rt, 0, 0, size, size);
+    const rs = size * ss;
+    const pixels = await renderer.readRenderTargetPixelsAsync(rt, 0, 0, rs, rs);
+
     const canvas = document.createElement('canvas');
-    canvas.width = size; canvas.height = size;
+    // canvas.width = size; canvas.height = size;
+    canvas.width = rs;
+    canvas.height = rs;
     const ctx = canvas.getContext('2d');
-    const imageData = ctx.createImageData(size, size);
+    const imageData = ctx.createImageData(rs, rs);
     imageData.data.set(pixels);
     ctx.putImageData(imageData, 0, 0);
 
-    // return canvas.toDataURL('image/png');
-    // Soften: leaf-cutout shadows at this texel density read as noise.
-    // A 1-texel blur ≈ 0.25m penumbra at 4096/1000m — crisp but not aliased.
-    const blurred = document.createElement('canvas');
-    blurred.width = size; blurred.height = size;
-    const bctx = blurred.getContext('2d');
-    bctx.filter = `blur(${size / 4096}px)`;
-    bctx.drawImage(canvas, 0, 0);
-    return blurred.toDataURL('image/png');
+    const out = document.createElement('canvas');
+    out.width = size; out.height = size;
+    const octx = out.getContext('2d');
+    octx.imageSmoothingQuality = 'high';
+    octx.drawImage(canvas, 0, 0, size, size);
+    return out.toDataURL('image/png');
+    // // return canvas.toDataURL('image/png');
+    // // Soften: leaf-cutout shadows at this texel density read as noise.
+    // // A 1-texel blur ≈ 0.25m penumbra at 4096/1000m — crisp but not aliased.
+    // const blurred = document.createElement('canvas');
+    // blurred.width = size; blurred.height = size;
+    // const bctx = blurred.getContext('2d');
+    // bctx.filter = `blur(${size / 4096}px)`;
+    // bctx.drawImage(canvas, 0, 0);
+    // return blurred.toDataURL('image/png');
 
   } finally {
     // ── Restore everything, even on error ──
@@ -245,5 +279,76 @@ function forceTreesLOD0(planter) {
         }
       }
     }
+  }
+}
+
+
+// Snapshot of the current editor view: same scene, same camera, minus
+// editor overlays (layer 3). Rendered to an offscreen target because the
+// WebGPU canvas drawing buffer isn't reliably readable after present.
+// Takes the FuseRenderer so the editor's own post chain (bloom at high
+// quality) applies — a parallel pipeline here would silently drift from
+// what's on screen.
+export async function captureView(fuseRenderer, scene, camera, width, height, bloomSettings) {
+  const { renderer } = fuseRenderer;
+  // const rt = new THREE.RenderTarget(width, height, {
+  //   colorSpace: THREE.SRGBColorSpace,
+  //   samples: 4,
+  // });
+  // Post chain outputs already-encoded sRGB values — store them verbatim.
+  // (An SRGBColorSpace target would encode again = washed/bright.)
+  const rt = new THREE.RenderTarget(width, height);
+
+  const prevMask = camera.layers.mask;
+  camera.layers.disable(3); // hide selection wireframe/box
+  // Scene passes size from the renderer's drawing buffer, not the bound RT —
+  // resize so a 2x capture actually renders at 2x instead of upscaling.
+  const prevSize = new THREE.Vector2();
+  renderer.getSize(prevSize);
+  const prevPixelRatio = renderer.getPixelRatio();
+
+  try {
+    renderer.setPixelRatio(1);
+    renderer.setSize(width, height, false);
+    renderer.setRenderTarget(rt);
+    // Fresh pipeline per capture — a shared pipeline's scene pass updates
+    // only once per animation frame, so reusing the viewport's composites
+    // the LAST frame's texture (stale size, editor overlays baked in).
+    const post = buildPostPipeline(fuseRenderer, scene, camera, bloomSettings);
+    post.render();
+    post.dispose?.();
+
+    renderer.setRenderTarget(null);
+    // Restore size before the async readback so any animation-loop frame
+    // that interleaves renders at the correct canvas size
+    renderer.setPixelRatio(prevPixelRatio);
+    renderer.setSize(prevSize.x, prevSize.y, false);
+
+    const pixels = await renderer.readRenderTargetPixelsAsync(rt, 0, 0, width, height);
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    const imageData = ctx.createImageData(width, height);
+    // imageData.data.set(pixels);
+    const rowBytes = width * 4;
+    if (pixels.length === rowBytes * height) {
+      imageData.data.set(pixels);
+    } else {
+      // Padded rows (WebGPU 256-byte row alignment) — copy row by row
+      const stride = Math.ceil(rowBytes / 256) * 256;
+      for (let y = 0; y < height; y++) {
+        imageData.data.set(pixels.subarray(y * stride, y * stride + rowBytes), y * rowBytes);
+      }
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+    return canvas.toDataURL('image/jpeg', 0.92);
+  } finally {
+    camera.layers.mask = prevMask;
+    renderer.setPixelRatio(prevPixelRatio);
+    renderer.setSize(prevSize.x, prevSize.y, false);
+    renderer.setRenderTarget(null);
+    rt.dispose();
   }
 }

@@ -316,13 +316,13 @@ export async function downloadCourse(geoJSON, bounds) {
         multiplier: 3.0,
       },
       // make sure to assign missing data before SMRF filter
-      // {
-      //   type: 'filters.assign',
-      //   value: [
-      //     'ReturnNumber = 1 WHERE ReturnNumber == 0',
-      //     'NumberOfReturns = 1 WHERE NumberOfReturns == 0'
-      //   ]
-      // },
+      {
+        type: 'filters.assign',
+        value: [
+          'ReturnNumber = 1 WHERE ReturnNumber == 0',
+          'NumberOfReturns = 1 WHERE NumberOfReturns == 0'
+        ]
+      },
       // Classify ground, but preserve existing classifications
       {
         type: 'filters.smrf',

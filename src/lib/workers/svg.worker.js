@@ -17,8 +17,10 @@ import {
 import { PNG } from 'pngjs';
 import { defaultSettings } from '../../lib/settings';
 import { generateFlowMap } from '../flowmap';
+import { pointInRing } from './utils';
 
 const log = logger.scope('SVG_WORKER');
+const DEFAULT_NEIGHBOR = 'rough';
 
 const progressSubject = new Subject();
 
@@ -95,6 +97,7 @@ function ringArea(ring) {
 export async function generateCoursePolygons(courseLayers, layerSettings) {
   let meshLayers = [];
   const polygonMap = new Map();
+  const originalPolygons = new Map(); // pre-cut rings, for neighbor detection
   // convert outer rings to polygons
   let current = 0;
 
@@ -137,7 +140,8 @@ export async function generateCoursePolygons(courseLayers, layerSettings) {
     }
 
     polygonMap.set(layer.id, { polygon, holes: [] });
-    
+    originalPolygons.set(layer.id, polygon);
+
     // Sample the flow line if this layer has one
     let flowPoints = null;
     if (layer.flowLine) {
@@ -230,6 +234,34 @@ export async function generateCoursePolygons(courseLayers, layerSettings) {
       log.error('Cut error', error);
       layer.error = 'Cut Error: Unable to cut holes in shape';
     }
+  });
+
+
+  // Detect each layer's dominant surrounding surface (its blend neighbor).
+  // Uses pre-cut polygons: the layer below has no hole here, so containment is robust.
+  meshLayers.forEach((layer, index) => {
+    if (layer.neighbor) return; // respect manual override from settings
+    const ring = originalPolygons.get(layer.id);
+    if (!ring?.length) {
+      layer.neighbor = DEFAULT_NEIGHBOR;
+      return;
+    }
+
+    // ~32 samples around the outline
+    const step = Math.max(1, Math.floor(ring.length / 32));
+    const samples = ring.filter((_, i) => i % step === 0);
+
+    // walk layers below, top-down; first containing a majority of samples wins
+    for (let j = index - 1; j >= 0; j--) {
+      const below = originalPolygons.get(meshLayers[j].id);
+      if (!below) continue;
+      const hits = samples.filter(pt => pointInRing(pt, below)).length;
+      if (hits > samples.length / 2) {
+        layer.neighbor = meshLayers[j].surface;
+        break;
+      }
+    }
+    if (!layer.neighbor) layer.neighbor = DEFAULT_NEIGHBOR;
   });
 
   // adds an extra water plane after cutting

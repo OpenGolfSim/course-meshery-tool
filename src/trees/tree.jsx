@@ -13,84 +13,189 @@ import NumberField from '../components/NumberField.jsx';
 
 // ---- Billboard generation ----------------------------------------------
 
-function snapshot(renderer) {
-  const c = document.createElement('canvas');
-  c.width = renderer.domElement.width;
-  c.height = renderer.domElement.height;
-  c.getContext('2d').drawImage(renderer.domElement, 0, 0);
-  const tex = new THREE.CanvasTexture(c);
+// function snapshot(renderer) {
+//   const c = document.createElement('canvas');
+//   c.width = renderer.domElement.width;
+//   c.height = renderer.domElement.height;
+//   c.getContext('2d').drawImage(renderer.domElement, 0, 0);
+//   const tex = new THREE.CanvasTexture(c);
+//   tex.colorSpace = THREE.SRGBColorSpace;
+//   return tex;
+// }
+
+// function captureView(renderer, scene, box, view) {
+//   const size = box.getSize(new THREE.Vector3());
+//   const center = box.getCenter(new THREE.Vector3());
+
+//   let w, h, pos, up;
+//   if (view === 'front') {
+//     w = size.x; h = size.y;
+//     pos = [center.x, center.y, box.max.z + size.z];
+//     up = [0, 1, 0];
+//   } else if (view === 'side') {
+//     w = size.z; h = size.y;
+//     pos = [box.max.x + size.x, center.y, center.z];
+//     up = [0, 1, 0];
+//   } else { // top
+//     w = size.x; h = size.z;
+//     pos = [center.x, box.max.y + size.y, center.z];
+//     up = [0, 0, -1];
+//   }
+
+//   const cam = new THREE.OrthographicCamera(-w / 2, w / 2, h / 2, -h / 2, 0.1, size.length() * 4);
+//   cam.position.set(...pos);
+//   cam.up.set(...up);
+//   cam.lookAt(center);
+//   renderer.render(scene, cam);
+//   return snapshot(renderer);
+// }
+
+// function buildBillboard(box, tex) {
+//   const size = box.getSize(new THREE.Vector3());
+//   const center = box.getCenter(new THREE.Vector3());
+//   const group = new THREE.Group();
+//   // const mat = (map) => new THREE.MeshBasicMaterial({ map, alphaTest: 0.5, side: THREE.DoubleSide });
+//   const mat = (map) => new THREE.MeshStandardMaterial({
+//     map,
+//     alphaTest: 0.5,
+//     side: THREE.DoubleSide,
+//     roughness: 1,
+//     metalness: 0,
+//   });
+//   // const front = new THREE.Mesh(new THREE.PlaneGeometry(size.x, size.y), mat(tex.front));
+//   // front.position.y = size.y / 2;
+//   // Bake placement into vertex data (identity node transforms): the worker's
+//   // primitive consolidation discards node transforms, so they must not carry
+//   // any information. Order matters: rotate first, then translate.
+//   const frontGeo = new THREE.PlaneGeometry(size.x, size.y);
+//   frontGeo.translate(center.x, box.min.y + size.y / 2, center.z);
+//   const front = new THREE.Mesh(frontGeo, mat(tex.front));
+
+//   // const side = new THREE.Mesh(new THREE.PlaneGeometry(size.z, size.y), mat(tex.side));
+//   // side.rotation.y = Math.PI / 2;
+//   // side.position.y = size.y / 2;
+//   const sideGeo = new THREE.PlaneGeometry(size.z, size.y);
+//   sideGeo.rotateY(Math.PI / 2);
+//   sideGeo.translate(center.x, box.min.y + size.y / 2, center.z);
+//   const side = new THREE.Mesh(sideGeo, mat(tex.side));
+
+//   // const top = new THREE.Mesh(new THREE.PlaneGeometry(size.x, size.z), mat(tex.top));
+//   // top.rotation.x = -Math.PI / 2;
+//   // top.position.y = size.y * 0.65; // canopy height — tune
+//   const topGeo = new THREE.PlaneGeometry(size.x, size.z);
+//   topGeo.rotateX(-Math.PI / 2);
+//   topGeo.translate(center.x, box.min.y + size.y * 0.65, center.z); // canopy height — tune
+//   const top = new THREE.Mesh(topGeo, mat(tex.top));
+
+//   group.add(front, side, top);
+//   return group;
+// }
+const IMPOSTOR_GRID = 4;    // 4×4 views over the upper hemisphere
+const IMPOSTOR_FRAME = 256; // 4 × 256 = 1024px atlas, matches TREE_TEXTURE_SIZE
+const IMPOSTOR_SS = 4;      // supersample: render views at 4× and downscale
+
+// Grid cell → view direction. Center of atlas = straight down (top view),
+// edges = horizon views. Runtime shader must implement the exact inverse.
+function hemiOctaDir(u, v) {
+  const gx = u * 2 - 1, gy = v * 2 - 1;
+  const x = (gx + gy) * 0.5;
+  const z = (gx - gy) * 0.5;
+  const y = 1 - Math.abs(x) - Math.abs(z);
+  return new THREE.Vector3(x, y, z).normalize();
+}
+
+function captureAtlas(renderer, scene, sphere) {
+  const N = IMPOSTOR_GRID, F = IMPOSTOR_FRAME;
+  const atlas = document.createElement('canvas');
+  atlas.width = atlas.height = N * F;
+  const ctx = atlas.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  const { center, radius: r } = sphere;
+
+  const cam = new THREE.OrthographicCamera(-r, r, r, -r, 0.1, r * 4);
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      const dir = hemiOctaDir(i / (N - 1), j / (N - 1));
+      cam.position.copy(center).addScaledVector(dir, r * 2);
+      cam.up.set(0, 1, 0);
+      if (Math.abs(dir.y) > 0.99) cam.up.set(0, 0, -1); // top view: world-up is degenerate
+      cam.lookAt(center);
+      cam.updateProjectionMatrix();
+      renderer.render(scene, cam);
+      // v grows upward in UV space; canvas y grows downward → flip row placement
+      // ctx.drawImage(renderer.domElement, i * F, (N - 1 - j) * F, F, F);
+      ctx.drawImage(renderer.domElement, i * F, (N - 1 - j) * F, F, F); // scales SS×F → F
+    }
+  }
+  dilateAtlas(atlas);
+  const tex = new THREE.CanvasTexture(atlas);
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 }
 
-function captureView(renderer, scene, box, view) {
-  const size = box.getSize(new THREE.Vector3());
-  const center = box.getCenter(new THREE.Vector3());
+// Bleed edge colors into transparent texels so mipmaps and block compression
+// average leaf color instead of the black clear color (kills dark halos/splotches).
+// Alpha is left untouched — coverage doesn't grow, only RGB.
+function dilateAtlas(canvas, iterations = 16) {
+  const ctx = canvas.getContext('2d');
+  const { width: w, height: h } = canvas;
+  const img = ctx.getImageData(0, 0, w, h);
+  const d = img.data;
+  const n = w * h;
+  let mask = new Uint8Array(n);
+  for (let p = 0; p < n; p++) mask[p] = d[p * 4 + 3] >= 8 ? 1 : 0;
 
-  let w, h, pos, up;
-  if (view === 'front') {
-    w = size.x; h = size.y;
-    pos = [center.x, center.y, box.max.z + size.z];
-    up = [0, 1, 0];
-  } else if (view === 'side') {
-    w = size.z; h = size.y;
-    pos = [box.max.x + size.x, center.y, center.z];
-    up = [0, 1, 0];
-  } else { // top
-    w = size.x; h = size.z;
-    pos = [center.x, box.max.y + size.y, center.z];
-    up = [0, 0, -1];
+  for (let it = 0; it < iterations; it++) {
+    const next = mask.slice();
+    let changed = false;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const p = y * w + x;
+        if (mask[p]) continue;
+        let r = 0, g = 0, b = 0, cnt = 0;
+        if (x > 0 && mask[p - 1])         { const q = (p - 1) * 4; r += d[q]; g += d[q + 1]; b += d[q + 2]; cnt++; }
+        if (x < w - 1 && mask[p + 1])     { const q = (p + 1) * 4; r += d[q]; g += d[q + 1]; b += d[q + 2]; cnt++; }
+        if (y > 0 && mask[p - w])         { const q = (p - w) * 4; r += d[q]; g += d[q + 1]; b += d[q + 2]; cnt++; }
+        if (y < h - 1 && mask[p + w])     { const q = (p + w) * 4; r += d[q]; g += d[q + 1]; b += d[q + 2]; cnt++; }
+        if (cnt === 0) continue;
+        const q = p * 4;
+        d[q] = r / cnt; d[q + 1] = g / cnt; d[q + 2] = b / cnt;
+        next[p] = 1;
+        changed = true;
+      }
+    }
+    mask = next;
+    if (!changed) break;
   }
-
-  const cam = new THREE.OrthographicCamera(-w / 2, w / 2, h / 2, -h / 2, 0.1, size.length() * 4);
-  cam.position.set(...pos);
-  cam.up.set(...up);
-  cam.lookAt(center);
-  renderer.render(scene, cam);
-  return snapshot(renderer);
+  ctx.putImageData(img, 0, 0);
 }
 
-function buildBillboard(box, tex) {
-  const size = box.getSize(new THREE.Vector3());
-  const center = box.getCenter(new THREE.Vector3());
-  const group = new THREE.Group();
-  // const mat = (map) => new THREE.MeshBasicMaterial({ map, alphaTest: 0.5, side: THREE.DoubleSide });
-  const mat = (map) => new THREE.MeshStandardMaterial({
-    map,
+function buildImpostorQuad(sphere, atlasTex) {
+  const { center, radius: r } = sphere;
+  const mat = new THREE.MeshStandardMaterial({
+    map: atlasTex,
     alphaTest: 0.5,
     side: THREE.DoubleSide,
     roughness: 1,
     metalness: 0,
   });
-  // const front = new THREE.Mesh(new THREE.PlaneGeometry(size.x, size.y), mat(tex.front));
-  // front.position.y = size.y / 2;
-  // Bake placement into vertex data (identity node transforms): the worker's
-  // primitive consolidation discards node transforms, so they must not carry
-  // any information. Order matters: rotate first, then translate.
-  const frontGeo = new THREE.PlaneGeometry(size.x, size.y);
-  frontGeo.translate(center.x, box.min.y + size.y / 2, center.z);
-  const front = new THREE.Mesh(frontGeo, mat(tex.front));
-
-  // const side = new THREE.Mesh(new THREE.PlaneGeometry(size.z, size.y), mat(tex.side));
-  // side.rotation.y = Math.PI / 2;
-  // side.position.y = size.y / 2;
-  const sideGeo = new THREE.PlaneGeometry(size.z, size.y);
-  sideGeo.rotateY(Math.PI / 2);
-  sideGeo.translate(center.x, box.min.y + size.y / 2, center.z);
-  const side = new THREE.Mesh(sideGeo, mat(tex.side));
-
-  // const top = new THREE.Mesh(new THREE.PlaneGeometry(size.x, size.z), mat(tex.top));
-  // top.rotation.x = -Math.PI / 2;
-  // top.position.y = size.y * 0.65; // canopy height — tune
-  const topGeo = new THREE.PlaneGeometry(size.x, size.z);
-  topGeo.rotateX(-Math.PI / 2);
-  topGeo.translate(center.x, box.min.y + size.y * 0.65, center.z); // canopy height — tune
-  const top = new THREE.Mesh(topGeo, mat(tex.top));
-
-  group.add(front, side, top);
+  // Metadata MUST live on the material: the export worker's primitive
+  // consolidation (addGLB) discards nodes, but material extras survive
+  // (same mechanism as the batch: 'foliage' tag).
+  mat.userData.impostor = {
+    grid: IMPOSTOR_GRID,
+    hemi: true,
+    radius: r,
+    center: [center.x, center.y, center.z],
+  };
+  // Bake placement into vertex data (identity node transforms), as before.
+  const geo = new THREE.PlaneGeometry(r * 2, r * 2);
+  geo.translate(center.x, center.y, center.z);
+  const group = new THREE.Group();
+  group.add(new THREE.Mesh(geo, mat));
   return group;
 }
-
 async function generateBillboardGLB(treeScene) {
   const clone = treeScene.clone(true);
   // Capture pure albedo: swap every material for an unlit equivalent that keeps
@@ -98,35 +203,57 @@ async function generateBillboardGLB(treeScene) {
   // applied at runtime by the billboard's lit material, matching the PBR LODs.
   clone.traverse((o) => {
     if (!o.isMesh) return;
-    const toBasic = (src) => new THREE.MeshBasicMaterial({
-      map: src.map ?? null,
-      color: src.color?.clone() ?? new THREE.Color(0xffffff),
-      vertexColors: src.vertexColors ?? false,
-      alphaTest: src.alphaTest || (src.transparent ? 0.5 : 0),
-      side: src.side,
-    });
-    o.material = Array.isArray(o.material) ? o.material.map(toBasic) : toBasic(o.material);
+    // const toBasic = (src) => new THREE.MeshBasicMaterial({
+    //   map: src.map ?? null,
+    //   color: src.color?.clone() ?? new THREE.Color(0xffffff),
+    //   vertexColors: src.vertexColors ?? false,
+    //   alphaTest: src.alphaTest || (src.transparent ? 0.5 : 0),
+    //   side: src.side,
+    // });
+    // o.material = Array.isArray(o.material) ? o.material.map(toBasic) : toBasic(o.material);
+    // Keep lit materials for the bake (clone: source materials are shared
+    // with the live preview and must not be mutated)
+    const toCapture = (src) => {
+      const m = src.clone();
+      if ('roughness' in m) { m.roughness = 1; m.metalness = 0; }
+      m.alphaTest = src.alphaTest || (src.transparent ? 0.5 : 0);
+      m.transparent = false;
+      return m;
+    };
+    o.material = Array.isArray(o.material) ? o.material.map(toCapture) : toCapture(o.material);
+
   });
 
   const captureScene = new THREE.Scene();
   // captureScene.add(new THREE.AmbientLight(0xffffff, 3));
+  // Direction-neutral bake lighting: hemisphere light bakes shape contrast
+  // (bright canopy top, darker undersides/interior) without baking a sun
+  // azimuth into the atlas. Intensity π ≈ albedo-level output for white sky.
+  captureScene.add(new THREE.HemisphereLight(0xffffff, 0x445544, 2.5));
   captureScene.add(clone);
 
   const box = new THREE.Box3().setFromObject(clone);
 
   const rt = new THREE.WebGLRenderer({ alpha: true });
-  rt.setSize(1024, 1024);
+  // rt.setSize(1024, 1024);
+  // rt.setSize(IMPOSTOR_FRAME, IMPOSTOR_FRAME);
+  rt.setSize(IMPOSTOR_FRAME * IMPOSTOR_SS, IMPOSTOR_FRAME * IMPOSTOR_SS);
   rt.setClearColor(0x000000, 0);
 
-  const textures = {
-    front: captureView(rt, captureScene, box, 'front'),
-    side: captureView(rt, captureScene, box, 'side'),
-    top: captureView(rt, captureScene, box, 'top'),
-  };
+  // const textures = {
+  //   front: captureView(rt, captureScene, box, 'front'),
+  //   side: captureView(rt, captureScene, box, 'side'),
+  //   top: captureView(rt, captureScene, box, 'top'),
+  // };
+  const sphere = box.getBoundingSphere(new THREE.Sphere());
+  const atlas = captureAtlas(rt, captureScene, sphere);
+
   rt.dispose();
 
-  const billboard = buildBillboard(box, textures);
-  return new GLTFExporter().parseAsync(billboard, { binary: true }); // ArrayBuffer
+  // const billboard = buildBillboard(box, textures);
+  // return new GLTFExporter().parseAsync(billboard, { binary: true }); // ArrayBuffer
+  const impostor = buildImpostorQuad(sphere, atlas);
+  return new GLTFExporter().parseAsync(impostor, { binary: true }); // ArrayBuffer
 }
 
 

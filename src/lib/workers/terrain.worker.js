@@ -1,5 +1,6 @@
-import { expose } from 'threads/worker';
-import { lerp, smootherstep } from './utils';
+import { expose, Transfer } from 'threads/worker';
+import { lerp, smootherstep, pointInRing } from './utils';
+import { createNoise2D } from 'simplex-noise';
 
 function generate1DGaussianKernel(radius, sigma) {
   const kernel = [];
@@ -295,23 +296,13 @@ function getSegmentsBBox(polyPx, holesPx, radiusPx, terrainSize) {
   };
 }
 
-function pointInRingPx(px, py, ring) {
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const xi = ring[i][0], yi = ring[i][1];
-    const xj = ring[j][0], yj = ring[j][1];
-    if (((yi > py) !== (yj > py)) &&
-        px < ((xj - xi) * (py - yi)) / ((yj - yi) || 1e-12) + xi) {
-      inside = !inside;
-    }
-  }
-  return inside;
-}
-
 function pointInPolygonWithHoles(pt, polyPx, holesPx) {
-  if (!pointInRingPx(pt[0], pt[1], polyPx)) return false;
+  // if (!pointInRingPx(pt[0], pt[1], polyPx)) return false;
+  if (!pointInRing(pt, polyPx)) return false;
+
   for (const hole of holesPx) {
-    if (pointInRingPx(pt[0], pt[1], hole)) return false;
+    // if (pointInRingPx(pt[0], pt[1], hole)) return false;
+    if (pointInRing(pt, hole)) return false;
   }
   return true;
 }
@@ -485,4 +476,52 @@ function nearestSpineElevation(pt, spineSegs) {
 }
 
 
-expose({ smoothTerrainData, smoothLakeShores, smoothRiverBeds });
+function fbm(noise2D, x, y, octaves = 6, lacunarity = 2.0, gain = 0.5) {
+  let amp = 1, freq = 1, sum = 0, norm = 0;
+  for (let i = 0; i < octaves; i++) {
+    sum += amp * noise2D(x * freq, y * freq);
+    norm += amp;
+    amp *= gain;
+    freq *= lacunarity;
+  }
+  return sum / norm; // roughly [-1, 1]
+}
+
+function fillRandomTerrain(heightmap, size) {
+  const noise2D = createNoise2D();
+  const warp2D = createNoise2D();
+  const scale = 2.0;        // broader features
+  const warpAmp = 0.08;     // subtle variation only
+
+  // Golf-appropriate band: occupy ~12% of the Uint16 range, centered low.
+  // Keeps relief gentle regardless of what full-range maps to in world units.
+  const base = 8192;        // floor offset so terrain can be carved down later
+  const amplitude = 8192;   // total relief band
+ 
+
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const nx = (x / size) * scale;
+      const ny = (y / size) * scale;
+
+      // domain warp to break up uniformity
+      const wx = nx + warpAmp * warp2D(nx * 2, ny * 2);
+      const wy = ny + warpAmp * warp2D(nx * 2 + 100, ny * 2 + 100);
+
+      let h = fbm(noise2D, wx, wy, 4, 2.0, 0.35); // fewer octaves, fast falloff
+      h = (h + 1) / 2;                            // [0, 1]
+      h = h * h * (3 - 2 * h);                    // smoothstep: eases peaks AND valleys
+
+      heightmap[y * size + x] = Math.round(base + h * amplitude);
+    }
+  }
+}
+
+function generateRandomTerrain(size) {
+  const heightmap = new Uint16Array(size * size);
+  fillRandomTerrain(heightmap, size);
+  return Transfer(heightmap.buffer);
+}
+
+expose({ smoothTerrainData, smoothLakeShores, smoothRiverBeds, generateRandomTerrain });

@@ -1,9 +1,10 @@
 import React, { useMemo, useEffect, useRef, useState, useCallback } from 'react';
 import { Dialog, DialogTitle, DialogContent, Typography, DialogActions, Button, Alert, Stack, Box, Grid, ButtonGroup, TextField, MenuItem, Switch, FormControlLabel } from '@mui/material';
-import { useProject } from '../contexts/Project';
 import * as THREE from 'three';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { FlyControls, MapControls, OrbitControls, Shape, Grid as ThreeGrid, Line, Bounds, useBounds, CameraControls } from '@react-three/drei';
+import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
+import { useProject } from '../contexts/Project';
 import NumberField from '../components/NumberField';
 import { Accordion, AccordionDetails, AccordionHeader, AccordionSummary, SidebarAccordionGroup } from '../components/Accordion';
 import { PROJECT_FILE_PROTOCOL } from '../constants';
@@ -12,6 +13,9 @@ import LoadingButton from '../components/LoadingButton';
 
 // QUESTION: how would I overlay this on the below material? Canvas texture?
 // const SVG_URL = `${PROJECT_FILE_PROTOCOL}://svg/course.svg`;
+THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
+THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
+THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
 function Terrain({
   ref,
@@ -76,30 +80,61 @@ function Terrain({
       const minRow = Math.max(0, centerRow - radiusCells);
       const maxRow = Math.min(rows - 1, centerRow + radiusCells);
 
-      const writeBack = (r, c, idx) => {
+      // const writeBack = (r, c, idx) => {
+      //   const hm = heightMapRef.current;
+      //   if (!hm) return;
+
+      //   const newVal = Math.max(0, Math.min(65535,
+      //     Math.round((pos.getY(idx) / heightScale) * 65535)
+      //   ));
+
+      //   // fill the block of heightmap pixels this geometry vertex represents
+      //   const srcX0 = Math.round(c * step);
+      //   const srcZ0 = Math.round(r * step);
+      //   const srcX1 = Math.round((c + 1) * step);
+      //   const srcZ1 = Math.round((r + 1) * step);
+
+      //   const xEnd = Math.min(srcX1, resolution);
+      //   const zEnd = Math.min(srcZ1, resolution);
+
+      //   for (let sz = srcZ0; sz < zEnd; sz++) {
+      //     for (let sx = srcX0; sx < xEnd; sx++) {
+      //       hm[sz * resolution + sx] = newVal;
+      //     }
+      //   }
+      // };
+      // Bilinearly resample geometry heights back into the full-res
+      // heightmap for the edited region. Constant block-fill per vertex
+      // creates stair-step / waffle artifacts in downstream meshes.
+      const writeBackRegion = (r0, r1, c0, c1) => {
         const hm = heightMapRef.current;
         if (!hm) return;
 
-        const newVal = Math.max(0, Math.min(65535,
-          Math.round((pos.getY(idx) / heightScale) * 65535)
-        ));
+        const sx0 = Math.max(0, Math.floor(c0 * step));
+        const sx1 = Math.min(resolution - 1, Math.ceil((c1 + 1) * step));
+        const sz0 = Math.max(0, Math.floor(r0 * step));
+        const sz1 = Math.min(resolution - 1, Math.ceil((r1 + 1) * step));
 
-        // fill the block of heightmap pixels this geometry vertex represents
-        const srcX0 = Math.round(c * step);
-        const srcZ0 = Math.round(r * step);
-        const srcX1 = Math.round((c + 1) * step);
-        const srcZ1 = Math.round((r + 1) * step);
+        for (let sz = sz0; sz <= sz1; sz++) {
+          const gr = sz / step;
+          const ri = Math.min(rows - 2, Math.floor(gr));
+          const tz = gr - ri;
+          for (let sx = sx0; sx <= sx1; sx++) {
+            const gc = sx / step;
+            const ci = Math.min(cols - 2, Math.floor(gc));
+            const tx = gc - ci;
 
-        const xEnd = Math.min(srcX1, resolution);
-        const zEnd = Math.min(srcZ1, resolution);
+            const i00 = ri * cols + ci;
+            const y =
+              (pos.getY(i00) * (1 - tx) + pos.getY(i00 + 1) * tx) * (1 - tz) +
+              (pos.getY(i00 + cols) * (1 - tx) + pos.getY(i00 + cols + 1) * tx) * tz;
 
-        for (let sz = srcZ0; sz < zEnd; sz++) {
-          for (let sx = srcX0; sx < xEnd; sx++) {
-            hm[sz * resolution + sx] = newVal;
+            hm[sz * resolution + sx] = Math.max(0, Math.min(65535,
+              Math.round((y / heightScale) * 65535)
+            ));
           }
         }
       };
-
 
 
       if (brushMode === 'raise' || brushMode === 'dig') {
@@ -113,9 +148,10 @@ function Terrain({
             if (dist >= brushRadius) continue;
             const falloff = 1 - (dist / brushRadius);
             pos.setY(idx, pos.getY(idx) + direction * strength * falloff);
-            writeBack(r, c, idx);
+            // writeBack(r, c, idx);
           }
         }
+        writeBackRegion(minRow, maxRow, minCol, maxCol);
       }
 
       else if (brushMode === 'smooth') {
@@ -141,9 +177,10 @@ function Terrain({
             if (r < rows - 1) { sum += snapshot[idx + cols]; count++; }
             const avg = sum / count;
             pos.setY(idx, snapshot[idx] + (avg - snapshot[idx]) * falloff * strength);
-            writeBack(r, c, idx);
+            // writeBack(r, c, idx);
           }
         }
+        writeBackRegion(minRow, maxRow, minCol, maxCol);
       }
 
       else if (brushMode === 'set' && sampledHeight != null) {
@@ -160,9 +197,10 @@ function Terrain({
             const falloff = 1 - Math.sqrt(distSq) / brushRadius;
             const current = pos.getY(idx);
             pos.setY(idx, current + (sampledHeight - current) * falloff * strength);
-            writeBack(r, c, idx);
+            // writeBack(r, c, idx);
           }
         }
+        writeBackRegion(minRow, maxRow, minCol, maxCol);
       }
 
       pos.needsUpdate = true;
@@ -204,6 +242,7 @@ function Terrain({
       }
     }
     geo.computeVertexNormals();
+    geo.computeBoundsTree();
     return geo;
   }, [heightMapVersion, heightScale]);
 
@@ -290,7 +329,8 @@ function TerrainInteraction({ meshRef, onHit, onSampleHeight }) {
   const { camera, gl } = useThree();
   const painting = useRef(false);
   const lastApply = useRef(0);
-
+  const paintPlane = useRef(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0));
+  const planeHit = useRef(new THREE.Vector3());
   const groundPlane = useMemo(() => {
     const geo = new THREE.PlaneGeometry(10000, 10000);
     geo.rotateX(-Math.PI / 2);
@@ -301,6 +341,7 @@ function TerrainInteraction({ meshRef, onHit, onSampleHeight }) {
 
   useEffect(() => {
     const raycaster = new THREE.Raycaster();
+    raycaster.firstHitOnly = true;
     const mouse = new THREE.Vector2();
 
     const getGroundPoint = (e) => {
@@ -309,7 +350,23 @@ function TerrainInteraction({ meshRef, onHit, onSampleHeight }) {
         -(e.offsetY / gl.domElement.clientHeight) * 2 + 1
       );
       raycaster.setFromCamera(mouse, camera);
+      // While painting, lock to the horizontal plane captured at stroke start.
+      // Raycasting the live mesh mid-stroke makes the brush creep as the
+      // surface deforms, and the BVH is stale during edits anyway.
+      if (painting.current) {
+        return raycaster.ray.intersectPlane(paintPlane.current, planeHit.current)
+          ? planeHit.current
+          : null;
+      }
+
+      // const hits = raycaster.intersectObject(groundPlane);
+      const terrain = meshRef.current?.mesh;
+      if (terrain) {
+        const terrainHits = raycaster.intersectObject(terrain);
+        if (terrainHits.length > 0) return terrainHits[0].point;
+      }
       const hits = raycaster.intersectObject(groundPlane);
+
       return hits.length > 0 ? hits[0].point : null;
     };
 
@@ -325,9 +382,13 @@ function TerrainInteraction({ meshRef, onHit, onSampleHeight }) {
         return; // don't paint
       }
 
-      painting.current = true;
+      // painting.current = true;
       const point = getGroundPoint(e);
-      if (point) onHit(point);
+      // if (point) onHit(point);
+      if (!point) return;
+      paintPlane.current.constant = -point.y; // plane at y = point.y
+      painting.current = true;
+      onHit(point);      
     };
 
     const handleMove = (e) => {
@@ -354,7 +415,12 @@ function TerrainInteraction({ meshRef, onHit, onSampleHeight }) {
     const handleUp = () => {
       painting.current = false;
       const mesh = meshRef.current?.mesh;
-      if (mesh) mesh.geometry.computeVertexNormals();
+      // if (mesh) mesh.geometry.computeVertexNormals();
+      if (mesh) {
+        mesh.geometry.computeVertexNormals();
+        mesh.geometry.boundsTree?.refit();
+      }
+
     };
 
     gl.domElement.addEventListener('pointerdown', handleDown);
@@ -383,7 +449,7 @@ function BrushModeButton({ children, active, ...rest }) {
   );
 }
 export default function EditTerrainDialog(props) {
-  const { project } = useProject();
+  const { project, saveHeightMap } = useProject();
   const { onClose, open, systemError } = props;
   const controlsRef = useRef();
   const meshRef = useRef();
@@ -392,14 +458,14 @@ export default function EditTerrainDialog(props) {
   // const [heightMap, setHeightMap] = useState();
   
   const [heightScale, setHeightScale] = useState(project.stats?.heightScale || project.stats?.relief);
-  const [brushRadius, setBrushRadius] = useState(12);
-  const [brushStrength, setBrushStrength] = useState(3);
-  const [smoothStrength, setSmoothStrength] = useState(2);
+  const [brushRadius, setBrushRadius] = useState(10);
+  const [brushStrength, setBrushStrength] = useState(1);
+  const [smoothStrength, setSmoothStrength] = useState(3);
   const [sampledHeight, setSampledHeight] = useState(0);
   const [brushMode, setBrushMode] = useState('smooth');
   const [smoothPending, setSmoothPending] = useState(false);
   const [panelExpanded, setPanelExpanded] = useState('brush');
-  const [isWireframe, setIsWireframe] = useState(true);
+  const [isWireframe, setIsWireframe] = useState(false);
 
   const [displayImage, setDisplayImage] = useState(
     project?.satellite ? Object.values(project.satellite)?.[0]?.uri : ''
@@ -482,7 +548,8 @@ export default function EditTerrainDialog(props) {
   
   const handleSaveChanges = useCallback(async () => {
     // const current = meshRef.current?.exportHeightMap() || heightMap;
-    await window.meshery.terrain.saveHeightMap(heightMap.current, heightScale);
+    // await window.meshery.terrain.saveHeightMap(heightMap.current, heightScale);
+    await saveHeightMap(heightMap.current, heightScale);
     // console.log('heightMap', heightMap);
     onClose();
   }, [heightScale]);

@@ -21,6 +21,8 @@ import {
   Typography,
   CircularProgress,
   Divider,
+  Grid,
+  Checkbox,
 } from "@mui/material";
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import VisibilityIcon from '@mui/icons-material/Visibility';
@@ -43,6 +45,7 @@ import TreeLayerDialog from '../dialogs/TreeLayerDialog.jsx';
 import NumberField from '../components/NumberField.jsx';
 import TreeImportDialog from '../dialogs/TreeImportDialog.jsx';
 import ColorField from '../components/ColorField.jsx';
+import GenerateExportButton from '../components/GenerateExportButton.jsx';
 
 const PHASE_LABELS = {
   surfaces: (l) => `Loading surfaces… ${l.loaded}/${l.total}`,
@@ -137,12 +140,17 @@ export default function Course() {
     removeTreeLayer,
     updateTreeLayer,
     importTreeModel,
-    removeTreeModel
+    removeTreeModel,
+    updateSurfaces,
+    selectSurfaceTexture,
   } = useProject();
 
-  const [panelExpanded, setPanelExpanded] = useState('veg');
+  const [panelExpanded, setPanelExpanded] = useState('mat');
+  const [matSurface, setMatSurface] = useState('fairway');
   const [skySettings, setSkySettings] = useState({ ...project?.scene?.sky || {} });
-  const skySettingsInit = useRef(false);
+  const [sunSettings, setSunSettings] = useState({ ...project?.scene?.sun || {} });
+  const [oceanSettings, setOceanSettings] = useState({ ...project?.scene?.ocean || {} });
+  const sceneSettingsInit = useRef(false);
   const [exportCourseData, setExportCourseData] = useState({ mapImage: null });
   // const [heightMap, setHeightMap] = useState(null);
   const [heightScale, setHeightScale] = useState(project.stats?.heightScale || project.stats?.relief);
@@ -152,9 +160,21 @@ export default function Course() {
   const [loading, setLoading] = useState(null);
   const [selectedLayer, setSelectedLayer] = useState(null);
   const [selectedTab, setSelectedTab] = useState(0);
+  const [materialTab, setMaterialTab] = useState(0);
   const [hiddenLayers, setHiddenLayers] = useState({});
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [treeEditDialog, setTreeEditDialog] = useState(null);
+
+  // Surfaces resolved by main for this course (defaults + overrides)
+  const surfaceNames = Object.keys(project?._surfaces || {});
+  const activeSurface = surfaceNames.includes(matSurface) ? matSurface : (surfaceNames[0] ?? '');
+  const activeTint = project?._surfaces?.[activeSurface]?.tint;
+  const activeTileSize = project?._surfaces?.[activeSurface]?.tileSize;
+  const activeGrass = project?._surfaces?.[activeSurface]?.grass;
+  
+  const handleMowChange = (key, value) => updateSurfaces({
+    [activeSurface]: { grass: { mowLines: { [key]: value } } },
+  });
 
   // refs
   const courseSceneRef = useRef();
@@ -197,6 +217,17 @@ export default function Course() {
     const lightMapImage = await courseSceneRef.current?.captureLightmap(4096);
     setExportCourseData(old => ({ ...old, mapImage, lightMapImage }));
   }
+
+  const handleScreenshot = async () => {
+    const dataUrl = await courseSceneRef.current?.captureView(2);
+    if (!dataUrl) return;
+    await window.meshery.project.saveCapture(dataUrl);
+
+    // const a = document.createElement('a');
+    // a.href = dataUrl;
+    // a.download = `course-${Date.now()}.jpg`;
+    // a.click();
+  };  
 
   // const loadRawData = async (uri) => {
   //   const response = await fetch(uri);
@@ -314,18 +345,34 @@ export default function Course() {
     }
   }, []);
 
+  const handleHDRIChange = useCallback((key, newValue) => {
+    setSkySettings(old => ({ ...old, hdri: { ...old.hdri, [key]: newValue } }))
+  }, []);
+
   const handleCloudSettingsChange = useCallback((key, newValue) => {
-    setSkySettings(old => ({ ...old, clouds: { ...old.clouds, [key]: newValue } }))
+    setSkySettings(old => ({ ...old, clouds: { ...old.clouds, [key]: newValue } }));
+  }, []);
+  
+  const handleSunSettingsChange = useCallback((key, newValue) => {
+    setSunSettings(old => ({ ...old, [key]: newValue }));
   }, []);
   
   useEffect(() => {
-    if (!skySettingsInit.current) {
-      skySettingsInit.current = true;
+    if (!sceneSettingsInit.current) {
+      sceneSettingsInit.current = true;
       return;
     }
-    console.log('sky Settings-changed', skySettings);
-    updateSceneSettings({ sky: skySettings });
-  }, [skySettings]);
+    console.log('--- Settings changed ---');
+    console.log('sky', skySettings);
+    console.log('sun', sunSettings);
+    console.log('ocean', oceanSettings);
+    // updateSceneSettings({ sky: skySettings, sun: sunSettings });
+    const t = setTimeout(() => {
+      updateSceneSettings({ sky: skySettings, sun: sunSettings, ocean: oceanSettings });
+    }, 300);
+    return () => clearTimeout(t);
+
+  }, [skySettings, sunSettings, oceanSettings]);
 
   useEffect(() => {
     console.log(`${Date.now()} - CourseMap init effect`);
@@ -346,22 +393,6 @@ export default function Course() {
       window.meshery.off('mesh.data', handleStateUpdate);
     };
   }, []);  
-  // useEffect(() => {
-  //   window.meshery.project.getHeightMap().then(result => {
-  //     setHeightMap(result);
-  //   });
-
-  //   window.meshery.project.getMeshDataState().then(result => {
-  //     console.log('res', result);
-  //     handleStateUpdate(null, result);
-  //   });
-
-  //   window.meshery.on('mesh.data', handleStateUpdate);
-    
-  //   return () => {
-  //     window.meshery.off('mesh.data', handleStateUpdate);
-  //   };
-  // }, []);
   
   return (
     <React.Fragment>
@@ -380,30 +411,142 @@ export default function Course() {
           
           <Stack sx={{ p: 3 }} spacing={3}>
 
-            <Button
-              onClick={handleGenerateMeshes}
-              fullWidth
-              variant="contained"
-              color={!meshDataState?.generated || !project._layers?.length ? 'primary' : 'inherit'}
-            >
-              {!meshDataState?.generated || !project._layers?.length ? 'Generate' : 'Regenerate'} Meshes
-            </Button>
-
-            <Button
-              disabled={!project._layers?.length}
-              color={!project._layers?.length ? 'inherit' : 'primary'}
-              onClick={handleExport}
-              fullWidth={true}
-              variant="contained"
-            >
-              Export Course
-            </Button>
-
+            <GenerateExportButton
+              hasLayers={project._layers?.length}
+              hasMeshes={meshDataState?.generated}
+              onExport={handleExport}
+              onGenerate={handleGenerateMeshes}
+              onScreenshot={handleScreenshot}
+            />
           </Stack>
 
 
           <Box sx={{ mt: 2, flexGrow: 1, overflow: 'hidden', height: '80%', display: 'flex', flexDirection: 'column' }}>
             <SidebarAccordionGroup>
+              {/* Materials */}
+              <Accordion expanded={panelExpanded === 'mat'} onChange={(e, expanded) => setPanelExpanded(expanded ? 'mat' : null)}>
+                <AccordionSummary id="mat-header">
+                  <AccordionHeader sx={{ flex: 1, alignContent: 'center' }} variant="h5" color="textSecondary">Materials</AccordionHeader>
+                </AccordionSummary>
+                <AccordionDetails sx={{ p: 2 }}>
+                  
+                  {surfaceNames.length ? (
+                    <Stack spacing={3}>
+                      <TextField
+                        select={true}
+                        fullWidth={true}
+                        size="small"
+                        label="Surface"
+                        value={activeSurface}
+                        onChange={(e) => setMatSurface(e.target.value)}
+                      >
+                        {surfaceNames.map(s => (
+                          <MenuItem key={s} value={s}>{s}</MenuItem>
+                        ))}
+                      </TextField>
+                      <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
+                        <MiniTabs value={materialTab} onChange={(e,num) => setMaterialTab(num)} variant="fullWidth">
+                          <MiniTab label="Texture" sx={{ p: 0 }} />
+                          <MiniTab label="Grass" sx={{ p: 0 }} />
+                        </MiniTabs>
+                      </Box>
+                      <MiniTabPanel value={materialTab} index={0} sx={{ p: 1 }}>
+                        <Stack spacing={3}>
+
+                          <ColorField
+                            label="Tint"
+                            onChange={(newValue) => updateSurfaces({ [activeSurface]: { tint: `#${String(newValue).replace('#', '')}` } })}
+                            value={activeTint ? new THREE.Color(activeTint).getHexString() : 'ffffff'}
+                          />
+                          {['color', 'normal'].map((type) => {
+                            const fileKey = type === 'normal' ? 'normalFile' : 'baseColorFile';
+                            const current = project?.surfaces?.[activeSurface]?.[fileKey];
+                            return (
+                              <Stack key={type} direction="row" spacing={1} alignItems="center">
+                                <Typography variant="caption" noWrap sx={{ flex: 1 }}>
+                                  {current ? current.split('/').pop() : 'default'}
+                                </Typography>
+                                <Button size="small" variant="outlined" sx={{ flexShrink: 0 }}
+                                  onClick={() => selectSurfaceTexture(activeSurface, type)}>
+                                  {type === 'normal' ? 'NormalMap' : 'TextureMap'}
+                                </Button>
+                                {current ? (
+                                  <Button size="small" onClick={() => updateSurfaces({
+                                    [activeSurface]: type === 'normal'
+                                      ? { normalFile: null, normal: null }
+                                      : { baseColorFile: null, baseColor: null },
+                                  })}>✕</Button>
+                                ) : null}
+                              </Stack>
+                            );
+                          })}
+
+                          <NumberField
+                            min={0}
+                            max={10}
+                            step={0.1}
+                            label="Texture Scale"
+                            size="small"
+                            onChange={(newValue) => updateSurfaces({ [activeSurface]: { tileSize: newValue } })}
+                            value={activeTileSize}
+                          />
+                        </Stack>
+                      </MiniTabPanel>
+                      
+                      <MiniTabPanel value={materialTab} index={1} sx={{ p: 1 }}>                      
+                        <Stack spacing={3}>
+                          {activeGrass?.enabled ? (
+                            <React.Fragment>
+                              <Divider />
+                              <Typography variant="caption">Mow Lines</Typography>
+                              <NumberField label="Direction" size="small" min={0} max={359} step={5}
+                                value={activeGrass.mowLines?.direction}
+                                onChange={(v) => handleMowChange('direction', v)} />
+                              <NumberField label="Width" size="small" min={0.1} max={20} step={0.1}
+                                value={activeGrass.mowLines?.width}
+                                onChange={(v) => handleMowChange('width', v)} />
+                              <NumberField label="Strength" size="small" min={0} max={0.5} step={0.01}
+                                value={activeGrass.mowLines?.strength}
+                                onChange={(v) => handleMowChange('strength', v)} />
+                            </React.Fragment>
+                          ) : null}
+                        </Stack>
+                      </MiniTabPanel>
+
+                      <Button
+                        size="small"
+                        color="secondary"
+                        onClick={() => updateSurfaces({ [activeSurface]: { tint: null } })}
+                      >Reset to default</Button>
+                    </Stack>
+                  ) : (
+                    <Typography variant="caption">Open or generate a course to edit materials</Typography>
+                  )}
+                </AccordionDetails>
+              </Accordion>
+              
+              {/* OuterArea */}
+              <Accordion expanded={panelExpanded === 'outer'} onChange={(e, expanded) => setPanelExpanded(expanded ? 'outer' : null)}>
+                <AccordionSummary id="outer-header">
+                  <AccordionHeader sx={{ flex: 1, alignContent: 'center' }} variant="h5" color="textSecondary">Outer Area</AccordionHeader>
+                </AccordionSummary>
+                <AccordionDetails>
+                  <Box sx={{ px: 3 }}>
+                    <FormControlLabel
+                      control={<Checkbox checked={oceanSettings.enabled} onChange={(e) => setOceanSettings(old => ({ ...old, enabled: e.target.checked }))} />}
+                      label="Infinite Ocean"
+                    />
+                    <NumberField
+                      disabled={!oceanSettings.enabled}
+                      fullWidth={true}
+                      label="Y-Offset"
+                      size="small"
+                      value={oceanSettings.yOffset} onChange={(offset) => setOceanSettings(old => ({ ...old, yOffset: offset }))}
+                    />
+                  </Box>
+                </AccordionDetails>
+              </Accordion>
+              {/* Vegetation */}
               <Accordion expanded={panelExpanded === 'veg'} onChange={(e, expanded) => setPanelExpanded(expanded ? 'veg' : null)}>
                 <AccordionSummary id="veg-header">
                   <AccordionHeader sx={{ flex: 1, alignContent: 'center' }} variant="h5" color="textSecondary">Planting</AccordionHeader>
@@ -445,8 +588,35 @@ export default function Course() {
                     {skySettings.type === 'hdri' ? (
                       <React.Fragment>
                         {skySettings.hdri?.name ? (
-                          <Typography>{skySettings.hdri?.name}</Typography>
+                          <Typography variant="caption">{skySettings.hdri?.name}</Typography>
                         ) : null}
+                        <NumberField
+                          label="Rotation"
+                          size="small"
+                          value={skySettings.hdri?.rotation}
+                          onChange={(newValue) => handleHDRIChange('rotation', newValue)}
+                          step={1}
+                          min={0}
+                          max={359}
+                        />
+                        <NumberField
+                          label="Environment Intensity"
+                          size="small"
+                          value={skySettings.hdri?.environmentIntensity}
+                          onChange={(newValue) => handleHDRIChange('environmentIntensity', newValue)}
+                          step={0.01}
+                          min={0}
+                          max={1}
+                        />
+                        <NumberField
+                          label="Background Intensity"
+                          size="small"
+                          value={skySettings.hdri?.backgroundIntensity}
+                          onChange={(newValue) => handleHDRIChange('backgroundIntensity', newValue)}
+                          step={0.01}
+                          min={0}
+                          max={1}
+                        />
                         <Button variant="contained" color="secondary" fullWidth onClick={handleSelectHDRI}>Select HDRI</Button>
                       </React.Fragment>
                     ) : null}
@@ -483,6 +653,12 @@ export default function Course() {
                       onChange={(newValue) => handleCloudSettingsChange('fogColor', newValue)}
                       value={skySettings.clouds.fogColor}
                     />
+                    
+                    <ColorField
+                      label="Sun Color"
+                      onChange={(newValue) => handleSunSettingsChange('color', newValue)}
+                      value={sunSettings.color}
+                    />
 
                   </Stack>
                 </AccordionDetails>
@@ -498,7 +674,9 @@ export default function Course() {
          <CourseScene
            meshDataState={meshDataState}
            ref={courseSceneRef}
+           sunSettings={sunSettings}
            skySettings={skySettings}
+           oceanSettings={oceanSettings}
            worldSize={worldSize}
            selectedLayer={selectedLayer}
            onSelect={handleLayerSelect}
@@ -561,6 +739,16 @@ export default function Course() {
                         value={selectedLayer.config.density}
                         onChange={(event, val) => handleTreeConfigChange('density', event)}
                       />
+
+                      <NumberField
+                        label="Min Distance"
+                        size="small"
+                        min={0.1}
+                        max={100}
+                        step={0.1}
+                        value={selectedLayer.config.minDistance}
+                        onChange={(event, val) => handleTreeConfigChange('minDistance', event)}
+                      />
                       <Box>
                         <Typography variant="caption">Scale Range</Typography>
                         <Slider
@@ -588,7 +776,7 @@ export default function Course() {
                   <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
                     <MiniTabs value={selectedTab} onChange={(e,num) => setSelectedTab(num)} variant="fullWidth">
                       <MiniTab label="Mesh" />
-                      <MiniTab label="Material" />
+                      {/* <MiniTab label="Material" /> */}
                     </MiniTabs>
                   </Box>
                   <MiniTabPanel value={selectedTab} index={0}>
@@ -601,6 +789,9 @@ export default function Course() {
                         <Box>
                           <Typography component="div">
                             {selectedLayer.layer?.name}
+                          </Typography>
+                          <Typography component="div" variant="caption">
+                            {selectedLayer.layer?.surface}
                           </Typography>
                         </Box>
                       </Stack>
