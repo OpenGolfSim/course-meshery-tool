@@ -48,11 +48,14 @@ export default function TreeImportDialog(props) {
   const handleImportAsset = async (plant) => {
     onClose(plant);
   }
+  const handleCustomCreate = () => {
+    window.meshery.trees.createCustom();
+  }
   const handleDownloadPlant = async (plant) => {
     console.log('download', plant);
     setDownloadPending(plant?.id);
     const res = await window.meshery.trees.downloadPlantAsset(plant);
-    console.log('res', res);
+    console.log('loaded-trees', res);
     if (res) {
       setAvailablePlants(res);
     }
@@ -79,7 +82,8 @@ export default function TreeImportDialog(props) {
       open={open}
       maxWidth="md"
       fullWidth={true}
-      slotProps={{ paper: { elevation: 1 } }}
+      Pap
+      slotProps={{ paper: { elevation: 1, sx: { height: '500px' } } }}
     >
       <DialogTitle>Plant Vegetation</DialogTitle>
       <DialogContent>
@@ -104,48 +108,72 @@ export default function TreeImportDialog(props) {
             </List>
           </Grid>
           <Grid size={10}>
-            <Grid container spacing={3}>
-              {filteredPlants.map(tree => {
-                return (
-                  <Grid size={3} key={tree.id}>
-                    <Card variant="outlined">
-                      <CardMedia
-                        sx={{ height: 150 }}
-                        image={tree.thumbnail}
-                      />
-                      <CardContent>
-                        <Typography variant="h5" component="div">
-                          {tree.title}
-                        </Typography>
-                      </CardContent>
-                      <CardActions>
-                        {tree._cache?._fileExists ? (
-                          <Button
-                            fullWidth={true}
-                            variant="contained"
-                            color="inherit"
-                            onClick={() => handleImportAsset(tree)}
-                          >
-                            Import Asset
-                          </Button>
-                        ) : (
-                          <Button
-                            disabled={!!downloadPending}
-                            variant="contained"
-                            startIcon={downloadPending === tree.id && <CircularProgress color="inherit" size={14} />}
-                            color={!downloadPending ? 'primary' : 'secondary'}
-                            fullWidth={true}
-                            onClick={() => handleDownloadPlant(tree)}
-                          >
-                            {downloadPending === tree.id ? 'Downloading' : 'Download'}
-                          </Button>
-                        )}
-                      </CardActions>
-                    </Card>
-                  </Grid>
-                );
-              })}
-            </Grid>
+              {selectedCategory === 'custom' ? (
+                <Box sx={{ mb: 2 }}>
+                  <Button
+                    onClick={handleCustomCreate}
+                    color="secondary"
+                    variant="contained"
+                  >
+                    Create Custom Asset
+                  </Button>
+                </Box>
+              ) : null}
+
+              {!filteredPlants.length ? (
+                <Stack spacing={3} sx={{ alignItems: 'center' }}>
+                {selectedCategory === 'custom' ? (
+                  <>
+                    <Typography>No assets exist yet</Typography>
+                  </>
+                ) : (
+                  <Typography>Coming soon</Typography>
+                )}
+                </Stack>
+              ) : (
+                <Grid container spacing={3}>
+                  {filteredPlants.map(tree => {
+                    return (
+                      <Grid size={3} key={tree.id}>
+                        <Card variant="outlined">
+                          <CardMedia
+                            sx={{ height: 150, backgroundColor: '#aaa' }}
+                            image={tree.thumbnail}
+                          />
+                          <CardContent>
+                            <Typography variant="h5" component="div">
+                              {tree.title}
+                            </Typography>
+                          </CardContent>
+                          <CardActions>
+                            {tree._cache?._fileExists ? (
+                              <Button
+                                fullWidth={true}
+                                variant="contained"
+                                color="inherit"
+                                onClick={() => handleImportAsset(tree)}
+                              >
+                                Import Asset
+                              </Button>
+                            ) : (
+                              <Button
+                                disabled={!!downloadPending}
+                                variant="contained"
+                                startIcon={downloadPending === tree.id && <CircularProgress color="inherit" size={14} />}
+                                color={!downloadPending ? 'primary' : 'secondary'}
+                                fullWidth={true}
+                                onClick={() => handleDownloadPlant(tree)}
+                              >
+                                {downloadPending === tree.id ? 'Downloading' : 'Download'}
+                              </Button>
+                            )}
+                          </CardActions>
+                        </Card>
+                      </Grid>
+                    )
+                  })}
+                </Grid>
+              )}
           </Grid>
         </Grid>
       </DialogContent>

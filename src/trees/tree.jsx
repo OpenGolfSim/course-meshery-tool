@@ -10,86 +10,6 @@ import { Line, Text } from '@react-three/drei';
 import { CourseLight } from '@opengolfsim/fuse';
 import NumberField from '../components/NumberField.jsx';
 
-
-// ---- Billboard generation ----------------------------------------------
-
-// function snapshot(renderer) {
-//   const c = document.createElement('canvas');
-//   c.width = renderer.domElement.width;
-//   c.height = renderer.domElement.height;
-//   c.getContext('2d').drawImage(renderer.domElement, 0, 0);
-//   const tex = new THREE.CanvasTexture(c);
-//   tex.colorSpace = THREE.SRGBColorSpace;
-//   return tex;
-// }
-
-// function captureView(renderer, scene, box, view) {
-//   const size = box.getSize(new THREE.Vector3());
-//   const center = box.getCenter(new THREE.Vector3());
-
-//   let w, h, pos, up;
-//   if (view === 'front') {
-//     w = size.x; h = size.y;
-//     pos = [center.x, center.y, box.max.z + size.z];
-//     up = [0, 1, 0];
-//   } else if (view === 'side') {
-//     w = size.z; h = size.y;
-//     pos = [box.max.x + size.x, center.y, center.z];
-//     up = [0, 1, 0];
-//   } else { // top
-//     w = size.x; h = size.z;
-//     pos = [center.x, box.max.y + size.y, center.z];
-//     up = [0, 0, -1];
-//   }
-
-//   const cam = new THREE.OrthographicCamera(-w / 2, w / 2, h / 2, -h / 2, 0.1, size.length() * 4);
-//   cam.position.set(...pos);
-//   cam.up.set(...up);
-//   cam.lookAt(center);
-//   renderer.render(scene, cam);
-//   return snapshot(renderer);
-// }
-
-// function buildBillboard(box, tex) {
-//   const size = box.getSize(new THREE.Vector3());
-//   const center = box.getCenter(new THREE.Vector3());
-//   const group = new THREE.Group();
-//   // const mat = (map) => new THREE.MeshBasicMaterial({ map, alphaTest: 0.5, side: THREE.DoubleSide });
-//   const mat = (map) => new THREE.MeshStandardMaterial({
-//     map,
-//     alphaTest: 0.5,
-//     side: THREE.DoubleSide,
-//     roughness: 1,
-//     metalness: 0,
-//   });
-//   // const front = new THREE.Mesh(new THREE.PlaneGeometry(size.x, size.y), mat(tex.front));
-//   // front.position.y = size.y / 2;
-//   // Bake placement into vertex data (identity node transforms): the worker's
-//   // primitive consolidation discards node transforms, so they must not carry
-//   // any information. Order matters: rotate first, then translate.
-//   const frontGeo = new THREE.PlaneGeometry(size.x, size.y);
-//   frontGeo.translate(center.x, box.min.y + size.y / 2, center.z);
-//   const front = new THREE.Mesh(frontGeo, mat(tex.front));
-
-//   // const side = new THREE.Mesh(new THREE.PlaneGeometry(size.z, size.y), mat(tex.side));
-//   // side.rotation.y = Math.PI / 2;
-//   // side.position.y = size.y / 2;
-//   const sideGeo = new THREE.PlaneGeometry(size.z, size.y);
-//   sideGeo.rotateY(Math.PI / 2);
-//   sideGeo.translate(center.x, box.min.y + size.y / 2, center.z);
-//   const side = new THREE.Mesh(sideGeo, mat(tex.side));
-
-//   // const top = new THREE.Mesh(new THREE.PlaneGeometry(size.x, size.z), mat(tex.top));
-//   // top.rotation.x = -Math.PI / 2;
-//   // top.position.y = size.y * 0.65; // canopy height — tune
-//   const topGeo = new THREE.PlaneGeometry(size.x, size.z);
-//   topGeo.rotateX(-Math.PI / 2);
-//   topGeo.translate(center.x, box.min.y + size.y * 0.65, center.z); // canopy height — tune
-//   const top = new THREE.Mesh(topGeo, mat(tex.top));
-
-//   group.add(front, side, top);
-//   return group;
-// }
 const IMPOSTOR_GRID = 4;    // 4×4 views over the upper hemisphere
 const IMPOSTOR_FRAME = 256; // 4 × 256 = 1024px atlas, matches TREE_TEXTURE_SIZE
 const IMPOSTOR_SS = 4;      // supersample: render views at 4× and downscale
@@ -203,14 +123,6 @@ async function generateBillboardGLB(treeScene) {
   // applied at runtime by the billboard's lit material, matching the PBR LODs.
   clone.traverse((o) => {
     if (!o.isMesh) return;
-    // const toBasic = (src) => new THREE.MeshBasicMaterial({
-    //   map: src.map ?? null,
-    //   color: src.color?.clone() ?? new THREE.Color(0xffffff),
-    //   vertexColors: src.vertexColors ?? false,
-    //   alphaTest: src.alphaTest || (src.transparent ? 0.5 : 0),
-    //   side: src.side,
-    // });
-    // o.material = Array.isArray(o.material) ? o.material.map(toBasic) : toBasic(o.material);
     // Keep lit materials for the bake (clone: source materials are shared
     // with the live preview and must not be mutated)
     const toCapture = (src) => {
@@ -225,7 +137,6 @@ async function generateBillboardGLB(treeScene) {
   });
 
   const captureScene = new THREE.Scene();
-  // captureScene.add(new THREE.AmbientLight(0xffffff, 3));
   // Direction-neutral bake lighting: hemisphere light bakes shape contrast
   // (bright canopy top, darker undersides/interior) without baking a sun
   // azimuth into the atlas. Intensity π ≈ albedo-level output for white sky.
@@ -235,23 +146,14 @@ async function generateBillboardGLB(treeScene) {
   const box = new THREE.Box3().setFromObject(clone);
 
   const rt = new THREE.WebGLRenderer({ alpha: true });
-  // rt.setSize(1024, 1024);
-  // rt.setSize(IMPOSTOR_FRAME, IMPOSTOR_FRAME);
   rt.setSize(IMPOSTOR_FRAME * IMPOSTOR_SS, IMPOSTOR_FRAME * IMPOSTOR_SS);
   rt.setClearColor(0x000000, 0);
 
-  // const textures = {
-  //   front: captureView(rt, captureScene, box, 'front'),
-  //   side: captureView(rt, captureScene, box, 'side'),
-  //   top: captureView(rt, captureScene, box, 'top'),
-  // };
   const sphere = box.getBoundingSphere(new THREE.Sphere());
   const atlas = captureAtlas(rt, captureScene, sphere);
 
   rt.dispose();
 
-  // const billboard = buildBillboard(box, textures);
-  // return new GLTFExporter().parseAsync(billboard, { binary: true }); // ArrayBuffer
   const impostor = buildImpostorQuad(sphere, atlas);
   return new GLTFExporter().parseAsync(impostor, { binary: true }); // ArrayBuffer
 }
@@ -290,8 +192,6 @@ function rulerExtent(height) {
 }
 
 function ScaleRuler({ height }) {
-  // const step = height > 10 ? 5 : 1;
-  // const top = Math.ceil(height / step) * step;   // e.g. 53.2 → 55
   const { step, top } = rulerExtent(height);
 
   const ticks = [];
@@ -320,7 +220,6 @@ function TreeScene({ lods, scale, captureRef, onSceneReady }) {
   const lightRef = useRef();
   const [bounds, setBounds] = useState(null);
 
-  // const lods = [lodObj?.[2], lodObj?.[1], lodObj?.[0]].filter(Boolean);
   const urls = useMemo(() => lods.map(l => l.uri), [lods]);
   const gltfs = useLoader(GLTFLoader, urls);
 
@@ -339,9 +238,6 @@ function TreeScene({ lods, scale, captureRef, onSceneReady }) {
 
     const { top } = rulerExtent(size.y);
 
-
-    // const maxDim = Math.max(size.x, size.y, size.z);
-    // const dist = maxDim / (2 * Math.tan((camera.fov * Math.PI / 180) / 2)) * 1.6;
     const halfFov = (camera.fov * Math.PI / 180) / 2;
     const dist = Math.max(
       // size.y / (2 * Math.tan(halfFov)),           // fit height
@@ -349,13 +245,6 @@ function TreeScene({ lods, scale, captureRef, onSceneReady }) {
       size.x / (2 * Math.tan(halfFov * camera.aspect)) // fit width
     ) * 1.2;
 
-    // camera.position.set(
-    //   center.x + dist * 0.6,
-    //   center.y + dist * 0.2,
-    //   center.z + dist * 0.6
-    // );
-    // camera.position.set(center.x, center.y, center.z + dist);
-    // camera.lookAt(center);
     const frameY = box.min.y + top / 2;
     camera.position.set(center.x, frameY, center.z + dist);
     camera.lookAt(center.x, frameY, center.z);
@@ -520,18 +409,19 @@ function TreeMaker() {
               <Stack direction="row" spacing={1}>
                 <Button
                   size="small"
-                  disabled={!treeScene || isGenerating}
+                  variant={billboardGlb ? 'text' : 'contained'}
+                  disabled={!treeScene || isGenerating || !lods?.length}
                   onClick={handleGenerateBillboard}
                 >
                   {isGenerating ? 'Generating...' : billboardGlb ? 'Regenerate' : 'Generate'}
                 </Button>
-                <Button
+                {/* <Button
                   variant={lodObj?.[3] ? 'text' : 'contained'}
                   color={lodObj?.[3] ? 'inherit' : 'primary'}
                   onClick={() => handleSelect(3)} size="small"
                 >
                   {lodObj?.[3] ? 'Change' : 'Select'}
-                </Button>
+                </Button> */}
               </Stack>
 
             }
@@ -539,7 +429,6 @@ function TreeMaker() {
             text={{
               primary: 'LOD3 (Billboard)',
               secondary: lodObj?.[3]?.name ?? (billboardGlb ? 'Auto-generated' : ''),
-              // secondary: lodObj?.[3]?.name ?? '',
             }}
           />
           <TreeListItem
@@ -575,15 +464,12 @@ function TreeMaker() {
             }}
           />
         </List>
-        {/* <Button fullWidth onClick={handleSelect}>Add LOD</Button> */}
         <Stack spacing={2} sx={{ p: 3 }}>
           <Button variant="contained" fullWidth onClick={handleExport}>Export Package</Button>
         </Stack>
       </Grid>
       <Grid flex={1} sx={{ backgroundColor: '#111' }}>
         <Canvas gl={{ preserveDrawingBuffer: true }}>
-          {/* <ambientLight intensity={2} />
-          <directionalLight position={[5, 10, 7]} intensity={1.2} /> */}
           {lods.length > 0 && (
             <Suspense fallback={null}>
               <TreeScene
