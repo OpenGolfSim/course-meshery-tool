@@ -79,9 +79,15 @@ const defaultProjectTemplate = {
       elevation: 40,   // degrees above horizon; 90 = noon overhead
       azimuth: 225     // compass direction light comes from; 225 = southwest
     },
-    ocean: {
-      enabled: false,
-      yOffset: 0
+    // ocean: {
+    //   enabled: false,
+    //   yOffset: 0
+    // },
+    outer: {
+      type: 'none', // none | ocean | satellite
+      yOffset: 0,
+      color: '#fff',
+      satellite: null
     },
     bloom: {
       enabled: true,
@@ -368,6 +374,15 @@ export async function loadProjectFile(filePath) {
     ...stored,
     holes
   });
+
+  // migrate ocean settings to outer
+  if (openProject.ocean?.enabled) {
+    openProject.outer = {
+      type: 'ocean',
+      yOffset: openProject.ocean?.yOffset ?? 0
+    }
+    openProject.ocean = null;
+  }
 
   // migrate tree configs to have filenames
   openProject.trees.forEach(treeLayer => {

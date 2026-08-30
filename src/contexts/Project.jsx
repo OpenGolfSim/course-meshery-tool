@@ -29,9 +29,10 @@ const ProjectContext = createContext({
   removeTreeModel: () => {},
   generateMeshes: () => {},
   saveHeightMap: () => {},
+  generateOuterSatellite: () => {},
   lidarSources: null,
   lidarFile: null,
-  palette: null
+  palette: null,
 });
 
 // Create a custom hook to easily consume the context
@@ -79,6 +80,12 @@ export const ProjectProvider = ({ children }) => {
       return { ...old, scene: updatedScene };
     });
     return updatedScene;
+  }
+
+  const generateOuterSatellite = async () => {
+    const updatedOuter = await window.meshery.imagery.outerSatellite();
+    console.log('updatedOuter', updatedOuter);
+    setProject((old) => ({ ...old, scene: { ...old.scene, outer: updatedOuter } }))
   }
   
   const getOpenProject = async () => {
@@ -342,6 +349,7 @@ export const ProjectProvider = ({ children }) => {
       updateLayerById,
       generateMeshes,
       saveHeightMap,
+      generateOuterSatellite,
     }}>
       {children}
     </ProjectContext.Provider>

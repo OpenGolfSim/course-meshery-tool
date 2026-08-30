@@ -143,13 +143,14 @@ export default function Course() {
     removeTreeModel,
     updateSurfaces,
     selectSurfaceTexture,
+    generateOuterSatellite,
   } = useProject();
 
   const [panelExpanded, setPanelExpanded] = useState('mat');
   const [matSurface, setMatSurface] = useState('fairway');
   const [skySettings, setSkySettings] = useState({ ...project?.scene?.sky || {} });
   const [sunSettings, setSunSettings] = useState({ ...project?.scene?.sun || {} });
-  const [oceanSettings, setOceanSettings] = useState({ ...project?.scene?.ocean || {} });
+  const [outerSettings, setOuterSettings] = useState({ ...project?.scene?.outer || {} });
   const sceneSettingsInit = useRef(false);
   const [exportCourseData, setExportCourseData] = useState({ mapImage: null });
   // const [heightMap, setHeightMap] = useState(null);
@@ -356,6 +357,10 @@ export default function Course() {
   const handleSunSettingsChange = useCallback((key, newValue) => {
     setSunSettings(old => ({ ...old, [key]: newValue }));
   }, []);
+
+  const handleGenerateOuterSatellite = async () => {
+    await generateOuterSatellite();
+  }  
   
   useEffect(() => {
     if (!sceneSettingsInit.current) {
@@ -365,14 +370,14 @@ export default function Course() {
     console.log('--- Settings changed ---');
     console.log('sky', skySettings);
     console.log('sun', sunSettings);
-    console.log('ocean', oceanSettings);
+    console.log('ocean', outerSettings);
     // updateSceneSettings({ sky: skySettings, sun: sunSettings });
     const t = setTimeout(() => {
-      updateSceneSettings({ sky: skySettings, sun: sunSettings, ocean: oceanSettings });
+      updateSceneSettings({ sky: skySettings, sun: sunSettings, outer: outerSettings });
     }, 300);
     return () => clearTimeout(t);
 
-  }, [skySettings, sunSettings, oceanSettings]);
+  }, [skySettings, sunSettings, outerSettings]);
 
   useEffect(() => {
     console.log(`${Date.now()} - CourseMap init effect`);
@@ -531,19 +536,55 @@ export default function Course() {
                   <AccordionHeader sx={{ flex: 1, alignContent: 'center' }} variant="h5" color="textSecondary">Outer Area</AccordionHeader>
                 </AccordionSummary>
                 <AccordionDetails>
-                  <Box sx={{ px: 3 }}>
-                    <FormControlLabel
+                  <Stack sx={{ px: 3, pt: 3 }} spacing={3}>
+
+                    <TextField
+                      select={true}
+                      fullWidth={true}
+                      size="small"
+                      label="Outer Type"
+                      value={outerSettings.type}
+                      onChange={(event) => setOuterSettings(old => ({ ...old, type: event.target.value }))}
+                    >
+                      <MenuItem value="none">None</MenuItem>
+                      <MenuItem value="ocean">Infinite Ocean</MenuItem>
+                      <MenuItem value="satellite">Satellite Terain</MenuItem>
+                    </TextField>
+                    
+                    {/* <FormControlLabel
                       control={<Checkbox checked={oceanSettings.enabled} onChange={(e) => setOceanSettings(old => ({ ...old, enabled: e.target.checked }))} />}
                       label="Infinite Ocean"
-                    />
+                    /> */}
+
                     <NumberField
-                      disabled={!oceanSettings.enabled}
+                      disabled={!outerSettings.type === 'none'}
                       fullWidth={true}
                       label="Y-Offset"
                       size="small"
-                      value={oceanSettings.yOffset} onChange={(offset) => setOceanSettings(old => ({ ...old, yOffset: offset }))}
+                      value={outerSettings.yOffset}
+                      onChange={(offset) => setOuterSettings(old => ({ ...old, yOffset: offset }))}
                     />
-                  </Box>
+
+                    <ColorField
+                      label="Tint"
+                      onChange={(newValue) => setOuterSettings(old => ({ ...old, color: newValue }))}
+                      value={outerSettings.color}
+                    />
+
+                    {outerSettings.type === 'satellite' ? (
+                      <>
+                        <Button
+                          fullWidth={true}
+                          variant="contained"
+                          onClick={handleGenerateOuterSatellite}
+                        >
+                          Generate Satellite Image
+                        </Button>
+
+                        <pre>{JSON.stringify(outerSettings.satellite)}</pre>
+                      </>
+                    ) : null}
+                  </Stack>
                 </AccordionDetails>
               </Accordion>
               {/* Vegetation */}
@@ -676,7 +717,7 @@ export default function Course() {
            ref={courseSceneRef}
            sunSettings={sunSettings}
            skySettings={skySettings}
-           oceanSettings={oceanSettings}
+           outerSettings={outerSettings}
            worldSize={worldSize}
            selectedLayer={selectedLayer}
            onSelect={handleLayerSelect}

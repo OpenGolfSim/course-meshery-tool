@@ -86,7 +86,8 @@ contextBridge.exposeInMainWorld('meshery', {
   imagery: {
     hillShade: () => ipcRenderer.invoke('imagery.hillShade'),
     satellite: (wmsSource) => ipcRenderer.invoke('imagery.satellite', wmsSource),
-    downloadDEM: (bounds) => ipcRenderer.invoke('imagery.downloadDEM', bounds)
+    downloadDEM: (bounds) => ipcRenderer.invoke('imagery.downloadDEM', bounds),
+    outerSatellite: () => ipcRenderer.invoke('imagery.outerSatellite'),
   },
   svg: {
     export: () => ipcRenderer.invoke('svg.export'),

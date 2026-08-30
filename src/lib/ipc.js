@@ -97,6 +97,8 @@ ipcMain.handle('imagery.downloadDEM', (_event, courseBounds) => imagery.download
 ipcMain.handle('imagery.hillShade', (_event) => imagery.generateHillShade());
 ipcMain.handle('imagery.satellite', (_event, wmsSource) => imagery.generateSatelliteImage(wmsSource));
 
+ipcMain.handle('imagery.outerSatellite', (_event) => imagery.generateOuterSatelliteImage());
+
 
 ipcMain.handle('tools.getToolsPath', (event) => getToolsPath());
 ipcMain.handle('tools.changeToolsPath', (event) => changeToolsPath());
