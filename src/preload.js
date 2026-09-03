@@ -54,9 +54,10 @@ contextBridge.exposeInMainWorld('meshery', {
 
     selectHDRI: () => ipcRenderer.invoke('project.selectHDRI'),
     saveCapture: (data) => ipcRenderer.invoke('project.saveCapture', data),
-    // saveWrite: (settings) => ipcRenderer.invoke('project.saveWrite', settings),
-
-    // saveProject: (trees) => ipcRenderer.invoke('project.updateTrees', trees)
+    
+    importObject: () => ipcRenderer.invoke('project.importObject'),
+    updateObject: (id, update) => ipcRenderer.invoke('project.updateObject', id, update),
+    removeObject: (id) => ipcRenderer.invoke('project.removeObject', id),
   },
   mesh: {
     getCourseMesh: () => ipcRenderer.invoke('mesh.getCourseMesh'),

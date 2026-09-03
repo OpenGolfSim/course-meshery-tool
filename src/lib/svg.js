@@ -2,6 +2,7 @@ import * as cheerio from 'cheerio';
 import * as martinez from 'martinez-polygon-clipping';
 import polygonClipping from 'polygon-clipping';
 import log from 'electron-log';
+import { randomUUID } from 'crypto';
 import { parse as parseTransform } from 'svg-transform-parser';
 import {
   compose,
@@ -250,6 +251,18 @@ function getElementName(el) {
   return $(el).attr('inkscape:label') || $(el).attr('id');
 }
 
+function parseLayerHex(el) {
+  const style = el.style?.toLowerCase();
+  const matched = style?.match(FILL_MATCH);
+  // let [, hex] = matched;
+  if (matched?.length > 1) {
+    return matched[1];
+  }
+  const fillAttr = el.fill?.toLowerCase();
+  if (fillAttr) {
+    return fillAttr.replace('#', '');
+  }
+}
 function parseCourseLayers($, courseLayer) {
   // Get all <path> in the layer
   
@@ -257,16 +270,17 @@ function parseCourseLayers($, courseLayer) {
   const results = [];
 
   courseLayer.find('path').each((i, el) => {
-    const data = $(el).attr('d');
-    const id = $(el).attr('id');
-    const name = $(el).attr('inkscape:label') || id;
-    const style = $(el).attr('style')?.toLowerCase();
-    
-    // console.log(`PATH: ${name}, ${style}`);
+    const attrs = $(el).attr();
+    const data = attrs.d;
+    const id = attrs.id ?? `layer-${i}`;
+    const name = attrs['inkscape:label'] ?? id;
+    // const style = $(el).attr('style')?.toLowerCase();
+    // const fillAttr = $(el).attr('fill')?.toLowerCase();
+    const hex = parseLayerHex(attrs);
+    console.log(`${name}/${id} (fill: ${hex})`, attrs);
 
-    const matched = style?.match(FILL_MATCH);
-    if (!matched) {
-      const strokeMatch = style?.match(STROKE_MATCH);
+    if (!hex) {
+      const strokeMatch = attrs.style?.match(STROKE_MATCH);
       if (strokeMatch) {
         const [, hex] = strokeMatch;
         const hexId = getHexId(hex);
@@ -284,14 +298,15 @@ function parseCourseLayers($, courseLayer) {
       // skip other paths without a fill
       return;
     }
-    const [, hex] = matched;
+
+    // const [, hex] = matched;
     // const hexId = hex.toLowerCase().replace(/#/g, '');
     const hexId = getHexId(hex);
     const surface = colorMap.get(hexId);
     // const splatId = idMap.get(hexId);
     // const surface = matched ? palette?.[hexColor] : null;
     if (!surface) {
-      throw new Error(`Unable to match layer color (${name}, ${hexColor}) to a valid surface!`);
+      throw new Error(`Unable to match layer color (${name}, ${hex}) to a valid surface!`);
     }
 
     const layer = {

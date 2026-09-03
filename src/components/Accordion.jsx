@@ -50,8 +50,8 @@ export function SidebarAccordionGroup({ children, sx, ...rest }) {
 export function AccordionHeader({ children, ...rest }) {
   return (
     <Typography
-      sx={{ flex: 1, alignContent: 'center' }}
-      variant="h5"
+      sx={{ flex: 1, alignContent: 'center', py: 0 }}
+      // variant="h5"
       color="textSecondary"
       {...rest}
     >
@@ -88,10 +88,13 @@ export const AccordionSummary = styled((props) => (
 ))(({ theme }) => ({
   backgroundColor: 'rgba(0, 0, 0, .03)',
   flexDirection: 'row-reverse',
+  minHeight: 32,
   [`& .${accordionSummaryClasses.expandIconWrapper}.${accordionSummaryClasses.expanded}`]:
     {},
   [`& .${accordionSummaryClasses.content}`]: {
     marginLeft: theme.spacing(1),
+    // marginTop: 0,
+    // marginBottom: 0
   },
   ...theme.applyStyles('dark', {
     backgroundColor: 'rgba(255, 255, 255, .05)',

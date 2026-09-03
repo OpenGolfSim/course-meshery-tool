@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { Color } from 'three';
+import { Color, Euler, Quaternion, MathUtils } from 'three';
 import { Document, NodeIO } from '@gltf-transform/core';
 import { mergeDocuments, dedup } from '@gltf-transform/functions';
 import { ktx2 } from 'ktx2-encoder/gltf-transform';
@@ -344,6 +344,33 @@ export async function write(filePath, project, meshData, imageData) {
     }
   }
 
+  if (project.objects?.length) {
+    broadcast('export.progress', { type: 'progress', percent: -1, status: 'Embedding placed objects' });
+
+    for (const obj of project.objects) {
+      const node = await embedModel(io, doc, scene, {
+        filePath: obj.filePath,
+        name: `object_${obj.id}`,
+        extras: {
+          type: 'placed_object',
+          id: obj.id,
+          name: obj.name,
+        },
+      });
+      node.setTranslation(obj.position);
+      if (obj.scale) {
+        node.setScale([obj.scale, obj.scale, obj.scale]);
+      }
+      if (obj.rotation?.length) {
+        const q = new Quaternion().setFromEuler(new Euler(
+          MathUtils.degToRad(obj.rotation[0]),
+          MathUtils.degToRad(obj.rotation[1]),
+          MathUtils.degToRad(obj.rotation[2]),
+        ));
+        node.setRotation([q.x, q.y, q.z, q.w]);
+      }
+    }
+  }
 
 
   // Deduplicate any identical textures/materials/meshes

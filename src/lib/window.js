@@ -128,6 +128,22 @@ export function setupProtocolHandler() {
           }
         });
       }
+    } else if (key.startsWith('objects3d')) {
+      const inputId = decodeURIComponent(key.split('/')?.[1].split('.')?.[0] ?? '');
+      console.log('inputId', inputId);
+      const object = openProject.objects.find(obj => obj.id === inputId);
+      console.log('object', object);
+      if (object){
+        const fetchFile = pathToFileURL(object.filePath).toString();
+        return net.fetch(fetchFile);
+      } else {
+        return new Response('Not found', {
+          status: 404,
+          headers: { 
+            'content-type': 'text/plain'
+          }
+        });
+      }
     }
 
     if (openProject._workingDir){

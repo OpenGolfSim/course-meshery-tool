@@ -53,6 +53,9 @@ ipcMain.handle('project.updateSurfaces', (_event, update) => project.updateSurfa
 ipcMain.handle('project.selectSurfaceTexture', (_event, surface, textureType) => project.selectSurfaceTexture(surface, textureType));
 
 ipcMain.handle('project.updateTrees', (_event, trees) => project.updateTrees(trees));
+ipcMain.handle('project.importObject', (_event) => project.importObject());
+ipcMain.handle('project.updateObject', (_event, id, update) => project.updateObject(id, update));
+ipcMain.handle('project.removeObject', (_event, id) => project.removeObject(id));
 
 ipcMain.handle('trees.updateLayer', (_event, layerId, layerUpdate) => project.updateTreeLayer(layerId, layerUpdate));
 ipcMain.handle('trees.addLayer', (_event) => project.addTreeLayer());

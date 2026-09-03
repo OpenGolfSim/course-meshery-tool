@@ -1,5 +1,4 @@
-import { app, session, shell, BrowserWindow, ipcMain, dialog, protocol, net } from 'electron';
-import path from 'path';
+import { app, session, shell, BrowserWindow, ipcMain, dialog, protocol, net, nativeImage } from 'electron';import path from 'path';
 import pMap from 'p-map';
 import logger from 'electron-log';
 import { spawn, Thread, Worker, Pool } from 'threads';
@@ -172,6 +171,21 @@ export async function generateFlowMapPNG(polygon, spine) {
   return exportWorker.generateFlowMapPNG(polygon, spine);
 }
 
+// Block-compressed GPU formats (ASTC/BC7 via KTX2) require base dimensions
+// that are multiples of 4 — downscale-crop misaligned textures before encode.
+function alignImageTo4(rawImage, mimeType) {
+  const img = nativeImage.createFromBuffer(Buffer.from(rawImage));
+  const { width, height } = img.getSize();
+  const w4 = width & ~3;
+  const h4 = height & ~3;
+  if (!width || !height) return null;            // decode failed — leave as-is
+  if (width === w4 && height === h4) return null; // already aligned
+  log.info(`Aligning texture ${width}x${height} -> ${w4}x${h4}`);
+  const resized = img.resize({ width: w4, height: h4, quality: 'best' });
+  const out = mimeType === 'image/jpeg' ? resized.toJPEG(95) : resized.toPNG();
+  // Buffer may sit in a pooled ArrayBuffer — slice to exact bytes for Transfer
+  return out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength);
+}
 
 export async function compressTextures(doc, onProgress = () => {}) {
   const pool = Pool(() => getWorker('export.worker.js'), 4);
@@ -184,7 +198,10 @@ export async function compressTextures(doc, onProgress = () => {}) {
   log.info(`wasmPath: ${wasmPath}`);
 
   await pMap(textures, async (texture) => {
-    const rawImage = texture.getImage();
+    // const rawImage = texture.getImage();
+    let rawImage = texture.getImage();
+    const aligned = alignImageTo4(rawImage, texture.getMimeType());
+    if (aligned) rawImage = new Uint8Array(aligned);
     // Normal/ORM are data — sRGB transfer decodes them wrong on the GPU
     // (bent normals + skewed roughness = white speckle at distance).
     // const srgb = !/(_normal|_orm)$/.test(texture.getName() ?? '');

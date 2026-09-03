@@ -18,7 +18,7 @@ function SSRInitialFilled(_) {
 }
 SSRInitialFilled.muiName = 'Input';
 
-function NumberField({ id: idProp, label, error, onChange, fullWidth, size = 'medium', ...other }) {
+function NumberField({ id: idProp, label, error, onChange, fullWidth, size = 'medium', inputSx, ...other }) {
   let id = React.useId();
   if (idProp) {
     id = idProp;
@@ -58,8 +58,12 @@ function NumberField({ id: idProp, label, error, onChange, fullWidth, size = 'me
             onKeyDown={props.onKeyDown}
             onFocus={props.onFocus}
             slotProps={{
-              input: props,
+              input: {
+                ...props,
+                ...inputSx && { sx: inputSx }
+              },
             }}
+            sx={{ pr: 0 }}
             endAdornment={
               <InputAdornment
                 position="end"
@@ -96,7 +100,6 @@ function NumberField({ id: idProp, label, error, onChange, fullWidth, size = 'me
                 </BaseNumberField.Decrement>
               </InputAdornment>
             }
-            sx={{ pr: 0 }}
           />
         )}
       />

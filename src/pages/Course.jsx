@@ -46,6 +46,7 @@ import NumberField from '../components/NumberField.jsx';
 import TreeImportDialog from '../dialogs/TreeImportDialog.jsx';
 import ColorField from '../components/ColorField.jsx';
 import GenerateExportButton from '../components/GenerateExportButton.jsx';
+import ObjectList from '../components/ObjectList.jsx';
 
 const PHASE_LABELS = {
   surfaces: (l) => `Loading surfaces… ${l.loaded}/${l.total}`,
@@ -144,6 +145,9 @@ export default function Course() {
     updateSurfaces,
     selectSurfaceTexture,
     generateOuterSatellite,
+    importObject,
+    updateObject,
+    removeObject,
   } = useProject();
 
   const [panelExpanded, setPanelExpanded] = useState('mat');
@@ -258,7 +262,22 @@ export default function Course() {
       setSelectedLayer(null);
     }
   }
-  
+  const handleLayerZoom = useCallback((newVal) => {
+    console.log(`layer: ${selectedLayer.layer.id}`, selectedLayer.layer, newVal);
+    if (selectedLayer?.layer?.id) {
+      courseSceneRef.current?.zoomToLayer(selectedLayer.layer.id);
+    }
+  }, [selectedLayer]);
+
+  const handleShowHide = useCallback((event) => {
+    // hiddenLayers?.[selectedLayer.layer?.id]
+    if (selectedLayer.layer?.id) {
+      console.log(`layer: ${selectedLayer.layer?.id}`);
+      setHiddenLayers(old => ({ ...old, [selectedLayer.layer.id]: !old?.[selectedLayer.layer.id] }));
+    //   updateLayerById(selectedLayer.id, { visible: });
+    }
+  }, [selectedLayer]);
+
   const handleSaveSurface = useCallback(async () => {
     console.log('surface-changed', selectedLayer);
   }, [selectedLayer]);
@@ -360,8 +379,50 @@ export default function Course() {
 
   const handleGenerateOuterSatellite = async () => {
     await generateOuterSatellite();
-  }  
+  }
+
+  // Debounced object save — instant local edit, coalesced IPC commit
+  const objectPendingRef = useRef(null); // { id, patch, timer }
+  const commitObjectUpdate = useCallback((id, patch) => {
+    const pending = objectPendingRef.current;
+    const merged = pending?.id === id ? { ...pending.patch, ...patch } : patch;
+    clearTimeout(pending?.timer);
+    const timer = setTimeout(() => {
+      console.log('apply change');
+      objectPendingRef.current = null;
+      updateObject(id, merged);
+    }, 500);
+    objectPendingRef.current = { id, patch: merged, timer };
+  }, [updateObject]);
+
+  const handleObjectPositionChange = useCallback((value, index) => {
+    const newPosition = [...selectedLayer.object.position];
+    newPosition[index] = value;
+    console.log('position', newPosition);
+    // updateObject(selectedLayer.object.id, { position: newPosition });
+    setSelectedLayer({ type: 'object', object: { ...selectedLayer.object, position: newPosition } });
+    commitObjectUpdate(selectedLayer.object.id, { position: newPosition });
+  }, [selectedLayer, commitObjectUpdate]);
+
+  const handleObjectRotationChange = useCallback((value, index) => {
+    const newRotation = [...selectedLayer.object.rotation ?? [0, 0, 0]];
+    newRotation[index] = value;
+    console.log('rotation', newRotation);
+    setSelectedLayer({ type: 'object', object: { ...selectedLayer.object, rotation: newRotation } });
+    commitObjectUpdate(selectedLayer.object.id, { rotation: newRotation });
+  }, [selectedLayer, commitObjectUpdate]);
+
   
+  const handleObjectScaleChange = useCallback((value) => {
+    setSelectedLayer({ type: 'object', object: { ...selectedLayer.object, scale: value } });
+    commitObjectUpdate(selectedLayer.object.id, { scale: value });
+  }, [selectedLayer, commitObjectUpdate]);
+  
+  const handleRemoveObject = useCallback(async (id) => {
+    console.log('remove', id);
+    await removeObject(id)
+  }, [removeObject]);
+
   useEffect(() => {
     if (!sceneSettingsInit.current) {
       sceneSettingsInit.current = true;
@@ -378,6 +439,16 @@ export default function Course() {
     return () => clearTimeout(t);
 
   }, [skySettings, sunSettings, outerSettings]);
+
+  // // update selected object settings
+  // useEffect(() => {
+  //   if (selectedLayer?.type === 'object') {
+  //     const object = project.objects.find(obj => obj.id === selectedLayer.object.id);
+  //     if (object) {
+  //       setSelectedLayer({ type: 'object', object });
+  //     }
+  //   }
+  // }, [project.objects]);
 
   useEffect(() => {
     console.log(`${Date.now()} - CourseMap init effect`);
@@ -488,7 +559,7 @@ export default function Course() {
 
                           <NumberField
                             min={0}
-                            max={10}
+                            max={1000}
                             step={0.1}
                             label="Texture Scale"
                             size="small"
@@ -607,7 +678,30 @@ export default function Course() {
                   </Box>
                 </AccordionDetails>
               </Accordion>
-
+              
+              {/* Objects */}
+              <Accordion expanded={panelExpanded === 'objects'} onChange={(e, expanded) => setPanelExpanded(expanded ? 'objects' : null)}>
+                <AccordionSummary id="objects-header">
+                  <AccordionHeader sx={{ flex: 1, alignContent: 'center' }} variant="h5" color="textSecondary">3D Objects</AccordionHeader>
+                </AccordionSummary>
+                <AccordionDetails>
+                  <Box sx={{ p: 2 }}>
+                    <Button
+                      fullWidth={true}
+                      onClick={importObject}
+                    >
+                      Import Object
+                    </Button>
+                  </Box>
+                  <Typography variant="caption">Manually place 3D objects in the scene</Typography>
+                  <ObjectList
+                    objects={project.objects}
+                    selectedObject={selectedLayer?.object?.id}
+                    onSelect={(object) => setSelectedLayer({ type: 'object', object })}
+                    onRemove={handleRemoveObject}
+                  />                  
+                </AccordionDetails>
+              </Accordion>
               <Accordion expanded={panelExpanded === 'sky'} onChange={(e, expanded) => setPanelExpanded(expanded ? 'sky' : null)}>
                 <AccordionSummary id="course-area-header">
                   <AccordionHeader sx={{ flex: 1, alignContent: 'center' }} variant="h5" color="textSecondary">Sky &amp; Environment</AccordionHeader>
@@ -656,7 +750,7 @@ export default function Course() {
                           onChange={(newValue) => handleHDRIChange('backgroundIntensity', newValue)}
                           step={0.01}
                           min={0}
-                          max={1}
+                          max={2}
                         />
                         <Button variant="contained" color="secondary" fullWidth onClick={handleSelectHDRI}>Select HDRI</Button>
                       </React.Fragment>
@@ -680,26 +774,51 @@ export default function Course() {
                           onChange={(newValue) => handleCloudSettingsChange('cloudColor', newValue)}
                           value={skySettings.clouds.cloudColor}
                         />
+                        <ColorField
+                          label="Sky Color"
+                          onChange={(newValue) => handleCloudSettingsChange('skyColor', newValue)}
+                          value={skySettings.clouds.skyColor}
+                        />
+                        <ColorField
+                          label="Fog Color"
+                          onChange={(newValue) => handleCloudSettingsChange('fogColor', newValue)}
+                          value={skySettings.clouds.fogColor}
+                        />
+                                            
                       </React.Fragment>
                     ) : null}
                     
                     <Divider />
-                    <ColorField
-                      label="Sky Color"
-                      onChange={(newValue) => handleCloudSettingsChange('skyColor', newValue)}
-                      value={skySettings.clouds.skyColor}
-                    />
-                    <ColorField
-                      label="Fog Color"
-                      onChange={(newValue) => handleCloudSettingsChange('fogColor', newValue)}
-                      value={skySettings.clouds.fogColor}
-                    />
                     
                     <ColorField
                       label="Sun Color"
                       onChange={(newValue) => handleSunSettingsChange('color', newValue)}
                       value={sunSettings.color}
                     />
+
+                    <NumberField
+                      label="Directional Light"
+                      fullWidth={true}
+                      size="small"
+                      min={0}
+                      max={2}
+                      step={0.05}
+                      onChange={(newValue) => handleSunSettingsChange('directional', newValue)}
+                      value={sunSettings.directional}
+                    />
+
+                    <NumberField
+                      label="Ambient Light"
+                      fullWidth={true}
+                      size="small"
+                      min={0}
+                      max={2}
+                      step={0.05}
+                      onChange={(newValue) => handleSunSettingsChange('ambient', newValue)}
+                      value={sunSettings.ambient}
+                    />
+
+                
 
                   </Stack>
                 </AccordionDetails>
@@ -714,6 +833,7 @@ export default function Course() {
           {/* <CourseScene meshDataState={meshDataState} heightMap={heightMap} worldSize={worldSize} /> */}
          <CourseScene
            meshDataState={meshDataState}
+           hiddenLayers={hiddenLayers}
            ref={courseSceneRef}
            sunSettings={sunSettings}
            skySettings={skySettings}
@@ -836,12 +956,15 @@ export default function Course() {
                           </Typography>
                         </Box>
                       </Stack>
-                      <IconButton onClick={(e) => handleLayerZoom(e, selectedLayer.layer)} size="small"><ZoomInIcon /></IconButton>
-                      <IconButton onClick={(e) => handleShowHide(e, selectedLayer.layer)} size="small">
+                      <IconButton onClick={handleLayerZoom} size="small"><ZoomInIcon /></IconButton>
+                      <IconButton onClick={handleShowHide} size="small">
                         {!hiddenLayers?.[selectedLayer.layer?.id] ? <VisibilityOffIcon /> : <VisibilityIcon />}
                       </IconButton>
                     </Stack>
                   
+                    <Box sx={{ mt: 3 }}>
+                      <pre>{JSON.stringify(hiddenLayers)}</pre>
+                    </Box>
                     <Box sx={{ mt: 3 }}>
                       <SurfaceSettings
                         disabled={!meshDataState.generated}
@@ -857,7 +980,97 @@ export default function Course() {
                   </MiniTabPanel>
                 </>
               ) : null}
-              </Paper>
+              {selectedLayer.type === 'object' ? (
+                <Stack spacing={3} sx={{ p: 2 }}>
+                  <Typography
+                    variant="subtitle1"
+                    sx={{ mb: 3 }}
+                  >
+                    {selectedLayer.object.name}
+                  </Typography>
+
+                  <Typography>Position</Typography>
+                  <Stack direction="row" spacing={1}>
+                    <NumberField
+                      inputSx={{ px: 0 }}
+                      label="X"
+                      size="small"
+                      min={-2000}
+                      max={2000}
+                      step={0.1}
+                      value={selectedLayer.object.position[0]}
+                      onChange={(val) => handleObjectPositionChange(val, 0)}
+                    />
+                    <NumberField
+                      inputSx={{ px: 0 }}
+                      label="Y"
+                      size="small"
+                      min={-2000}
+                      max={2000}
+                      step={0.1}
+                      value={selectedLayer.object.position[1]}
+                      onChange={(val) => handleObjectPositionChange(val, 1)}
+                    />
+                    <NumberField
+                      inputSx={{ px: 0 }}
+                      label="Z"
+                      size="small"
+                      min={-2000}
+                      max={2000}
+                      step={0.1}
+                      value={selectedLayer.object.position[2]}
+                      onChange={(val) => handleObjectPositionChange(val, 2)}
+                    />
+                  </Stack>
+                  
+                  <Typography>Rotation</Typography>
+                  <Stack direction="row" spacing={1}>
+                    <NumberField
+                      inputSx={{ px: 0 }}
+                      label="X"
+                      size="small"
+                      min={-359}
+                      max={359}
+                      step={1}
+                      value={selectedLayer.object.rotation?.[0] ?? 0}
+                      onChange={(val) => handleObjectRotationChange(val, 0)}
+                    />
+                    <NumberField
+                      inputSx={{ px: 0 }}
+                      label="Y"
+                      size="small"
+                      min={-359}
+                      max={359}
+                      step={1}
+                      value={selectedLayer.object.rotation?.[1] ?? 0}
+                      onChange={(val) => handleObjectRotationChange(val, 1)}
+                    />
+                    <NumberField
+                      inputSx={{ px: 0 }}
+                      label="Z"
+                      size="small"
+                      min={-359}
+                      max={359}
+                      step={1}
+                      value={selectedLayer.object.rotation?.[2] ?? 0}
+                      onChange={(val) => handleObjectRotationChange(val, 2)}
+                    />
+                  </Stack>
+
+                  <Typography>Scale</Typography>
+                    <NumberField
+                      inputSx={{ px: 0 }}
+                      label="Scale"
+                      size="small"
+                      min={0}
+                      max={1000}
+                      step={0.1}
+                      value={selectedLayer.object.scale ?? 1}
+                      onChange={handleObjectScaleChange}
+                    />
+                </Stack>                
+              ) : null}
+            </Paper>
           ) : null}
 
         </Box>

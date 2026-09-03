@@ -25,6 +25,8 @@ import { RESOURCES_FILE_PROTOCOL } from '../constants';
 import { TEXTURE_MAP } from '../lib/textures';
 import { captureLightmap, captureMap, captureView, buildPostPipeline } from './captureMap';
 import { sunDirectionFromAngles } from '../utils/sun';
+import { yieldToMain } from './utils';
+import { usePlacedObjects } from './placedObjects';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -35,7 +37,7 @@ CameraControls.install({ THREE });
 // ─── Component ───────────────────────────────────────────────────────
 
 // const yieldToMain = () => new Promise(r => setTimeout(r, 0));
-const yieldToMain = () => new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
+// const yieldToMain = () => new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
 
 const qualityLevel = 2;
 
@@ -43,6 +45,7 @@ export default function CourseScene({
   ref,
   meshDataState,
   heightMap,
+  hiddenLayers,
   sunSettings,
   skySettings,
   outerSettings,
@@ -145,6 +148,22 @@ export default function CourseScene({
     }
   }, [worldSize, project.scene?.sun]);
 
+  const zoomToLayer = useCallback((layerId) => {
+    const entry = surfacesRef.current.find(s => s.mesh.name === layerId);
+    if (!entry || !controlsRef.current) return;
+    const bbox = new THREE.Box3().setFromObject(entry.mesh);
+    const center = bbox.getCenter(new THREE.Vector3());
+    const size = bbox.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.z);
+    controlsRef.current.setLookAt(
+      center.x + maxDim * 0.5,
+      center.y + maxDim * 0.7,
+      center.z + maxDim * 0.5,
+      center.x, center.y, center.z,
+      true
+    );
+  }, []);
+
   useImperativeHandle(ref, () => ({
     async capture(size = 512) {
       const ctx = sceneRef.current;
@@ -233,6 +252,7 @@ export default function CourseScene({
       }
       setSurfaceVersion(v => v + 1);
     },
+    zoomToLayer,
   }), [worldSize]);
 
   const onCanvasClick = useCallback((e) => {
@@ -258,21 +278,22 @@ export default function CourseScene({
       const layer = project._meshes?.find(l => l.id === hits[0].object.name);
       if (onSelect) onSelect(layer);
 
-      const bbox = new THREE.Box3().setFromObject(hits[0].object);
-      const center = bbox.getCenter(new THREE.Vector3());
-      const size = bbox.getSize(new THREE.Vector3());
-      const maxDim = Math.max(size.x, size.z);
-      controlsRef.current.setLookAt(
-        center.x + maxDim * 0.5,
-        center.y + maxDim * 0.7,
-        center.z + maxDim * 0.5,
-        center.x, center.y, center.z,
-        true
-      );
+      // const bbox = new THREE.Box3().setFromObject(hits[0].object);
+      // const center = bbox.getCenter(new THREE.Vector3());
+      // const size = bbox.getSize(new THREE.Vector3());
+      // const maxDim = Math.max(size.x, size.z);
+      // controlsRef.current.setLookAt(
+      //   center.x + maxDim * 0.5,
+      //   center.y + maxDim * 0.7,
+      //   center.z + maxDim * 0.5,
+      //   center.x, center.y, center.z,
+      //   true
+      // );
 
       // controls.fitToBox(new THREE.Box3().setFromObject(hits[0].object), true);
+      zoomToLayer(hits[0].object.name);
     }
-  }, [project._meshes, onSelect]);
+  }, [project._meshes, onSelect, zoomToLayer]);
 
   const removeClouds = useCallback(() => {
     const ctx = sceneRef.current;
@@ -319,8 +340,8 @@ export default function CourseScene({
     let lightSettings = {
       color: sunSettings?.color,
       qualityLevel,
-      ambient: { enabled: true },
-      directional: { enabled: true },
+      ambient: { enabled: true, intensity: sunSettings?.ambient },
+      directional: { enabled: true, intensity: sunSettings?.directional },
     }
     let cancelled = false;
 
@@ -355,6 +376,8 @@ export default function CourseScene({
     skySettings.hdri?.url,
     worldSize,
     sunSettings?.color,
+    sunSettings?.ambient,
+    sunSettings?.directional,
     rendererReady,
     rebuildClouds,
     removeClouds
@@ -363,8 +386,10 @@ export default function CourseScene({
   // Cheap param updates — no texture reload
   useEffect(() => {
     hdriParamsRef.current = {
-      intensity: skySettings?.hdri?.intensity,
+      // intensity: skySettings?.hdri?.intensity,
       rotation: skySettings?.hdri?.rotation,
+      environmentIntensity: skySettings?.hdri?.environmentIntensity,
+      backgroundIntensity: skySettings?.hdri?.backgroundIntensity,
     };
 
     if (skySettings?.type !== 'hdri' || !skyboxRef.current) return;
@@ -624,29 +649,6 @@ export default function CourseScene({
       outerRef.current.position.y = y;
     }
   }, [outerSettings?.yOffset, outerSettings?.type]);
-  //   // Debounced rebuild while dragging yOffset
-  //   const t = setTimeout(() => {
-  //     removeOcean();
-  //     const ocean = new OceanSurface({
-  //       size: 4000,
-  //       uvTiling: [2, 2],
-  //       yOffset: oceanSettings.yOffset ?? -15,
-  //       depthRange: 0.1,
-  //       envMapIntensity: 0.1,
-  //       opacity: 0.99,
-  //       shallowColor: new THREE.Color('#185f57'),
-  //       deepColor: new THREE.Color('#042a34'),
-  //     });
-  //     ocean.water.renderOrder = -1; // blend under grass/trees, same as lakes
-  //     ctx.scene.add(ocean.water);
-  //     if (ctx.fuseRenderer.environment) {
-  //       ocean.updateEnvironment(ctx.fuseRenderer.environment);
-  //     }
-  //     oceanRef.current = ocean;
-  //   }, 250);
-
-  //   return () => clearTimeout(t);
-  // }, [oceanSettings?.enabled, oceanSettings?.yOffset, rendererReady, removeOcean]);  
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -878,6 +880,14 @@ export default function CourseScene({
     };
   }, [meshDataState, project._meshes, rendererReady]);
 
+  // Sync mesh visibility with hiddenLayers
+  useEffect(() => {
+    if (!surfacesLoaded) return;
+    for (const { mesh } of surfacesRef.current) {
+      mesh.visible = !hiddenLayers?.[mesh.name];
+    }
+  }, [hiddenLayers, surfacesLoaded]);
+
   useEffect(() => {
     console.log('[state] project._meshes changed!', project._meshes);
   }, [project._meshes]);
@@ -1091,6 +1101,8 @@ export default function CourseScene({
     };
   // }, [project.trees, heightMap, worldSize, rendererReady]);
   }, [project.trees, worldSize, rendererReady, surfacesLoaded]);
+
+  usePlacedObjects(sceneRef, project.objects, rendererReady, setSurfaceVersion);
 
   return <div ref={containerRef} style={{ width: '100%', height: '100%' }} />;
 }

@@ -76,8 +76,14 @@ const defaultProjectTemplate = {
     },
     sun: {
       color: '#ffffee',
-      elevation: 40,   // degrees above horizon; 90 = noon overhead
-      azimuth: 225     // compass direction light comes from; 225 = southwest
+      // degrees above horizon; 90 = noon overhead
+      elevation: 40,
+      // compass direction light comes from; 225 = southwest
+      azimuth: 225,
+      // ambient intensity
+      ambient: 0.35,
+      // directional intensity
+      directional: 1.3,
     },
     // ocean: {
     //   enabled: false,
@@ -97,7 +103,8 @@ const defaultProjectTemplate = {
     },
   },
   trees: [],
-  surfaces: {}
+  surfaces: {},
+  objects: []
 };
 
 export let openProject = { ...defaultProjectTemplate };
@@ -243,11 +250,14 @@ export async function refreshRawData() {
 }
 
 export async function refreshSVG() {
-  if (openProject.svg?.filePath) {
-    await loadSVG(openProject.svg.filePath);
-  }
-
-  broadcast('project.opened', openProject);
+  try {
+    if (openProject.svg?.filePath) {
+      await loadSVG(openProject.svg.filePath);
+    }
+    broadcast('project.opened', openProject);
+  } catch(error) {
+    dialog.showErrorBox('SVG Error', error.message);
+  } 
 }
 
 export async function saveSVG(options = {}) {
@@ -420,7 +430,9 @@ export async function loadProjectFile(filePath) {
     openProject.stats = openProject.lidar.stats;
   }
 
+
   await refreshSVG();
+
   await refreshRawData();
 
   // await parseShapeCache();
@@ -976,4 +988,47 @@ export async function generateHeightMap(type) {
   const res = await generateTerrain(type);
   await refreshRawData();
   return res;
+}
+
+export async function importObject() {
+  const { canceled, filePaths } = await dialog.showOpenDialog({
+    title: 'Import 3D Object',
+    filters: [{ name: 'GLB Files', extensions: ['glb'] }]
+  });
+  if (canceled || !filePaths?.length) {
+    return;
+  }
+  const [filePath] = filePaths;
+  const id = randomUUID();
+  const name = path.basename(filePath);
+
+  openProject.objects.push({
+    id,
+    name,
+    filePath,
+    position: [0, 0, 0],
+    rotation: [0, 0, 0],
+    scale: 1.0,
+    url: `${PROJECT_FILE_PROTOCOL}://objects3d/${id}.glb`,
+  });
+
+  saveProjectSettings();
+  return openProject.objects;
+}
+
+export function updateObject(id, update) {
+  let object = openProject.objects.find(obj => obj.id === id);
+  object = _.merge(object, update);
+  console.log('updated object', object);
+  saveProjectSettings();
+  return openProject.objects;
+}
+
+export function removeObject(id) {
+  const foundIndex = openProject.objects.findIndex(obj => obj.id === id);
+  if (foundIndex > -1) {
+    openProject.objects.splice(foundIndex, 1);
+  }
+  saveProjectSettings();
+  return openProject.objects;
 }
