@@ -23,15 +23,7 @@ import { openProject } from './project';
 const FILL_MATCH = /fill:\s*#([a-z0-9]+)/i;
 const STROKE_MATCH = /stroke:\s*#([a-z0-9]+)/i;
 
-// maps OSM shapes to OpenGolfSim SVG surfaces
-const SURFACE_MAP = {
-  green: 'green',
-  fairway: 'fairway',
-  tee: 'tee',
-  bunker: 'sand',
-  rough: 'rough',
-  water_hazard: 'water',
-};
+import { getOsmMapping, preprocessOsmGeoJson } from './osmUtils.js';
 
 export function generateSVG(coursePaths, included = {}) {
   let svgPaths = '';
@@ -100,24 +92,45 @@ function ringArea(ring) {
 
 export function coursePathsToSVG(paths) {
   return paths
-    .map((p, idx) => `<path id="${p.surface}_${idx}" d="${p.d}" style="fill:#${p.color ?? '115B13'}" />`)
+    .map((p, idx) => {
+      const mainPath = `<path id="${p.surface}_${idx}" d="${p.d}" style="fill:#${p.color ?? '115B13'}" />`;
+      if (p.flowLineD) {
+        // Appends 'flow' directly to the parent name as requested by Meshery developer
+        const flowPath = `<path id="${p.surface}_${idx}flow" d="${p.flowLineD}" style="stroke:#5900ff; fill:none; stroke-width:0.5" />`;
+        return `<g id="${p.surface}_group_${idx}">\n      ${mainPath}\n      ${flowPath}\n    </g>`;
+      }
+      return mainPath;
+    })
     .join('\n  ');
+}
+
+// Linear projection of a lon/lat point across a course's bounds onto its
+// SVG/mesh coordinate space (a `size x size` square, `size` in mm = km *
+// 1000). Because the bbox is chosen to be a square in real-world meters,
+// lonRange != latRange (lon degrees are shorter away from the equator), and
+// stretching each axis independently to `size` gives the correct
+// equirectangular result for a small area. Shared by geoJSONToSvgPaths and
+// anything else (e.g. tree-mask generation) that needs to place real-world
+// coordinates into course space.
+export function projectLonLatToCourseMM(lon, lat, bounds, size) {
+  const { south: minLat, west: minLon, north: maxLat, east: maxLon } = bounds;
+  const lonRange = maxLon - minLon;
+  const latRange = maxLat - minLat;
+  return [
+    ((lon - minLon) / lonRange) * size,
+    ((maxLat - lat) / latRange) * size,   // flip Y: SVG y grows downward
+  ];
 }
 
 export function geoJSONToSvgPaths(geojson) {
   const size = Math.round(openProject.settings.distance * 1000);
-  const { south: minLat, west: minLon, north: maxLat, east: maxLon } = openProject.settings.bounds;
-  const lonRange = maxLon - minLon;
-  const latRange = maxLat - minLat;
+  const bounds = openProject.settings.bounds;
+  const { south: minLat, west: minLon, north: maxLat, east: maxLon } = bounds;
 
-  // Linear projection across the bbox. Because you've chosen the bbox to be
-  // a square in real-world meters, lonRange != latRange (lon degrees are
-  // shorter at lat ~40.5), and stretching each axis independently to `size`
-  // gives you the correct equirectangular result for a small area.
-  const project = ([lon, lat]) => [
-    ((lon - minLon) / lonRange) * size,
-    ((maxLat - lat) / latRange) * size,   // flip Y: SVG y grows downward
-  ];
+  const bboxBox = [minLon, minLat, maxLon, maxLat];
+  geojson = preprocessOsmGeoJson(geojson, bboxBox);
+
+  const project = ([lon, lat]) => projectLonLatToCourseMM(lon, lat, bounds, size);
 
   const mid = ([x1, y1], [x2, y2]) => [(x1 + x2) / 2, (y1 + y2) / 2];
   const fmt = n => n.toFixed(2);
@@ -142,7 +155,14 @@ export function geoJSONToSvgPaths(geojson) {
     for (let i = 0; i < n; i++) {
       const ctrl = pts[i];                    // original vertex = control point
       const end  = mid(pts[i], pts[(i + 1) % n]); // midpoint to next vertex
-      d += ` Q${fmt(ctrl[0])} ${fmt(ctrl[1])} ${fmt(end[0])} ${fmt(end[1])}`;
+      
+      // If the vertex is exactly on the cropped boundary, don't smooth it!
+      const isBoundary = (ctrl[0] <= 0.1 || ctrl[0] >= size - 0.1 || ctrl[1] <= 0.1 || ctrl[1] >= size - 0.1);
+      if (isBoundary) {
+        d += ` L${fmt(ctrl[0])} ${fmt(ctrl[1])} L${fmt(end[0])} ${fmt(end[1])}`;
+      } else {
+        d += ` Q${fmt(ctrl[0])} ${fmt(ctrl[1])} ${fmt(end[0])} ${fmt(end[1])}`;
+      }
     }
     d += ' Z';
     return d;
@@ -161,7 +181,13 @@ export function geoJSONToSvgPaths(geojson) {
     for (let i = 1; i < pts.length - 1; i++) {
       const ctrl = pts[i];
       const end  = mid(pts[i], pts[i + 1]);
-      d += ` Q${fmt(ctrl[0])} ${fmt(ctrl[1])} ${fmt(end[0])} ${fmt(end[1])}`;
+      
+      const isBoundary = (ctrl[0] <= 0.1 || ctrl[0] >= size - 0.1 || ctrl[1] <= 0.1 || ctrl[1] >= size - 0.1);
+      if (isBoundary) {
+        d += ` L${fmt(ctrl[0])} ${fmt(ctrl[1])} L${fmt(end[0])} ${fmt(end[1])}`;
+      } else {
+        d += ` Q${fmt(ctrl[0])} ${fmt(ctrl[1])} ${fmt(end[0])} ${fmt(end[1])}`;
+      }
     }
     const last = pts[pts.length - 1];
     d += ` L${fmt(last[0])} ${fmt(last[1])}`;
@@ -181,30 +207,43 @@ export function geoJSONToSvgPaths(geojson) {
   for (const f of geojson.features) {
     const g = f.geometry;
     if (!g) continue;
-    const golf = f.properties?.golf;
-    if (!golf) continue;
-    const surface = SURFACE_MAP?.[golf] ?? {};
+    
+    const mapping = getOsmMapping(f.properties);
+    if (!mapping) continue;
+    
+    const surface = mapping.surface;
     const color = getColor(surface);
 
+    let flowLineD = null;
+    if (f.properties._flowLineCoords) {
+      const pts = f.properties._flowLineCoords.map(project);
+      flowLineD = lineToPath(pts);
+    }
+
     if (g.type === 'Polygon') {
-      // coordinates[0] is the outer ring; coordinates[1..] are holes — skip them
       const ring = g.coordinates[0].map(project);
-      paths.push({ golf, d: ringToPath(g.coordinates[0]), surface, color, area: ringArea(ring) });
+      paths.push({ d: ringToPath(g.coordinates[0]), surface, color, area: ringArea(ring), flowLineD });
+      
+      // Extract inner rings as islands
+      for (let i = 1; i < g.coordinates.length; i++) {
+        const holeRing = g.coordinates[i].map(project);
+        paths.push({ surface: 'rough', color: getColor('rough'), d: ringToPath(g.coordinates[i]), area: ringArea(holeRing) });
+      }
 
     } else if (g.type === 'MultiPolygon') {
-      // Each member polygon's [0] is its outer ring; ignore inner rings
       for (const poly of g.coordinates) {
         const ring = poly[0].map(project);
-        paths.push({ golf, d: ringToPath(poly[0]), surface, color, area: ringArea(ring) });
+        paths.push({ d: ringToPath(poly[0]), surface, color, area: ringArea(ring), flowLineD });
+        
+        for (let i = 1; i < poly.length; i++) {
+          const holeRing = poly[i].map(project);
+          paths.push({ surface: 'rough', color: getColor('rough'), d: ringToPath(poly[i]), area: ringArea(holeRing) });
+        }
       }
 
     } else if (g.type === 'LineString') {
       const pts = g.coordinates.map(project);
-      paths.push({ golf, d: lineToPath(pts), surface, color, area: 0 });
-      // e.g. a tee mapped as a way without area=yes
-      // const pts = g.coordinates.map(project);
-      // const d = 'M' + pts.map(([x, y]) => `${x.toFixed(2)} ${y.toFixed(2)}`).join(' L');
-      // paths.push({ golf, d });
+      paths.push({ d: lineToPath(pts), surface, color, area: 0, flowLineD });
     }
   }
 

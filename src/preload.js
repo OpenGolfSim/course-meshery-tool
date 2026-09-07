@@ -73,6 +73,7 @@ contextBridge.exposeInMainWorld('meshery', {
     downloadPlantAsset: (plant) => ipcRenderer.invoke('trees.downloadPlantAsset', plant),
     importPlant: (layerId, plant) => ipcRenderer.invoke('trees.importPlant', layerId, plant),
     createCustom: () => ipcRenderer.invoke('trees.createCustom'),
+    generateMasks: (options) => ipcRenderer.invoke('trees.generateMasks', options),
   },
   terrain: {
     importTerrainData: () => ipcRenderer.invoke('terrain.importTerrainData'),

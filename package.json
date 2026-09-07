@@ -10,7 +10,9 @@
     "package": "electron-forge package",
     "make": "electron-forge make",
     "publish": "electron-forge publish",
-    "lint": "echo \"No linting configured\""
+    "lint": "echo \"No linting configured\"",
+    "perf:baseline": "node scripts/perf/run-pipeline.js --save-baseline",
+    "perf:check": "node scripts/perf/run-pipeline.js --compare"
   },
   "keywords": [],
   "author": {
@@ -19,7 +21,9 @@
   },
   "devDependencies": {
     "@babel/core": "^7.28.5",
+    "@babel/preset-env": "^7.29.7",
     "@babel/preset-react": "^7.28.5",
+    "@babel/register": "^7.29.7",
     "@electron-forge/cli": "^7.10.2",
     "@electron-forge/maker-deb": "^7.10.2",
     "@electron-forge/maker-rpm": "^7.10.2",
