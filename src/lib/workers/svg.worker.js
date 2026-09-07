@@ -115,7 +115,6 @@ export async function generateCoursePolygons(courseLayers, layerSettings) {
     let polygon = [];
 
     for (let i = 0; i <= numPoints; i++) {
-      const length = properties.getTotalLength();
       const pct = i / numPoints;
       const pos = properties.getPointAtLength(length * pct);
       if (matrix) {
