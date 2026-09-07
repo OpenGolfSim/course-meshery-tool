@@ -45,6 +45,7 @@ contextBridge.exposeInMainWorld('meshery', {
     exportMeshes: (exportSettings, data) => ipcRenderer.invoke('project.exportMeshes', exportSettings, data),
     updateTrees: (trees) => ipcRenderer.invoke('project.updateTrees', trees),
     updateHoleByNumber: (holeNumber, update) => ipcRenderer.invoke('project.updateHoleByNumber', holeNumber, update),
+    updateHoles: (updates) => ipcRenderer.invoke('project.updateHoles', updates),
 
     updateScene: (update) => ipcRenderer.invoke('project.updateScene', update),
     updateGameSettings: (update) => ipcRenderer.invoke('project.updateGameSettings', update),
@@ -73,6 +74,7 @@ contextBridge.exposeInMainWorld('meshery', {
     downloadPlantAsset: (plant) => ipcRenderer.invoke('trees.downloadPlantAsset', plant),
     importPlant: (layerId, plant) => ipcRenderer.invoke('trees.importPlant', layerId, plant),
     createCustom: () => ipcRenderer.invoke('trees.createCustom'),
+    generateMasks: (options) => ipcRenderer.invoke('trees.generateMasks', options),
   },
   terrain: {
     importTerrainData: () => ipcRenderer.invoke('terrain.importTerrainData'),
@@ -95,6 +97,7 @@ contextBridge.exposeInMainWorld('meshery', {
   },
   map: {
     searchShapes: (bounds) => ipcRenderer.invoke('map.searchShapes', bounds),
+    searchHoles: (bounds) => ipcRenderer.invoke('map.searchHoles', bounds),
     lidarSources: () => ipcRenderer.invoke('map.lidarSources'),
     listEndpoints: () => ipcRenderer.invoke('map.listEndpoints'),
     // lidarCrop: (lidarGeoJSON, bounds) => ipcRenderer.invoke('map.lidarCrop', lidarGeoJSON, bounds)

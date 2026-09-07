@@ -31,7 +31,7 @@ const KEEP = new Set(['POSITION', 'NORMAL', 'TEXCOORD_0']);
 const TREE_TEXTURE_SIZE = 1024;
 const resizer = pica();
 
-async function resizeTexture(decoded, size) {
+async function resizeTexture(decoded, targetWidth, targetHeight) {
   const { data, width, height } = decoded;
 
   // 1. Premultiply: fold alpha into RGB so invisible pixels can't tint edges
@@ -47,7 +47,7 @@ async function resizeTexture(decoded, size) {
   // 2. Resize (Lanczos)
   const out = await resizer.resizeBuffer({
     src: pre, width, height,
-    toWidth: size, toHeight: size,
+    toWidth: targetWidth, toHeight: targetHeight,
   });
 
   // 3. Un-premultiply: restore normal RGBA for the encoder
@@ -57,10 +57,11 @@ async function resizeTexture(decoded, size) {
       out[i] = Math.min(255, (out[i] * 255) / a);
       out[i + 1] = Math.min(255, (out[i + 1] * 255) / a);
       out[i + 2] = Math.min(255, (out[i + 2] * 255) / a);
+      out[i + 3] = a;
     }
   }
 
-  return { data: out, width: size, height: size };
+  return { width: targetWidth, height: targetHeight, data: out };
 }
 
 
@@ -111,11 +112,23 @@ function initBasis(wasmPath) {
 
 async function encodeTexture(rawImageData, ktx2Options = {}) {
   const basis = await initBasis(ktx2Options.wasmPath);
-  // const decoded = decodeImage(rawImageData);
   let decoded = decodeImage(rawImageData);
   const size = ktx2Options.textureSize;
-  if (size && (decoded.width !== size || decoded.height !== size)) {
-    decoded = await resizeTexture(decoded, size);
+  
+  let targetW = decoded.width;
+  let targetH = decoded.height;
+
+  if (size) {
+    targetW = size;
+    targetH = size;
+  } else {
+    // Basis requires dimensions to be multiples of 4
+    if (targetW % 4 !== 0) targetW += (4 - (targetW % 4));
+    if (targetH % 4 !== 0) targetH += (4 - (targetH % 4));
+  }
+
+  if (decoded.width !== targetW || decoded.height !== targetH) {
+    decoded = await resizeTexture(decoded, targetW, targetH);
   }
 
   const encoder = new basis.BasisEncoder();
@@ -127,7 +140,11 @@ async function encodeTexture(rawImageData, ktx2Options = {}) {
     encoder.setKTX2UASTCSupercompression(true);
     encoder.setMipGen(true);
     encoder.setSliceSourceImage(0, new Uint8Array(decoded.data), decoded.width, decoded.height, 0);
-    const resultData = new Uint8Array(1024 * 1024 * 10);
+    
+    // UASTC is ~1 byte per pixel. Mipmaps add ~33%. 2 bytes per pixel is extremely safe.
+    const estimatedSize = Math.max(1024 * 1024 * 10, decoded.width * decoded.height * 2 + 1024);
+    const resultData = new Uint8Array(estimatedSize);
+    
     const resultSize = encoder.encode(resultData);
     if (resultSize === 0) throw new Error('KTX2 encode failed');
     // return new Uint8Array(resultData.buffer, 0, resultSize);

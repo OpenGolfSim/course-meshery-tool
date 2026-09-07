@@ -6,6 +6,7 @@ import * as imagery from './imagery';
 import * as tools from './tools';
 import * as colors from './colors';
 import * as plants from './cache/plants';
+import { generateTreeMasks } from './trees/treeMaskGenerator';
 import { createTreeMakerWindow } from '../trees/main';
 import { exportMeshes } from './export';
 import { importTerrainData } from './terrain';
@@ -45,6 +46,7 @@ ipcMain.handle('project.exportMeshes', (_event, exportSettings, data) => exportM
 ipcMain.handle('project.getHeightMap', (_event) => project._heightMapCache);
 
 ipcMain.handle('project.updateHoleByNumber', (_event, holeNumber, update) => project.updateHoleByNumber(holeNumber, update));
+ipcMain.handle('project.updateHoles', (_event, updates) => project.updateHoles(updates));
 ipcMain.handle('project.updateScene', (_event, update) => project.updateScene(update));
 ipcMain.handle('project.updateGameSettings', (_event, update) => project.updateGameSettings(update));
 ipcMain.handle('project.selectHDRI', (_event) => project.selectHDRI());
@@ -61,6 +63,8 @@ ipcMain.handle('trees.removeLayer', (_event, layerId) => project.removeTreeLayer
 ipcMain.handle('trees.import', (_event, treeLayerId) => project.importTree(treeLayerId));
 // ipcMain.handle('trees.postImport', (_event, treeLayerId, treeConfigId, imageData) => project.postImportTree(treeLayerId, treeConfigId, imageData));
 ipcMain.handle('trees.remove', (_event, treeLayerId, treeConfigId) => project.removeTreeConfig(treeLayerId, treeConfigId));
+
+ipcMain.handle('trees.generateMasks', (_event, options) => generateTreeMasks(options));
 
 ipcMain.handle('trees.getAvailablePlants', (_event) => plants.getAvailablePlants());
 ipcMain.handle('trees.downloadPlantAsset', (_event, plant) => plants.downloadPlantAsset(plant));
@@ -79,6 +83,7 @@ ipcMain.handle('svg.getMeshLayers', (_event) => project.getMeshLayers());
 
 ipcMain.handle('map.lidarSources', (_event) => map.lidarSources());
 ipcMain.handle('map.searchShapes', (_event, coords) => map.searchShapes(coords));
+ipcMain.handle('map.searchHoles', (_event, coords) => map.searchHoles(coords));
 ipcMain.handle('map.listEndpoints', (_event) => map.listEndpoints());
 
 ipcMain.handle('lidar.downloadCourse', (_event, lidarGeoJson, courseBounds) => lidar.downloadCourse(lidarGeoJson, courseBounds));

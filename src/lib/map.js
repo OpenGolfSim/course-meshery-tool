@@ -8,18 +8,9 @@ import { openProject, saveProjectSettings } from './project';
 import { broadcast } from './window';
 
 
-let cachedOverpass = {};
+import { buildOverpassQueryTags } from './osmUtils.js';
 
-const tags = [
-  'green',
-  'fairway',
-  'tee',
-  'bunker',
-  'rough',
-  'water_hazard',
-  // 'lateral_water_hazard',
-  // 'cartpath'
-];
+let cachedOverpass = {};
 
 // const USGS_GEOJSON = 'https://usgs.entwine.io/boundaries/resources.geojson';
 const USGS_GEOJSON_PATH = path.join(resourceRoot(), 'extra-resources/usgs.geojson');
@@ -60,9 +51,7 @@ async function turboPassQuery(bbox, endpoint = '') {
     return cachedOverpass.data;
   }
 
-  const queryTags = tags.map(tag => {
-    return `nwr["golf"="${tag}"]`;
-  }).join(';');
+  const queryTags = buildOverpassQueryTags();
 
   const query = `
     [out:json][timeout:25][bbox:${bboxKey}];
@@ -85,7 +74,11 @@ async function turboPassQuery(bbox, endpoint = '') {
       return data;
     } else {
       const body = await response.text();
-      throw { status: response.status, body };
+      let errorMessage = `Overpass API error (status ${response.status})`;
+      try {
+        if (body) errorMessage += `: ${body.substring(0, 150)}`;
+      } catch (e) {}
+      throw new Error(errorMessage);
     }
   } catch (error) {
     console.error(`OVERPASS API`, error);
@@ -108,3 +101,41 @@ export async function searchShapes(bbox) {
     return { coursePaths };
   }
 }
+
+export async function searchHoles(bbox) {
+  const bboxKey = bbox.join(',');
+  const query = `
+    [out:json][timeout:25][bbox:${bboxKey}];
+    (
+      way["leisure"="golf_course"];
+      way["golf"="hole"];
+    );
+    out body;
+    >;
+    out skel qt;
+  `.replace(/\s+/g, ' ');
+
+  try {
+    const endpointUrl = ENDPOINTS[DEFAULT_ENDPOINT];
+    const response = await fetch(endpointUrl, {
+      method: 'POST',
+      body: `data=${encodeURIComponent(query)}`,
+      headers: { 'user-agent': 'OGSMeshery/2.0'}
+    });
+    if (response.status === 200 && response.headers.get('content-type').startsWith('application/json')) {
+      const data = await response.json();
+      const geojson = osmtogeojson(data);
+      return { holes: geojson };
+    } else {
+      const body = await response.text();
+      let errorMessage = `Overpass API error (status ${response.status})`;
+      try {
+        if (body) errorMessage += `: ${body.substring(0, 150)}`;
+      } catch (e) {}
+      throw new Error(errorMessage);
+    }
+  } catch (error) {
+    console.error(`OVERPASS API`, error);
+    throw error;
+  }
+}

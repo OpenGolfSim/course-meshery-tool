@@ -255,6 +255,10 @@ export async function write(filePath, project, meshData, imageData) {
       console.log('Missing meshData record');
       return;
     }
+    if (!mesh.points?.length) {
+      console.log(`Skipping export of empty layer: ${layer.id}`);
+      continue;
+    }
     // const { points, triangles, normals, colors } = meshData.meshes.get(layer.id)?.mesh;
 
     const surface = layer.surface ?? '_default';

@@ -54,8 +54,10 @@ export async function layerToMesh(layer, shape, project, heightMap) {
   const meshWorker = await getWorker('mesh.worker.js');
 
   let mesh = await meshWorker.generateMesh(layer, shape);
-  if (!mesh.points.length || !mesh.triangles.length) {
+  if (!mesh || !mesh.points?.length || !mesh.triangles?.length) {
     console.log(`No points or triangles generated for ${layer.id}`);
+    await Thread.terminate(meshWorker);
+    return { points: new Float32Array(0), triangles: [], colors: new Float32Array(0) };
   }
   mesh = await meshWorker.conformMeshToTerrain(layer, mesh, project, heightMap);
 
@@ -185,14 +187,13 @@ export async function compressTextures(doc, onProgress = () => {}) {
 
   await pMap(textures, async (texture) => {
     const rawImage = texture.getImage();
-    // Normal/ORM are data — sRGB transfer decodes them wrong on the GPU
-    // (bent normals + skewed roughness = white speckle at distance).
-    // const srgb = !/(_normal|_orm)$/.test(texture.getName() ?? '');
     // Data textures (normals, ORM, lightmap) must not get the sRGB transfer flag
     const srgb = !/(_normal|_orm|light_map)$/.test(texture.getName() ?? '');    
+    
+    const bufferCopy = rawImage.buffer.slice(rawImage.byteOffset, rawImage.byteOffset + rawImage.byteLength);
+    
     const ktx2Buffer = await pool.queue(worker =>
-      // worker.compressTexture(Transfer(rawImage.buffer), { wasmPath })
-      worker.compressTexture(Transfer(rawImage.buffer), { wasmPath, srgb })
+      worker.compressTexture(Transfer(bufferCopy), { wasmPath, srgb })
     );
 
     texture.setImage(new Uint8Array(ktx2Buffer));

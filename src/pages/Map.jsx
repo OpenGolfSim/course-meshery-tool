@@ -6,6 +6,8 @@ import {
   ButtonGroup,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogContent,
   Grid,
   IconButton,
   Link,
@@ -306,6 +308,7 @@ export default function Map() {
   // const courseShapesLayer = useRef();
   const [panelExpanded, setPanelExpanded] = useState('course-area');
   const [shapesDialogOpen, setShapesDialogOpen] = useState(false);
+  const [importProgress, setImportProgress] = useState(null);
   const [satelliteDialogOpen, setSatelliteDialogOpen] = useState(false);
   const [elevationDialogOpen, setElevationDialogOpen] = useState(false);
   const [terrainEditDialogOpen, setTerrainEditDialogOpen] = useState(false);
@@ -841,6 +844,102 @@ export default function Map() {
     }
   }
 
+  const handleImportHolesOSM = async () => {
+    if (!project?.settings?.bounds) return;
+    const { west, south, east, north } = project.settings.bounds;
+    const bounds = [south, west, north, east];
+    
+      try {
+        setImportProgress({ message: 'Fetching OpenStreetMap data...' });
+        const res = await window.meshery.map.searchHoles(bounds);
+        if (!res?.holes?.features) {
+          setImportProgress(null);
+          return;
+        }
+
+        let coursePolygon = null;
+        if (project.settings.centerPoint) {
+          const centerPt = turf.point([project.settings.centerPoint.lng, project.settings.centerPoint.lat]);
+          const courses = res.holes.features.filter(f => f.properties?.leisure === 'golf_course');
+          for (const course of courses) {
+            if (course.geometry.type === 'Polygon' || course.geometry.type === 'MultiPolygon') {
+              if (turf.booleanPointInPolygon(centerPt, course)) {
+                coursePolygon = course;
+                break;
+              }
+            }
+          }
+        }
+
+        const holeFeatures = res.holes.features.filter(feature => {
+          if (feature.geometry.type !== 'LineString') return false;
+          if (feature.properties?.golf !== 'hole') return false;
+          
+          if (coursePolygon) {
+            return turf.booleanIntersects(coursePolygon, feature);
+          }
+          return true;
+        });
+
+        const updates = [];
+        let i = 0;
+        for (const feature of holeFeatures) {
+          const props = feature.properties;
+          const holeNum = parseInt(props.ref, 10);
+          if (!holeNum || isNaN(holeNum)) continue;
+          
+          i++;
+          setImportProgress({ message: `Processing hole ${holeNum} from OpenStreetMap...` });
+
+          const coords = feature.geometry.coordinates; // [lng, lat]
+        if (coords.length < 2) continue;
+
+        const teeLatLng = { lng: coords[0][0], lat: coords[0][1] };
+        const pinLatLng = { lng: coords[coords.length - 1][0], lat: coords[coords.length - 1][1] };
+        let aimLatLng;
+
+        if (coords.length === 2) {
+          const midpoint = turf.midpoint(turf.point(coords[0]), turf.point(coords[1]));
+          aimLatLng = { lng: midpoint.geometry.coordinates[0], lat: midpoint.geometry.coordinates[1] };
+        } else {
+          let bestDist = 0;
+          let bestNode = coords[1];
+          for (let k = 1; k < coords.length - 1; k++) {
+            const dist = turf.distance(turf.point(coords[0]), turf.point(coords[k]), { units: 'meters' });
+            if (Math.abs(dist - 256) < Math.abs(bestDist - 256)) {
+              bestDist = dist;
+              bestNode = coords[k];
+            }
+          }
+          aimLatLng = { lng: bestNode[0], lat: bestNode[1] };
+        }
+
+        updates.push({
+          holeNumber: holeNum,
+          update: {
+            number: holeNum,
+            par: parseInt(props.par, 10) || 4,
+            tee: { latlng: [teeLatLng.lng, teeLatLng.lat], position: latLngToLocalXY(teeLatLng) },
+            aim: { latlng: [aimLatLng.lng, aimLatLng.lat], position: latLngToLocalXY(aimLatLng) },
+            pin: { latlng: [pinLatLng.lng, pinLatLng.lat], position: latLngToLocalXY(pinLatLng) }
+          }
+        });
+        
+        // slight yield so UI can update
+        await new Promise(r => setTimeout(r, 0));
+      }
+      
+      setImportProgress({ message: `Saving ${updates.length} holes...` });
+      if (updates.length > 0) {
+        await window.meshery.project.updateHoles(updates);
+      }
+    } catch (error) {
+      console.error('Failed to import holes:', error);
+    } finally {
+      setImportProgress(null);
+    }
+  };
+
   useEffect(() => {
     if (!courseDetailsLayer.current) {
       return;
@@ -861,16 +960,6 @@ export default function Map() {
       }
       layer.getElement()?.classList.toggle('hole-marker-edit', isActive);
     });    
-    // if (isEditingHolePoint) {
-    //   const featureLayer = layers.find(layer => layer.feature?.properties?.number === isEditingHolePoint.hole);
-    //   if (featureLayer) {
-    //     featureLayer.getElement().classList.toggle('hole-marker-edit');
-    //   }
-    //   console.log('edit chagne! layers', layers);
-    //   // e.layer.getElement().classList.toggle('hole-marker-edit');
-    // } else {
-      
-    // }
   }, [isEditingHolePoint]);
 
   const handleWaypointRemove = (e) => {
@@ -896,27 +985,13 @@ export default function Map() {
     addHillShadeLayer(project.hillShade.uri);
   }, [mapRef.current, project.hillShade?.uri]);
 
-  // useEffect(() => {
-  //   if (!mapRef.current || !Object.keys(project?.satellite | {}).length) {
-  //     return;
-  //   }
-  //   console.log('add sat image', project.satellite[0]);
-  //   addSatelliteImageLayer(project.satellite[0]);
-  // }, [mapRef.current, project.satellite]);
-
-  
-
   useEffect(() => {
     updateCourseLabelVisibility();
   }, [zoomLevel, courseDetailsLayer.current]);
 
   useEffect(() => {
     console.log('create map...', project.settings);
-
     
-    // const blankLayer = L.layerGroup(null);
-    // console.log('blankLayer', blankLayer);
-
     const initialLayer = getInitialLayer();
 
     const mapLayers = project.settings.terrainType === 'real' ? [tileLayers[initialLayer]] : undefined;
@@ -942,7 +1017,6 @@ export default function Map() {
     
     outlineLayer.current = L.geoJSON(null, {
       snapIgnore: true,
-      // pmIgnore: true,
       interactive: false,
       style: {
         color: "#000",
@@ -967,9 +1041,8 @@ export default function Map() {
 
     
     mapRef.current.createPane('courseDetails');
-    mapRef.current.getPane('courseDetails').style.zIndex = 300; // Lower than standard overlayPane (400)
+    mapRef.current.getPane('courseDetails').style.zIndex = 300; 
     
-    // Add it to the map once
     distanceLabelsGroup.current.addTo(mapRef.current);
 
     console.log('create details layer');
@@ -988,7 +1061,6 @@ export default function Map() {
         if (feature.geometry.type === 'LineString' && feature.geometry.coordinates.length >= 2) {
           const labelMarkers = [];
           layer.on('add', () => {
-            // create labels and store references
             const coords = feature.geometry.coordinates;
             for (let i = 0; i < coords.length - 1; i++) {
               const from = turf.point(coords[i]);
@@ -1015,17 +1087,10 @@ export default function Map() {
             }
           });
           layer.on('remove', () => {
-            // remove labels
-            // layer.off('click', handleLayerClick);
             labelMarkers.forEach(m => m.remove());
             labelMarkers.length = 0;
           });
         } else if (feature.geometry.type === 'Point') {
-          // layer.bindTooltip(feature.properties.name, {
-          //     permanent: true,
-          //     direction: 'right',
-          //     className: 'course-label'
-          // });
 
           const container = document.createElement('div');
           container.className = 'hole-edit-content';
@@ -1051,7 +1116,6 @@ export default function Map() {
 
           layer.on('dragend', handleWaypointDragEnd);
           layer.bindPopup(container, {
-            // direction: 'right',
             minWidth: 160,
             className: 'hole-edit-popup'
           });
@@ -1060,10 +1124,8 @@ export default function Map() {
       },
       pointToLayer: (feature, latlng) => {
         if (feature.properties.waypoint === 'tee') {
-          // console.log('feature.properties', feature.properties);
           return L.marker(latlng, {
             icon: teeIcon(feature.properties.number),
-            // draggable: true,
             style: { fillColor: '#00FF00' }
           });
         } else if (feature.properties.waypoint === 'pin') {
@@ -1087,7 +1149,6 @@ export default function Map() {
 
     return () => {
       console.log('clean up map...');
-      // mapRef.current.off('zoomend', handleZoomChange);
       if (mapRef.current && mapRef.current.remove) {
         mapRef.current.off();
         mapRef.current.remove();
@@ -1116,7 +1177,7 @@ export default function Map() {
       console.log('No map ref yet');
       return;
     }
-    mapRef.current.getContainer().style.cursor = (isEditingCenter || isEditingHolePoint) ? 'crosshair' : ''; // Change map cursor
+    mapRef.current.getContainer().style.cursor = (isEditingCenter || isEditingHolePoint) ? 'crosshair' : ''; 
     
     console.log(`Rebind click handler: isEditingCenter:${isEditingCenter}, isEditingHolePoint:${isEditingHolePoint}`);
     mapRef.current.on('click', handleMapClick);
@@ -1186,7 +1247,6 @@ export default function Map() {
                             color="inherit"
                             sx={{ fontSize: 10, letterSpacing: 0, p: 1, display: 'inline-block' }}
                             onClick={() => window.meshery.copyToClipboard(`${project.settings.centerPoint.lat},${project.settings.centerPoint.lng}`)}
-                            // component={Paper}
                           >
                             <code>{project.settings.centerPoint.lat.toFixed(4)}, {project.settings.centerPoint.lng.toFixed(4)}</code>
                           </Button>
@@ -1235,7 +1295,6 @@ export default function Map() {
                 <AccordionHeader sx={{ flex: 1, alignContent: 'center' }} variant="h5" color="textSecondary">
                   Terrain
                 </AccordionHeader>
-                {/* {project.lidar ? (<CheckIcon />) : null} */}
               </AccordionSummary>
               <AccordionDetails>
                 {project.stats ? (
@@ -1246,7 +1305,6 @@ export default function Map() {
                       height={project?.stats?.relief ?? 0}
                       min={project?.stats?.min ?? 0}
                       max={project?.stats?.max ?? 0}
-                      // heightMapSize={project._heightMap?.size}
                     />
                     <Button
                       fullWidth
@@ -1300,16 +1358,6 @@ export default function Map() {
                   </List>
                   )
                 )}
-                {/* <Box sx={{ textAlign: 'center', mb: 2 }}>
-                  <Button
-                    variant="contained"
-                    color="secondary"
-                    size="small"
-                    onClick={handleTerrainImport}
-                  >
-                    Import Custom Data
-                  </Button>
-                </Box> */}
                 
               </AccordionDetails>
 
@@ -1323,7 +1371,6 @@ export default function Map() {
                 <AccordionHeader sx={{ flex: 1, alignContent: 'center' }} variant="h5" color="textSecondary">
                   Course Layers
                 </AccordionHeader>
-                {/* {project._layers?.length ? (<CheckIcon />) : null} */}
               </AccordionSummary>
               <AccordionDetails sx={{ p: 0 }}>
 
@@ -1331,7 +1378,6 @@ export default function Map() {
                   
                   <CustomListItem
                     icon={<TonalityIcon color={!project.hillShade || layerVisibility.hillshade ? 'inherit' : 'secondary'} />}
-                    // endIcon={<CheckIcon color={!!project.hillShade ? 'success' : 'secondary'} />}
                     endAction={
                       !project.hillShade && (
                         <Button
@@ -1374,16 +1420,9 @@ export default function Map() {
                             </Button>
                           )
                         }        
-                        // endIcon={<CheckIcon color={satellite.source !== 'none' ? 'success' : 'secondary'} />}
-                        // hidden={layerVisibility.satellite !== satellite.source}
                         label={'Satellite'}
                         secondary={satellite.source}
                         menuItems={[
-                          // satellite.source !== 'none' && {
-                          //   label: layerVisibility.satellite === satellite.source ? 'Hide Layer' : 'Show Layer',
-                          //   icon: layerVisibility.satellite === satellite.source ? <Visibility /> : <VisibilityOff />,
-                          //   onClick: () => handleShowHideSatelliteLayer(satellite.source)
-                          // },
                           {
                             label: 'Add Satellite',
                             icon: <SatelliteIcon />,
@@ -1412,7 +1451,6 @@ export default function Map() {
                         </Button>
                       )
                     }
-                    // endIcon={<CheckIcon color={!!project.svg ? 'success' : 'secondary'} />}
                     hidden={!layerVisibility.svg}
                     secondary={project.svg?.fileName ? project.svg.fileName : 'None'}
                     label={'SVG'}
@@ -1434,23 +1472,12 @@ export default function Map() {
                           icon: layerVisibility.svg ? <Visibility /> : <VisibilityOff />,
                           onClick: () => handleShowHideLayer('svg', svgOverlayLayer)
                         },
-                        // {
-                        //   label: 'Show / Hide',
-                        //   disabled: !project.svg,
-                        //   icon: <Visibility />
-                        // },
                         {
                           label: 'Reload from disk',
                           disabled: !project.svg,
                           icon: <ReloadIcon />,
                           onClick: () => window.meshery.svg.refresh()
                         },
-                        // {
-                        //   label: 'Export SVG',
-                        //   icon: <SaveIcon />,
-                        //   disabled: !project.svg,
-                        //   onClick: () => window.meshery.project.saveSVG()
-                        // },
                       ]
                     }
                   />
@@ -1507,6 +1534,15 @@ export default function Map() {
                   >
                     Add Hole
                   </Button>
+                  <Button
+                    fullWidth
+                    onClick={handleImportHolesOSM}
+                    variant="contained"
+                    color="primary"
+                    sx={{ mt: 1 }}
+                  >
+                    Import from OSM
+                  </Button>
                 </Box>
               </AccordionDetails>
             </Accordion>
@@ -1514,8 +1550,14 @@ export default function Map() {
 
         </Box>
         <div style={{ backgroundColor: '#aaa', width: '100%', height: '100%' }} id="map" ref={containerRef}></div>
-        {/* This seems to get moved to the map when we add the svgOverlay */}
       </Box>
+
+      <Dialog open={!!importProgress}>
+        <DialogContent sx={{ display: 'flex', alignItems: 'center', gap: 2, p: 3 }}>
+          <CircularProgress size={24} />
+          <Typography>{importProgress?.message}</Typography>
+        </DialogContent>
+      </Dialog>
 
       <GenerateSatelliteDialog open={satelliteDialogOpen} onClose={handleSatelliteClosed} />
       <GenerateSVGDialog open={shapesDialogOpen} onSave={handleShapesSave} onClose={() => setShapesDialogOpen(false)} />
