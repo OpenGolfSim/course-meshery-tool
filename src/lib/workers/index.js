@@ -54,8 +54,10 @@ export async function layerToMesh(layer, shape, project, heightMap) {
   const meshWorker = await getWorker('mesh.worker.js');
 
   let mesh = await meshWorker.generateMesh(layer, shape);
-  if (!mesh.points.length || !mesh.triangles.length) {
+  if (!mesh || !mesh.points?.length || !mesh.triangles?.length) {
     console.log(`No points or triangles generated for ${layer.id}`);
+    await Thread.terminate(meshWorker);
+    return { points: new Float32Array(0), triangles: [], colors: new Float32Array(0) };
   }
   mesh = await meshWorker.conformMeshToTerrain(layer, mesh, project, heightMap);
 

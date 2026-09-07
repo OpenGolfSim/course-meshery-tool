@@ -9,7 +9,9 @@ export async function write(filePath, layers, meshData) {
     lines.push(`o ${layer.surface || 'layer'}_${index}`);
 
     // write this layer's vertices
-    const { points, triangles } = meshData.meshes.get(layer.id)?.mesh;
+    const mesh = meshData.meshes.get(layer.id)?.mesh;
+    if (!mesh || !mesh.points?.length) continue;
+    const { points, triangles } = mesh;
     for (let i = 0; i < points.length; i += 3) {
       lines.push(
         `v ${points[i].toFixed(6)} ${points[i+1].toFixed(6)} ${points[i+2].toFixed(6)}`

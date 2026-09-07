@@ -44,6 +44,7 @@ import TreeLayerList from '../components/TreeLayerList.jsx';
 import TreeLayerDialog from '../dialogs/TreeLayerDialog.jsx';
 import NumberField from '../components/NumberField.jsx';
 import TreeImportDialog from '../dialogs/TreeImportDialog.jsx';
+import GenerateTreeMasksDialog from '../dialogs/GenerateTreeMasksDialog.jsx';
 import ColorField from '../components/ColorField.jsx';
 import GenerateExportButton from '../components/GenerateExportButton.jsx';
 
@@ -164,6 +165,7 @@ export default function Course() {
   const [hiddenLayers, setHiddenLayers] = useState({});
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [treeEditDialog, setTreeEditDialog] = useState(null);
+  const [generateTreeMasksOpen, setGenerateTreeMasksOpen] = useState(false);
 
   // Surfaces resolved by main for this course (defaults + overrides)
   const surfaceNames = Object.keys(project?._surfaces || {});
@@ -561,8 +563,9 @@ export default function Course() {
                     onRemoveModel={handleTreeModelRemove}
                     onTreeSelect={(layer, config) => setSelectedLayer({ type: 'tree', layer, config })}
                   />
-                  <Box sx={{ p: 2 }}>
+                  <Box sx={{ p: 2, display: 'flex', gap: 2 }}>
                     <Button fullWidth onClick={handleTreeAdd} color="secondary" variant="contained">Add Planting Layer</Button>
+                    <Button fullWidth onClick={() => setGenerateTreeMasksOpen(true)} color="primary" variant="contained">Generate Tree Masks</Button>
                   </Box>
                 </AccordionDetails>
               </Accordion>
@@ -832,8 +835,9 @@ export default function Course() {
         open={Boolean(treeImportDialog)}
         onClose={handleTreeImportClosed}
       />
-      <GenerateMeshDialog open={generateDialogOpen} onClose={() => setGenerateDialogOpen(false)} />     
+      <GenerateMeshDialog open={generateDialogOpen} onClose={() => setGenerateDialogOpen(false)} />
       <ExportCourseDialog data={exportCourseData} open={exportDialogOpen} onClose={() => setExportDialogOpen(false)} />
+      <GenerateTreeMasksDialog open={generateTreeMasksOpen} onClose={() => setGenerateTreeMasksOpen(false)} />
    </React.Fragment>
   );
 }

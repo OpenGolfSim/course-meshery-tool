@@ -14,7 +14,7 @@ const log = logger.scope('GDAL');
 const WMS_FOLDER = path.join(resourceRoot(), 'extra-resources/wms');
 const MAX_DEM_TILES = 100;
 
-function runGDALCommand(binaryName, options, onProgress) {
+export function runGDALCommand(binaryName, options, onProgress) {
   log.debug(`Running ${binaryName} with options`, options);
   const binaryPath = getBin(binaryName);  
   let stderr = '';

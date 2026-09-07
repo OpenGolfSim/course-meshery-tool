@@ -27,6 +27,7 @@ const ProjectContext = createContext({
   removeTreeLayer: () => {},
   importTreeModel: () => {},
   removeTreeModel: () => {},
+  generateTreeMasks: () => {},
   generateMeshes: () => {},
   saveHeightMap: () => {},
   lidarSources: null,
@@ -220,7 +221,15 @@ export const ProjectProvider = ({ children }) => {
       setProject((old) => ({ ...old, trees: res.trees }))
     }
   };
-  
+
+  const generateTreeMasks = async (options) => {
+    const res = await window.meshery.trees.generateMasks(options);
+    if (res) {
+      setProject((old) => ({ ...old, trees: res.trees }));
+    }
+    return res;
+  };
+
   const generateMeshes = async (layerSettings, terrainSettings) => {
     const result = await window.meshery.project.generateMeshes(layerSettings, terrainSettings);
     console.log('Done generating meshes!', result);
@@ -332,6 +341,7 @@ export const ProjectProvider = ({ children }) => {
       updateTreeLayer,
       importTreeModel,
       removeTreeModel,
+      generateTreeMasks,
       project,
       lidarSources,
       handleDownloadCourse,

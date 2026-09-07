@@ -115,7 +115,6 @@ export async function generateCoursePolygons(courseLayers, layerSettings) {
     let polygon = [];
 
     for (let i = 0; i <= numPoints; i++) {
-      const length = properties.getTotalLength();
       const pct = i / numPoints;
       const pos = properties.getPointAtLength(length * pct);
       if (matrix) {
@@ -195,16 +194,22 @@ export async function generateCoursePolygons(courseLayers, layerSettings) {
       // let holes = [];
       let rawPieces = [{ polygon, holes: [] }];
       if (layersToCut.length > 0) {
-        // Single combined difference avoids accumulating floating-point errors
-        const result = polygonClipping.difference([polygon], ...layersToCut);
-        // if (result.length > 0) {
-        //   const rings = result[0];
-        //   polygon = rings[0];
-        //   holes = rings.slice(1);
-        // }
-        // difference() returns a MULTIpolygon: keep every piece, not just the first
-        rawPieces = result.map(rings => ({ polygon: rings[0], holes: rings.slice(1) }));
-
+        try {
+          // Single combined difference avoids accumulating floating-point errors
+          const result = polygonClipping.difference([polygon], ...layersToCut);
+          rawPieces = result.map(rings => ({ polygon: rings[0], holes: rings.slice(1) }));
+        } catch (combinedError) {
+          log.warn(`Combined cut failed for layer ${layer.name || layer.id}, falling back to sequential cut`);
+          let currentPolys = [[polygon]];
+          for (const cutPoly of layersToCut) {
+            try {
+              currentPolys = polygonClipping.difference(currentPolys, cutPoly);
+            } catch (singleError) {
+              log.error(`Skipping problematic cut layer on ${layer.name || layer.id}`);
+            }
+          }
+          rawPieces = currentPolys.map(rings => ({ polygon: rings[0], holes: rings.slice(1) }));
+        }
       }
 
       // Clean geometry before it reaches the mesh worker
