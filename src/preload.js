@@ -4,6 +4,7 @@ import { contextBridge, ipcRenderer } from 'electron/renderer';
 // import 'electron-log/preload';
 
 contextBridge.exposeInMainWorld('meshery', {
+  platform: process.platform, // 'win32', 'darwin', or 'linux'
   selectSVGFile: () => ipcRenderer.invoke('svg.select'),
   clearSVG: () => ipcRenderer.invoke('svg.clear'),
   selectTerrainFile: () => ipcRenderer.invoke('raw.select'),
@@ -94,6 +95,8 @@ contextBridge.exposeInMainWorld('meshery', {
     export: () => ipcRenderer.invoke('svg.export'),
     refresh: () => ipcRenderer.invoke('svg.refresh'),
     getMeshLayers: () => ipcRenderer.invoke('svg.getMeshLayers'),
+    reveal: () => ipcRenderer.invoke('svg.reveal'),
+    select: () => ipcRenderer.invoke('svg.select'),
   },
   map: {
     searchShapes: (bounds) => ipcRenderer.invoke('map.searchShapes', bounds),

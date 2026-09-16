@@ -255,11 +255,9 @@ export async function write(filePath, project, meshData, imageData) {
       console.log('Missing meshData record');
       return;
     }
-    // const { points, triangles, normals, colors } = meshData.meshes.get(layer.id)?.mesh;
 
     const surface = layer.surface ?? '_default';
-    const cfg = TEXTURE_MAP[surface] ?? TEXTURE_MAP._default;
-    // const matKey = TEXTURE_MAP[surface] ? surface : `_default:${layer.color}`;
+    const cfg = getSurfaceConfig(surface);
 
     // Blending layers embed their neighbor's albedo on their own material
     // (emissive slot, factor 0 = renders as nothing), so runtime blending

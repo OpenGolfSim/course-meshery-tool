@@ -4,8 +4,9 @@ import { yieldToMain } from './utils'; // adjust to wherever yieldToMain lives i
 
 function applyObjectTransform(group, objDef) {
   group.position.fromArray(objDef.position);
-  const s = objDef.scale || 1;
-  group.scale.set(s, s, s);
+  const s = typeof objDef.scale === 'number' ? objDef.scale : 1;
+  const scale = Array.isArray(objDef.scale) ? objDef.scale : [s, s, s];
+  group.scale.set(scale[0], scale[1], scale[2]);
   if (objDef.rotation?.length) {
     group.rotation.set(
       THREE.MathUtils.degToRad(objDef.rotation[0]),

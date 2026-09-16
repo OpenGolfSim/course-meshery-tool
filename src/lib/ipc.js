@@ -79,6 +79,8 @@ ipcMain.handle('trees.createCustom', (_event) => createTreeMakerWindow());
 
 ipcMain.handle('svg.refresh', (_event) => project.refreshSVG());
 ipcMain.handle('svg.getMeshLayers', (_event) => project.getMeshLayers());
+ipcMain.handle('svg.select', (_event) => project.selectSVG());
+ipcMain.handle('svg.reveal', (_event) => project.revealSVG());
 
 ipcMain.handle('map.lidarSources', (_event) => map.lidarSources());
 ipcMain.handle('map.searchShapes', (_event, coords) => map.searchShapes(coords));

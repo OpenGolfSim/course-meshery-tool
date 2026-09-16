@@ -1,6 +1,7 @@
 import { app, session, shell, BrowserWindow, ipcMain, dialog, protocol, net, nativeImage } from 'electron';import path from 'path';
 import pMap from 'p-map';
 import logger from 'electron-log';
+import { listTextureSlots } from '@gltf-transform/functions';
 import { spawn, Thread, Worker, Pool } from 'threads';
 import { Transfer } from 'threads/worker';
 import { _heightMapCache } from '../project';
@@ -202,13 +203,11 @@ export async function compressTextures(doc, onProgress = () => {}) {
     let rawImage = texture.getImage();
     const aligned = alignImageTo4(rawImage, texture.getMimeType());
     if (aligned) rawImage = new Uint8Array(aligned);
-    // Normal/ORM are data — sRGB transfer decodes them wrong on the GPU
-    // (bent normals + skewed roughness = white speckle at distance).
-    // const srgb = !/(_normal|_orm)$/.test(texture.getName() ?? '');
-    // Data textures (normals, ORM, lightmap) must not get the sRGB transfer flag
-    const srgb = !/(_normal|_orm|light_map)$/.test(texture.getName() ?? '');    
+    // Decide by material slot, not name — embedded placed-object textures
+    // don't follow Meshery naming. Textures with no material parent (light_map, masks) get no slots
+    const slots = listTextureSlots(texture);
+    const srgb = slots.some(s => /baseColor|emissive|diffuse|sheen|specularColor/i.test(s));
     const ktx2Buffer = await pool.queue(worker =>
-      // worker.compressTexture(Transfer(rawImage.buffer), { wasmPath })
       worker.compressTexture(Transfer(rawImage.buffer), { wasmPath, srgb })
     );
 

@@ -257,7 +257,27 @@ export async function refreshSVG() {
     broadcast('project.opened', openProject);
   } catch(error) {
     dialog.showErrorBox('SVG Error', error.message);
+    throw new Error(error);
   } 
+}
+
+export async function selectSVG() {
+  const { canceled, filePaths } = await dialog.showOpenDialog({
+    title: 'Select SVG File',
+    filters: [{ name: 'SVG Files', extensions: ['svg'] }]
+  });
+  if (!canceled && filePaths.length) {
+    console.log('filePaths', filePaths[0]);
+    await loadSVG(filePaths[0], true);
+    await saveProjectSettings();
+    broadcast('project.opened', openProject);
+  }
+}
+
+export async function revealSVG() {
+  if (openProject.svg?.filePath) {
+    shell.showItemInFolder(openProject.svg.filePath);
+  }
 }
 
 export async function saveSVG(options = {}) {
@@ -278,7 +298,6 @@ export async function saveSVG(options = {}) {
   // create a simple SVG to start
   // openProject.paths
   openProject.svg = { filePath, fileName: path.basename(filePath) };
-  console.log('openProject.svg', openProject.svg);
   await saveProjectSettings();
 
   if (!filePath) {
@@ -313,7 +332,7 @@ async function updateSVGData() {
   broadcast('project.opened', openProject);
 }
 
-async function loadSVG(filePath) {
+async function loadSVG(filePath, shouldSetProject = false) {
   if (!fs.existsSync(filePath)) {
     log.warn(`SVG does not exist (${filePath})`);
     openProject._svgBuffer = null; 
@@ -324,7 +343,7 @@ async function loadSVG(filePath) {
   const data = await fs.promises.readFile(filePath);
   openProject._svgBuffer = data.toString('utf8');
   
-  if (!openProject.svg) {
+  if (!openProject.svg || shouldSetProject) {
     openProject.svg = { filePath, fileName: path.basename(filePath) };
   }
   
@@ -1008,7 +1027,7 @@ export async function importObject() {
     filePath,
     position: [0, 0, 0],
     rotation: [0, 0, 0],
-    scale: 1.0,
+    scale: [1, 1, 1],
     url: `${PROJECT_FILE_PROTOCOL}://objects3d/${id}.glb`,
   });
 

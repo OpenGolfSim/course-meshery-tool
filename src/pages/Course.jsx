@@ -25,6 +25,7 @@ import {
   Checkbox,
 } from "@mui/material";
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
+import AddIcon from '@mui/icons-material/Add';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 // import { Canvas, extend, useFrame } from '@react-three/fiber';
@@ -320,6 +321,31 @@ export default function Course() {
     await addTreeLayer();
   }, [project.trees]);  
 
+  const handleChangeTreeColor = (index, color) => {
+    setSelectedLayer(prev => {
+      const colorCopy = [...prev.config.colors];
+      colorCopy[index] = color;
+      return {
+        ...prev,
+        config: {
+          ...prev.config,
+          colors: colorCopy
+        }
+      }
+    });
+  }
+  const handleAddTreeColor = () => {
+    setSelectedLayer(prev => {
+      return {
+        ...prev,
+        config: {
+          ...prev.config,
+          colors: [...prev.config.colors || [], '#ffffff']
+        }
+      }
+    });
+  }
+
   const handleTreeConfigChange = useCallback((key, value) => {
     if (key === 'scaleRange') {
       value = { min: value[0], max: value[1] };
@@ -411,15 +437,15 @@ export default function Course() {
     setSelectedLayer({ type: 'object', object: { ...selectedLayer.object, rotation: newRotation } });
     commitObjectUpdate(selectedLayer.object.id, { rotation: newRotation });
   }, [selectedLayer, commitObjectUpdate]);
-
   
-  const handleObjectScaleChange = useCallback((value) => {
-    setSelectedLayer({ type: 'object', object: { ...selectedLayer.object, scale: value } });
-    commitObjectUpdate(selectedLayer.object.id, { scale: value });
+  const handleObjectScaleChange = useCallback((value, index) => {
+    const newScale = [...Array.isArray(selectedLayer.object.scale) ? selectedLayer.object.scale : [1, 1, 1]];
+    newScale[index] = value;
+    setSelectedLayer({ type: 'object', object: { ...selectedLayer.object, scale: newScale } });
+    commitObjectUpdate(selectedLayer.object.id, { scale: newScale });
   }, [selectedLayer, commitObjectUpdate]);
   
   const handleRemoveObject = useCallback(async (id) => {
-    console.log('remove', id);
     await removeObject(id)
   }, [removeObject]);
 
@@ -876,7 +902,7 @@ export default function Course() {
                 top: theme.spacing(1),
                 right: theme.spacing(1),
                 minWidth: 180,
-                maxWidth: 200,
+                maxWidth: 240,
                 pointerEvents: "auto",
               })}
             >
@@ -919,19 +945,32 @@ export default function Course() {
                           step={0.05}
                           valueLabelDisplay="auto"
                           marks={[{ value: 0.05, label: '0x' }, { value: 5, label: '5x' }]}
-                          // marks={true}
                           value={[selectedLayer.config.scaleRange.min, selectedLayer.config.scaleRange.max]}
                           onChange={(event, val) => handleTreeConfigChange('scaleRange', val)}
-                          // onChange={handleChange}
-                          // valueLabelDisplay="auto"
-                          // getAriaValueText={valuetext}
                         />    
                       </Box>
+                      <Stack>
+                        {selectedLayer.config.colors?.map((color, index) => (
+                          <ColorField
+                            key={`color-${index}`}
+                            label="Tint"
+                            onChange={(newValue) => handleChangeTreeColor(index, newValue)}
+                            value={color}
+                          />                          
+                        ))}
+                        <Button
+                          startIcon={<AddIcon />}
+                          onClick={handleAddTreeColor}
+                        >
+                          Add Color
+                        </Button>
+                      </Stack>
                       <Button variant="contained" onClick={handleSaveTreeConfig}>Save Changes</Button>                    
                     </Stack>
                   </MiniTabPanel>
                 </>
               ) : null}
+              
               {selectedLayer.type === 'layer' ? (
                 <>
                   <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
@@ -961,10 +1000,7 @@ export default function Course() {
                         {!hiddenLayers?.[selectedLayer.layer?.id] ? <VisibilityOffIcon /> : <VisibilityIcon />}
                       </IconButton>
                     </Stack>
-                  
-                    <Box sx={{ mt: 3 }}>
-                      <pre>{JSON.stringify(hiddenLayers)}</pre>
-                    </Box>
+
                     <Box sx={{ mt: 3 }}>
                       <SurfaceSettings
                         disabled={!meshDataState.generated}
@@ -992,7 +1028,7 @@ export default function Course() {
                   <Typography>Position</Typography>
                   <Stack direction="row" spacing={1}>
                     <NumberField
-                      inputSx={{ px: 0 }}
+                      inputSx={{ pl: '4px' }}
                       label="X"
                       size="small"
                       min={-2000}
@@ -1058,16 +1094,38 @@ export default function Course() {
                   </Stack>
 
                   <Typography>Scale</Typography>
+                  <Stack direction="row" spacing={1}>
                     <NumberField
                       inputSx={{ px: 0 }}
-                      label="Scale"
+                      label="X"
                       size="small"
                       min={0}
                       max={1000}
                       step={0.1}
-                      value={selectedLayer.object.scale ?? 1}
-                      onChange={handleObjectScaleChange}
+                      value={selectedLayer.object.scale?.[0] ?? 1}
+                      onChange={(val) => handleObjectScaleChange(val, 0)}
                     />
+                    <NumberField
+                      inputSx={{ px: 0 }}
+                      label="Y"
+                      size="small"
+                      min={0}
+                      max={1000}
+                      step={0.1}
+                      value={selectedLayer.object.scale?.[1] ?? 1}
+                      onChange={(val) => handleObjectScaleChange(val, 1)}
+                    />
+                    <NumberField
+                      inputSx={{ px: 0 }}
+                      label="Z"
+                      size="small"
+                      min={0}
+                      max={1000}
+                      step={0.1}
+                      value={selectedLayer.object.scale?.[2] ?? 1}
+                      onChange={(val) => handleObjectScaleChange(val, 2)}
+                    />
+                  </Stack>
                 </Stack>                
               ) : null}
             </Paper>
