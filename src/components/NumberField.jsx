@@ -18,7 +18,7 @@ function SSRInitialFilled(_) {
 }
 SSRInitialFilled.muiName = 'Input';
 
-function NumberField({ id: idProp, label, error, onChange, fullWidth, size = 'medium', inputSx, ...other }) {
+function NumberField({ id: idProp, label, error, onChange, fullWidth, size = 'medium', dense, ...other }) {
   let id = React.useId();
   if (idProp) {
     id = idProp;
@@ -27,6 +27,7 @@ function NumberField({ id: idProp, label, error, onChange, fullWidth, size = 'me
     <BaseNumberField.Root
       {...other}
       onValueChange={onChange}
+      format={{ useGrouping: false }}
       render={(props, state) => (
         <FormControl
           size={size}
@@ -60,7 +61,11 @@ function NumberField({ id: idProp, label, error, onChange, fullWidth, size = 'me
             slotProps={{
               input: {
                 ...props,
-                ...inputSx && { sx: inputSx }
+                sx: {
+                  fontFamily: 'monospace',
+                  fontSize: 10,
+                  ...dense && { p: 0.5 }
+                }
               },
             }}
             sx={{ pr: 0 }}

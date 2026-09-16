@@ -126,7 +126,6 @@ function mapPlant(plant, plantCache) {
 }
 export function getAvailablePlants(tree) {
   const plantCache = getPlantCache();
-  console.log('Found cached plants', plantCache);
   return {
     custom: Object.values(plantCache).filter(p => p.type === 'custom').map(p => {
       return {

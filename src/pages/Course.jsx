@@ -23,7 +23,10 @@ import {
   Divider,
   Grid,
   Checkbox,
+  Tooltip,
 } from "@mui/material";
+import CloseIcon from '@mui/icons-material/Close';
+import ControlCameraIcon from '@mui/icons-material/ControlCamera';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import AddIcon from '@mui/icons-material/Add';
 import VisibilityIcon from '@mui/icons-material/Visibility';
@@ -32,7 +35,7 @@ import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import { MapControls, CameraControls, Grid as ThreeGrid } from '@react-three/drei';
 import * as THREE from 'three/webgpu';
 import { MeshPhysicalNodeMaterial } from 'three/webgpu';
-import { texture, uv, vec3, float, int, Fn } from 'three/tsl';
+import { texture, uv, vec3, float, int, Fn, emissive } from 'three/tsl';
 import { Accordion, AccordionDetails, AccordionHeader, AccordionSummary, SidebarAccordionGroup } from '../components/Accordion';
 // import * as THREE from 'three';
 import { useProject } from "../contexts/Project";
@@ -49,6 +52,7 @@ import ColorField from '../components/ColorField.jsx';
 import GenerateExportButton from '../components/GenerateExportButton.jsx';
 import ObjectList from '../components/ObjectList.jsx';
 
+const VALID_GRASS_SURFACES = ['fairway','green','fringe','first_cut','rough','tee','deep_rough','base'];
 const PHASE_LABELS = {
   surfaces: (l) => `Loading surfaces… ${l.loaded}/${l.total}`,
   trees: (l) => `Planting trees… ${l.loaded}/${l.total}`,
@@ -166,6 +170,7 @@ export default function Course() {
   const [loading, setLoading] = useState(null);
   const [selectedLayer, setSelectedLayer] = useState(null);
   const [selectedTab, setSelectedTab] = useState(0);
+  const [placingObject, setPlacingObject] = useState(false);
   const [materialTab, setMaterialTab] = useState(0);
   const [hiddenLayers, setHiddenLayers] = useState({});
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
@@ -175,6 +180,7 @@ export default function Course() {
   const surfaceNames = Object.keys(project?._surfaces || {});
   const activeSurface = surfaceNames.includes(matSurface) ? matSurface : (surfaceNames[0] ?? '');
   const activeTint = project?._surfaces?.[activeSurface]?.tint;
+  const activeEmissive = project?._surfaces?.[activeSurface]?.emissive;
   const activeTileSize = project?._surfaces?.[activeSurface]?.tileSize;
   const activeGrass = project?._surfaces?.[activeSurface]?.grass;
   
@@ -449,6 +455,18 @@ export default function Course() {
     await removeObject(id)
   }, [removeObject]);
 
+  const handlePlacePoint = useCallback((point) => {
+    if (selectedLayer?.type !== 'object') return;
+    setSelectedLayer({ type: 'object', object: { ...selectedLayer.object, position: point } });
+    commitObjectUpdate(selectedLayer.object.id, { position: point });
+    setPlacingObject(false); // one-shot: exit after placing
+  }, [selectedLayer, commitObjectUpdate]);
+
+  // leave placement mode if the object is deselected
+  useEffect(() => {
+    if (selectedLayer?.type !== 'object') setPlacingObject(false);
+  }, [selectedLayer]);
+
   useEffect(() => {
     if (!sceneSettingsInit.current) {
       sceneSettingsInit.current = true;
@@ -549,77 +567,111 @@ export default function Course() {
                       <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
                         <MiniTabs value={materialTab} onChange={(e,num) => setMaterialTab(num)} variant="fullWidth">
                           <MiniTab label="Texture" sx={{ p: 0 }} />
-                          <MiniTab label="Grass" sx={{ p: 0 }} />
+                          <MiniTab
+                            label="Grass"
+                            disabled={!activeGrass?.enabled}
+                            // disabled={!VALID_GRASS_SURFACES.includes(activeSurface)}
+                            sx={{ p: 0 }}
+                          />
                         </MiniTabs>
                       </Box>
                       <MiniTabPanel value={materialTab} index={0} sx={{ p: 1 }}>
                         <Stack spacing={3}>
 
-                          <ColorField
-                            label="Tint"
-                            onChange={(newValue) => updateSurfaces({ [activeSurface]: { tint: `#${String(newValue).replace('#', '')}` } })}
-                            value={activeTint ? new THREE.Color(activeTint).getHexString() : 'ffffff'}
-                          />
                           {['color', 'normal'].map((type) => {
                             const fileKey = type === 'normal' ? 'normalFile' : 'baseColorFile';
+                            const label = type === 'normal' ? 'Normal Map' : 'Color Map';
                             const current = project?.surfaces?.[activeSurface]?.[fileKey];
                             return (
-                              <Stack key={type} direction="row" spacing={1} alignItems="center">
-                                <Typography variant="caption" noWrap sx={{ flex: 1 }}>
-                                  {current ? current.split('/').pop() : 'default'}
+                              <Stack key={type} direction="column" spacing={1}>
+                                <Typography
+                                  variant="subtitle2"
+                                  color="textSecondary"
+                                >
+                                  {label}
                                 </Typography>
-                                <Button size="small" variant="outlined" sx={{ flexShrink: 0 }}
-                                  onClick={() => selectSurfaceTexture(activeSurface, type)}>
-                                  {type === 'normal' ? 'NormalMap' : 'TextureMap'}
-                                </Button>
-                                {current ? (
-                                  <Button size="small" onClick={() => updateSurfaces({
-                                    [activeSurface]: type === 'normal'
-                                      ? { normalFile: null, normal: null }
-                                      : { baseColorFile: null, baseColor: null },
-                                  })}>✕</Button>
-                                ) : null}
+                                <Stack direction="row" spacing={1} alignItems="center">
+                                  <Typography variant="caption" noWrap sx={{ flex: 1 }} color={current ? 'textPrimary' : 'textDisabled'}>
+                                    {current ? current.split('/').pop() : 'default'}
+                                  </Typography>
+                                  {current ? (
+                                    <IconButton size="small" onClick={() => updateSurfaces({
+                                      [activeSurface]: type === 'normal'
+                                        ? { normalFile: null, normal: null }
+                                        : { baseColorFile: null, baseColor: null },
+                                    })}>
+                                      <CloseIcon />
+                                    </IconButton>
+                                  ) : null}
+                                  <Button
+                                    size="small"
+                                    color="secondary"
+                                    variant="contained"
+                                    sx={{ flexShrink: 0 }}
+                                    onClick={() => selectSurfaceTexture(activeSurface, type)}
+                                  >
+                                    Select
+                                  </Button>
+                                </Stack>
                               </Stack>
                             );
                           })}
 
-                          <NumberField
-                            min={0}
-                            max={1000}
-                            step={0.1}
-                            label="Texture Scale"
-                            size="small"
-                            onChange={(newValue) => updateSurfaces({ [activeSurface]: { tileSize: newValue } })}
-                            value={activeTileSize}
-                          />
+                          <Box sx={{ pt: 2 }}>
+                            <ColorField
+                              label="Tint"
+                              onChange={(newValue) => updateSurfaces({ [activeSurface]: { tint: `#${String(newValue).replace('#', '')}` } })}
+                              value={activeTint ? new THREE.Color(activeTint).getHexString() : 'ffffff'}
+                            />
+                          </Box>
+                          {/* <Box sx={{ mt: 1 }}>
+                            <ColorField
+                              label="Emissive"
+                              onChange={(newValue) => updateSurfaces({ [activeSurface]: { emissive: `#${String(newValue).replace('#', '')}` } })}
+                              value={activeEmissive ? new THREE.Color(activeEmissive).getHexString() : '000000'}
+                            />
+                          </Box> */}
+                          <Box sx={{ pt: 2 }}>
+                            <NumberField
+                              min={0}
+                              max={1000}
+                              fullWidth={true}
+                              step={0.1}
+                              label="Texture Scale"
+                              size="small"
+                              onChange={(newValue) => updateSurfaces({ [activeSurface]: { tileSize: newValue } })}
+                              value={activeTileSize}
+                            />
+                          </Box>
                         </Stack>
                       </MiniTabPanel>
                       
                       <MiniTabPanel value={materialTab} index={1} sx={{ p: 1 }}>                      
-                        <Stack spacing={3}>
-                          {activeGrass?.enabled ? (
-                            <React.Fragment>
-                              <Divider />
-                              <Typography variant="caption">Mow Lines</Typography>
-                              <NumberField label="Direction" size="small" min={0} max={359} step={5}
-                                value={activeGrass.mowLines?.direction}
-                                onChange={(v) => handleMowChange('direction', v)} />
-                              <NumberField label="Width" size="small" min={0.1} max={20} step={0.1}
-                                value={activeGrass.mowLines?.width}
-                                onChange={(v) => handleMowChange('width', v)} />
-                              <NumberField label="Strength" size="small" min={0} max={0.5} step={0.01}
-                                value={activeGrass.mowLines?.strength}
-                                onChange={(v) => handleMowChange('strength', v)} />
-                            </React.Fragment>
-                          ) : null}
-                        </Stack>
+                        
+                        {activeGrass?.enabled ? (
+                          <Stack spacing={3}>
+                            <Typography variant="caption">Mow Lines</Typography>
+                            <NumberField label="Direction" size="small" min={0} max={359} step={5}
+                              value={activeGrass.mowLines?.direction}
+                              onChange={(v) => handleMowChange('direction', v)} />
+                            <NumberField label="Width" size="small" min={0.1} max={20} step={0.1}
+                              value={activeGrass.mowLines?.width}
+                              onChange={(v) => handleMowChange('width', v)} />
+                            <NumberField label="Strength" size="small" min={0} max={0.5} step={0.01}
+                              value={activeGrass.mowLines?.strength}
+                              onChange={(v) => handleMowChange('strength', v)} />
+                          </Stack>
+                        ) : (
+                          <Typography>No grass settings</Typography>
+                        )}
                       </MiniTabPanel>
 
                       <Button
                         size="small"
                         color="secondary"
-                        onClick={() => updateSurfaces({ [activeSurface]: { tint: null } })}
-                      >Reset to default</Button>
+                        variant="contained"
+                        onClick={() => updateSurfaces({ [activeSurface]: { tint: null, emissive: null } })}
+                      >Reset defaults</Button>
                     </Stack>
                   ) : (
                     <Typography variant="caption">Open or generate a course to edit materials</Typography>
@@ -633,7 +685,7 @@ export default function Course() {
                   <AccordionHeader sx={{ flex: 1, alignContent: 'center' }} variant="h5" color="textSecondary">Outer Area</AccordionHeader>
                 </AccordionSummary>
                 <AccordionDetails>
-                  <Stack sx={{ px: 3, pt: 3 }} spacing={3}>
+                  <Stack sx={{ p: 3 }} spacing={3}>
 
                     <TextField
                       select={true}
@@ -645,13 +697,8 @@ export default function Course() {
                     >
                       <MenuItem value="none">None</MenuItem>
                       <MenuItem value="ocean">Infinite Ocean</MenuItem>
-                      <MenuItem value="satellite">Satellite Terain</MenuItem>
+                      <MenuItem value="satellite" disabled={true}>Satellite Terrain (coming soon)</MenuItem>
                     </TextField>
-                    
-                    {/* <FormControlLabel
-                      control={<Checkbox checked={oceanSettings.enabled} onChange={(e) => setOceanSettings(old => ({ ...old, enabled: e.target.checked }))} />}
-                      label="Infinite Ocean"
-                    /> */}
 
                     <NumberField
                       disabled={!outerSettings.type === 'none'}
@@ -678,12 +725,12 @@ export default function Course() {
                           Generate Satellite Image
                         </Button>
 
-                        <pre>{JSON.stringify(outerSettings.satellite)}</pre>
                       </>
                     ) : null}
                   </Stack>
                 </AccordionDetails>
               </Accordion>
+
               {/* Vegetation */}
               <Accordion expanded={panelExpanded === 'veg'} onChange={(e, expanded) => setPanelExpanded(expanded ? 'veg' : null)}>
                 <AccordionSummary id="veg-header">
@@ -711,21 +758,26 @@ export default function Course() {
                   <AccordionHeader sx={{ flex: 1, alignContent: 'center' }} variant="h5" color="textSecondary">3D Objects</AccordionHeader>
                 </AccordionSummary>
                 <AccordionDetails>
+                  {project.objects?.length ? (
+                    <ObjectList
+                      objects={project.objects}
+                      selectedObject={selectedLayer?.object?.id}
+                      onSelect={(object) => setSelectedLayer({ type: 'object', object })}
+                      onRemove={handleRemoveObject}
+                    />                  
+                  ) : (
+                    <Typography textAlign="center" variant="caption">Manually place 3D objects in the scene</Typography>
+                  )}
                   <Box sx={{ p: 2 }}>
                     <Button
+                      color="secondary"
+                      variant="contained"
                       fullWidth={true}
                       onClick={importObject}
                     >
                       Import Object
                     </Button>
                   </Box>
-                  <Typography variant="caption">Manually place 3D objects in the scene</Typography>
-                  <ObjectList
-                    objects={project.objects}
-                    selectedObject={selectedLayer?.object?.id}
-                    onSelect={(object) => setSelectedLayer({ type: 'object', object })}
-                    onRemove={handleRemoveObject}
-                  />                  
                 </AccordionDetails>
               </Accordion>
               <Accordion expanded={panelExpanded === 'sky'} onChange={(e, expanded) => setPanelExpanded(expanded ? 'sky' : null)}>
@@ -868,6 +920,8 @@ export default function Course() {
            selectedLayer={selectedLayer}
            onSelect={handleLayerSelect}
            onLoadingChange={setLoading}
+           placementMode={placingObject}
+           onPlacePoint={handlePlacePoint}
          />
 
          {loading && loading.phase !== 'ready' && (
@@ -1025,69 +1079,81 @@ export default function Course() {
                     {selectedLayer.object.name}
                   </Typography>
 
-                  <Typography>Position</Typography>
+                  <Stack direction="row" spacing={1}>
+                    <Typography sx={{ flex: 1 }}>Position</Typography>
+                    <Tooltip title="Click to place the object at a spot in the scene">
+                      <IconButton
+                        size="small"
+                        color={placingObject ? 'primary' : 'default'}
+                        onClick={() => setPlacingObject(p => !p)}
+                      >
+                        <ControlCameraIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </Stack>
                   <Stack direction="row" spacing={1}>
                     <NumberField
-                      inputSx={{ pl: '4px' }}
                       label="X"
                       size="small"
                       min={-2000}
                       max={2000}
                       step={0.1}
+                      dense={true}
                       value={selectedLayer.object.position[0]}
                       onChange={(val) => handleObjectPositionChange(val, 0)}
                     />
                     <NumberField
-                      inputSx={{ px: 0 }}
                       label="Y"
                       size="small"
                       min={-2000}
                       max={2000}
                       step={0.1}
+                      dense={true}
                       value={selectedLayer.object.position[1]}
                       onChange={(val) => handleObjectPositionChange(val, 1)}
                     />
                     <NumberField
-                      inputSx={{ px: 0 }}
                       label="Z"
                       size="small"
                       min={-2000}
                       max={2000}
                       step={0.1}
+                      dense={true}
                       value={selectedLayer.object.position[2]}
                       onChange={(val) => handleObjectPositionChange(val, 2)}
                     />
                   </Stack>
-                  
+
+
                   <Typography>Rotation</Typography>
                   <Stack direction="row" spacing={1}>
                     <NumberField
-                      inputSx={{ px: 0 }}
                       label="X"
                       size="small"
                       min={-359}
                       max={359}
                       step={1}
+                      dense={true}
                       value={selectedLayer.object.rotation?.[0] ?? 0}
                       onChange={(val) => handleObjectRotationChange(val, 0)}
                     />
                     <NumberField
-                      inputSx={{ px: 0 }}
                       label="Y"
                       size="small"
                       min={-359}
                       max={359}
                       step={1}
+                      dense={true}
                       value={selectedLayer.object.rotation?.[1] ?? 0}
                       onChange={(val) => handleObjectRotationChange(val, 1)}
                     />
                     <NumberField
-                      inputSx={{ px: 0 }}
                       label="Z"
                       size="small"
                       min={-359}
                       max={359}
                       step={1}
+                      dense={true}
                       value={selectedLayer.object.rotation?.[2] ?? 0}
                       onChange={(val) => handleObjectRotationChange(val, 2)}
                     />
@@ -1096,32 +1162,32 @@ export default function Course() {
                   <Typography>Scale</Typography>
                   <Stack direction="row" spacing={1}>
                     <NumberField
-                      inputSx={{ px: 0 }}
                       label="X"
                       size="small"
                       min={0}
                       max={1000}
                       step={0.1}
+                      dense={true}
                       value={selectedLayer.object.scale?.[0] ?? 1}
                       onChange={(val) => handleObjectScaleChange(val, 0)}
                     />
                     <NumberField
-                      inputSx={{ px: 0 }}
                       label="Y"
                       size="small"
                       min={0}
                       max={1000}
                       step={0.1}
+                      dense={true}
                       value={selectedLayer.object.scale?.[1] ?? 1}
                       onChange={(val) => handleObjectScaleChange(val, 1)}
                     />
                     <NumberField
-                      inputSx={{ px: 0 }}
                       label="Z"
                       size="small"
                       min={0}
                       max={1000}
                       step={0.1}
+                      dense={true}
                       value={selectedLayer.object.scale?.[2] ?? 1}
                       onChange={(val) => handleObjectScaleChange(val, 2)}
                     />

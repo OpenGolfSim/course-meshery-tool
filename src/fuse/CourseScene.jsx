@@ -52,6 +52,8 @@ export default function CourseScene({
   worldSize = 1000,
   onSelect,
   selectedLayer,
+  placementMode = false,
+  onPlacePoint,
   onLoadingChange
 }) {
   const { project } = useProject();
@@ -262,10 +264,18 @@ export default function CourseScene({
     raycasterRef.current.setFromCamera(pointerRef.current, cameraRef.current);
     const meshes = surfacesRef.current.map(s => s.mesh);
     const hits = raycasterRef.current.intersectObjects(meshes, false);
+    if (placementMode) {
+      if (hits.length > 0 && onPlacePoint) {
+        const p = hits[0].point;
+        onPlacePoint([p.x, p.y, p.z].map(v => Math.round(v * 100) / 100));
+      }
+      return; // don't run layer selection while placing
+    }
+
     console.log(hits);
     const layer = hits.length > 0 ? project._meshes.find(l => l.id === hits[0].object.name) : null;
     if (onSelect) onSelect(layer);
-  }, [project._meshes, onSelect]);
+  }, [project._meshes, onSelect, placementMode, onPlacePoint]);
 
   const onCanvasDblClick = useCallback((e) => {
     const rect = canvasRef.current.getBoundingClientRect();
@@ -638,6 +648,12 @@ export default function CourseScene({
   }, [outerSettings?.type, outerSettings?.satellite?.uri, applySatelliteTexture]);
 
   useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    canvas.style.cursor = placementMode ? 'crosshair' : '';
+  }, [placementMode]);
+
+  useEffect(() => {
     // const ocean = oceanRef.current;
     // if (!ocean || outerSettings?.type !== 'ocean') return;
     // ocean.water.position.y = -(outerSettings.yOffset ?? 0);
@@ -910,8 +926,6 @@ export default function CourseScene({
       const rb = obj.userData?.blendRebuild;
       if (rb) {
         const nSurface = rb.layer.neighbor || 'rough';
-        // const base = (surfaceMap[rb.layer.surface] ?? TEXTURE_MAP[rb.layer.surface])?.tint;
-        // const nTint = (surfaceMap[nSurface] ?? TEXTURE_MAP[nSurface])?.tint;
         const base = (surfaces[rb.layer.surface] ?? TEXTURE_MAP[rb.layer.surface])?.tint;
         const nTint = (surfaces[nSurface] ?? TEXTURE_MAP[nSurface])?.tint;        
         if (obj.userData.appliedTints?.base !== base || obj.userData.appliedTints?.neighbor !== nTint) {
@@ -936,6 +950,10 @@ export default function CourseScene({
         mat.color.set(cfg.tint);
         mat.userData.tint = new THREE.Color(cfg.tint);
       }
+      // if (cfg?.emissive) {
+      //   mat.emissive.set(cfg.emissive);
+      //   mat.userData.emissive = new THREE.Color(cfg.emissive);
+      // }
 
       // Live tile-size: rescale baked UVs in place (sanitized same as build)
       const tile = Number(cfg?.tileSize);

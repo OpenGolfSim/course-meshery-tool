@@ -81,6 +81,9 @@ export function buildSurfaceMaterial(surfaceName, fallbackHex, grainTex, ctx) {
     if (cfg?.tint) {
       mat.color = new THREE.Color(cfg.tint);
     }
+    if (cfg?.emissive) {
+      mat.emissive = new THREE.Color(cfg.emissive);
+    }
   } else {
     // Textureless surface: tint IS the color (falls back to the layer's hex).
     // Assign userData properties — replacing the object would wipe the
