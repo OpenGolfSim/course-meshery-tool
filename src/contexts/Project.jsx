@@ -29,9 +29,13 @@ const ProjectContext = createContext({
   removeTreeModel: () => {},
   generateMeshes: () => {},
   saveHeightMap: () => {},
+  generateOuterSatellite: () => {},
+  importObject: () => {},
+  updateObject: () => {},
+  removeObject: () => {},
   lidarSources: null,
   lidarFile: null,
-  palette: null
+  palette: null,
 });
 
 // Create a custom hook to easily consume the context
@@ -80,6 +84,12 @@ export const ProjectProvider = ({ children }) => {
     });
     return updatedScene;
   }
+
+  const generateOuterSatellite = async () => {
+    const updatedOuter = await window.meshery.imagery.outerSatellite();
+    console.log('updatedOuter', updatedOuter);
+    setProject((old) => ({ ...old, scene: { ...old.scene, outer: updatedOuter } }))
+  }
   
   const getOpenProject = async () => {
     const data = await window.meshery.project.getOpenProject();
@@ -88,30 +98,30 @@ export const ProjectProvider = ({ children }) => {
     setProject(data);
   }
 
-  const startWorkerJob = (jobId, payload) => {
-    if (meshJobMap?.[jobId]?.promise) {
-      console.log(`cancel existing job: ${jobId}`);
-      meshJobMap[jobId].worker?.terminate();
-      meshJobMap[jobId].reject('canceled');
-      meshJobMap[jobId] = undefined;
-    }
+  // const startWorkerJob = (jobId, payload) => {
+  //   if (meshJobMap?.[jobId]?.promise) {
+  //     console.log(`cancel existing job: ${jobId}`);
+  //     meshJobMap[jobId].worker?.terminate();
+  //     meshJobMap[jobId].reject('canceled');
+  //     meshJobMap[jobId] = undefined;
+  //   }
 
-    const { promise, resolve, reject } = Promise.withResolvers();
-    const worker = new MeshWorker();
+  //   const { promise, resolve, reject } = Promise.withResolvers();
+  //   const worker = new MeshWorker();
 
-    meshJobMap[jobId] = {
-      worker,
-      promise,
-      resolve,
-      reject
-    };
+  //   meshJobMap[jobId] = {
+  //     worker,
+  //     promise,
+  //     resolve,
+  //     reject
+  //   };
     
-    worker.addEventListener('message', handleWorkerMessage);
-    worker.addEventListener('error', handleWorkerError);
-    worker.postMessage({ ...payload, jobId });
+  //   worker.addEventListener('message', handleWorkerMessage);
+  //   worker.addEventListener('error', handleWorkerError);
+  //   worker.postMessage({ ...payload, jobId });
 
-    return promise;
-  }
+  //   return promise;
+  // }
 
   const refreshLidarSources = async () => {
     const data = await window.meshery.map.lidarSources();
@@ -290,6 +300,26 @@ export const ProjectProvider = ({ children }) => {
     setProject((old) => ({ ...old, surfaces: updated.surfaces, _surfaces: updated._surfaces }))
   }
 
+  const importObject = async () => {
+    const objects = await window.meshery.project.importObject();
+    if (!objects) return;
+    setProject((old) => ({ ...old, objects }));
+  }
+  const updateObject = async (objectId, update) => {
+    const objects = await window.meshery.project.updateObject(objectId, update);
+    if (!objects) return;
+    setProject((old) => ({ ...old, objects }));
+  }
+  const removeObject = async (objectId) => {
+    const confirmed = await window.meshery.dialog.confirm({ message: 'Are you sure you want to remove this object?' });
+    if (!confirmed) {
+      return;
+    }
+    const objects = await window.meshery.project.removeObject(objectId);
+    if (!objects) return;
+    setProject((old) => ({ ...old, objects }));
+  }
+
   useEffect(() => {
     console.log('[PROJECT] scope load')
     Promise.all([
@@ -342,6 +372,10 @@ export const ProjectProvider = ({ children }) => {
       updateLayerById,
       generateMeshes,
       saveHeightMap,
+      generateOuterSatellite,
+      importObject,
+      updateObject,
+      removeObject,
     }}>
       {children}
     </ProjectContext.Provider>

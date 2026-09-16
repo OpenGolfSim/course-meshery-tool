@@ -2,7 +2,8 @@ import fs from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
 import logger from 'electron-log';
-import { IMAGERY_DIR, MAP_SRS, PROJECT_FILE_PROTOCOL, TERRAIN_DIR, TIFF_SIZE } from '../constants.js';
+import { point, destination } from '@turf/turf';
+import { IMAGERY_DIR, MAP_SRS, OUTER_SIZE, PROJECT_FILE_PROTOCOL, TERRAIN_DIR, TIFF_SIZE } from '../constants.js';
 import { getBin, getSpawnEnv } from './tools.js';
 import { resourceRoot } from './app.js';
 import { openProject, refreshRawData, saveProjectSettings } from './project.js';
@@ -13,6 +14,20 @@ const log = logger.scope('GDAL');
 
 const WMS_FOLDER = path.join(resourceRoot(), 'extra-resources/wms');
 const MAX_DEM_TILES = 100;
+
+function boundsFromCenter(lng, lat, sizeKm) {
+  const center = point([lng, lat]);
+  const half = sizeKm / 2;
+  const opts = { units: 'kilometers' };
+
+  return {
+    north: destination(center, half, 0,    opts).geometry.coordinates[1],
+    east:  destination(center, half, 90,   opts).geometry.coordinates[0],
+    south: destination(center, half, 180,  opts).geometry.coordinates[1],
+    west:  destination(center, half, -90,  opts).geometry.coordinates[0],
+  };
+}
+
 
 function runGDALCommand(binaryName, options, onProgress) {
   log.debug(`Running ${binaryName} with options`, options);
@@ -239,7 +254,64 @@ export async function downloadCourseDEM(bounds) {
   return { dem, raw, stats };
 }
 
-export async function generateSatelliteImage(wmsSource) {
+export async function generateOuterSatelliteImage() {
+  const wmsPath = path.join(WMS_FOLDER, 'omx.xml');
+  const generatedFileTemp = `satellite_outer_${Date.now().toString(16)}.vrt`;
+  const generatedFileJPEG = `satellite_outer_${Date.now().toString(16)}.jpg`;
+  const imageryFolder = path.join(openProject._workingDir, IMAGERY_DIR);
+  const outputTemp = path.join(imageryFolder, generatedFileTemp);
+  const outputJPEG = path.join(imageryFolder, generatedFileJPEG);
+
+  if (!fs.existsSync(imageryFolder)) {
+    fs.mkdirSync(imageryFolder);
+  }
+  
+  const outerSize = openProject.scene.outer.size ?? 3;
+  const bounds = boundsFromCenter(openProject.settings.centerPoint.lng, openProject.settings.centerPoint.lat, outerSize);
+
+  // await runGDALCommand('gdalwarp', [
+  //   '-te', `${bounds.west}`, `${bounds.south}`, `${bounds.east}`, `${bounds.north}`,
+  //   '-te_srs', MAP_SRS,
+  //   '-ts', `${OUTER_SIZE}`, `${OUTER_SIZE}`,
+  //   '-r', 'bilinear',
+  //   '-of', 'VRT',
+  //   wmsPath,
+  //   outputTemp
+  // ], (update) => {
+  //   console.log('imagery.progress', update);
+  //   // broadcast('imagery.progress', { progress: (currentProgress / totalProgress) * 100 });
+  // });
+
+  console.log('bounds', bounds);
+  await runGDALCommand('gdal_translate', [
+    '-projwin_srs', MAP_SRS,
+    '-projwin', `${bounds.west}`, `${bounds.north}`, `${bounds.east}`, `${bounds.south}`,
+    // '-if', 'JPEG',
+    '-r', 'cubic',
+    '-outsize', `${OUTER_SIZE}`, `${OUTER_SIZE}`,
+    '-of', 'JPEG',
+    '-co', 'QUALITY=75',
+    // '-outsize', `${OUTER_SIZE}`, `${OUTER_SIZE}`,
+    // outputTemp,
+    wmsPath,
+    outputJPEG
+  ], (update) => {
+    console.log('imagery.progress', update);
+  });
+
+  openProject.scene.outer.satellite = {
+    ...openProject.scene.outer?.satellite || {},
+    filePath: outputJPEG,
+    fileName: path.basename(outputJPEG),
+    uri: `${PROJECT_FILE_PROTOCOL}:///${path.join(IMAGERY_DIR, generatedFileJPEG)}`
+  };
+
+  await saveProjectSettings();
+
+  return openProject.scene.outer;
+}
+
+export async function generateSatelliteImage(wmsSource, isOuter = false) {
   // const { lidarSRS, bounds, wmsSource, outputFile } = options;
   const wmsPath = path.join(WMS_FOLDER, `${wmsSource || 'google'}.xml`);
 
@@ -306,7 +378,6 @@ export async function generateSatelliteImage(wmsSource) {
     ...openProject?.satellite || {},
     [wmsSource]: asset
   };
-  
   openProject.satellite = satellite;
 
   await saveProjectSettings();

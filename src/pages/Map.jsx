@@ -38,6 +38,8 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import FileOpenIcon from '@mui/icons-material/FileOpen';
 import SearchIcon from '@mui/icons-material/Search';
 import ReloadIcon from '@mui/icons-material/Refresh';
+import FindInPage from '@mui/icons-material/FindInPage';
+import DescriptionIcon from '@mui/icons-material/Description';
 import MagicIcon from '@mui/icons-material/AutoAwesome';
 import SaveIcon from '@mui/icons-material/SaveAlt';
 import SatelliteIcon from '@mui/icons-material/Satellite';
@@ -1444,6 +1446,17 @@ export default function Map() {
                           disabled: !project.svg,
                           icon: <ReloadIcon />,
                           onClick: () => window.meshery.svg.refresh()
+                        },
+                        {
+                          label: `Reveal in ${window.meshery.platform === 'darwin' ? 'Finder' : 'Explorer'}`,
+                          disabled: !project.svg,
+                          icon: <FindInPage />,
+                          onClick: () => window.meshery.svg.reveal()
+                        },
+                        {
+                          label: 'Select SVG',
+                          icon: <DescriptionIcon />,
+                          onClick: () => window.meshery.svg.select()
                         },
                         // {
                         //   label: 'Export SVG',

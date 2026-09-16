@@ -4,6 +4,7 @@ import { contextBridge, ipcRenderer } from 'electron/renderer';
 // import 'electron-log/preload';
 
 contextBridge.exposeInMainWorld('meshery', {
+  platform: process.platform, // 'win32', 'darwin', or 'linux'
   selectSVGFile: () => ipcRenderer.invoke('svg.select'),
   clearSVG: () => ipcRenderer.invoke('svg.clear'),
   selectTerrainFile: () => ipcRenderer.invoke('raw.select'),
@@ -54,9 +55,10 @@ contextBridge.exposeInMainWorld('meshery', {
 
     selectHDRI: () => ipcRenderer.invoke('project.selectHDRI'),
     saveCapture: (data) => ipcRenderer.invoke('project.saveCapture', data),
-    // saveWrite: (settings) => ipcRenderer.invoke('project.saveWrite', settings),
-
-    // saveProject: (trees) => ipcRenderer.invoke('project.updateTrees', trees)
+    
+    importObject: () => ipcRenderer.invoke('project.importObject'),
+    updateObject: (id, update) => ipcRenderer.invoke('project.updateObject', id, update),
+    removeObject: (id) => ipcRenderer.invoke('project.removeObject', id),
   },
   mesh: {
     getCourseMesh: () => ipcRenderer.invoke('mesh.getCourseMesh'),
@@ -86,12 +88,15 @@ contextBridge.exposeInMainWorld('meshery', {
   imagery: {
     hillShade: () => ipcRenderer.invoke('imagery.hillShade'),
     satellite: (wmsSource) => ipcRenderer.invoke('imagery.satellite', wmsSource),
-    downloadDEM: (bounds) => ipcRenderer.invoke('imagery.downloadDEM', bounds)
+    downloadDEM: (bounds) => ipcRenderer.invoke('imagery.downloadDEM', bounds),
+    outerSatellite: () => ipcRenderer.invoke('imagery.outerSatellite'),
   },
   svg: {
     export: () => ipcRenderer.invoke('svg.export'),
     refresh: () => ipcRenderer.invoke('svg.refresh'),
     getMeshLayers: () => ipcRenderer.invoke('svg.getMeshLayers'),
+    reveal: () => ipcRenderer.invoke('svg.reveal'),
+    select: () => ipcRenderer.invoke('svg.select'),
   },
   map: {
     searchShapes: (bounds) => ipcRenderer.invoke('map.searchShapes', bounds),

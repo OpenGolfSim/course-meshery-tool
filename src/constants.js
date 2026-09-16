@@ -1,6 +1,7 @@
 export const MAP_SRS = 'EPSG:4326';
 
 export const TIFF_SIZE = 8192;
+export const OUTER_SIZE = 4096;
 
 export const PROJECT_FILE_PROTOCOL = 'project';
 export const RESOURCES_FILE_PROTOCOL = 'resources';

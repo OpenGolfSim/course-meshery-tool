@@ -25,6 +25,8 @@ import { RESOURCES_FILE_PROTOCOL } from '../constants';
 import { TEXTURE_MAP } from '../lib/textures';
 import { captureLightmap, captureMap, captureView, buildPostPipeline } from './captureMap';
 import { sunDirectionFromAngles } from '../utils/sun';
+import { yieldToMain } from './utils';
+import { usePlacedObjects } from './placedObjects';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -35,7 +37,7 @@ CameraControls.install({ THREE });
 // ─── Component ───────────────────────────────────────────────────────
 
 // const yieldToMain = () => new Promise(r => setTimeout(r, 0));
-const yieldToMain = () => new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
+// const yieldToMain = () => new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
 
 const qualityLevel = 2;
 
@@ -43,12 +45,15 @@ export default function CourseScene({
   ref,
   meshDataState,
   heightMap,
+  hiddenLayers,
   sunSettings,
   skySettings,
-  oceanSettings,
+  outerSettings,
   worldSize = 1000,
   onSelect,
   selectedLayer,
+  placementMode = false,
+  onPlacePoint,
   onLoadingChange
 }) {
   const { project } = useProject();
@@ -64,6 +69,7 @@ export default function CourseScene({
   const waterRef = useRef([]);
   const grassRef = useRef([]);
   const oceanRef = useRef(null);
+  const outerRef = useRef(null);
   const flagsRef = useRef([]);
   const [rendererReady, setRendererReady] = useState(false);
   const [surfacesLoaded, setSurfacesLoaded] = useState(false);
@@ -143,6 +149,22 @@ export default function CourseScene({
       bakingRef.current = false;
     }
   }, [worldSize, project.scene?.sun]);
+
+  const zoomToLayer = useCallback((layerId) => {
+    const entry = surfacesRef.current.find(s => s.mesh.name === layerId);
+    if (!entry || !controlsRef.current) return;
+    const bbox = new THREE.Box3().setFromObject(entry.mesh);
+    const center = bbox.getCenter(new THREE.Vector3());
+    const size = bbox.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.z);
+    controlsRef.current.setLookAt(
+      center.x + maxDim * 0.5,
+      center.y + maxDim * 0.7,
+      center.z + maxDim * 0.5,
+      center.x, center.y, center.z,
+      true
+    );
+  }, []);
 
   useImperativeHandle(ref, () => ({
     async capture(size = 512) {
@@ -232,6 +254,7 @@ export default function CourseScene({
       }
       setSurfaceVersion(v => v + 1);
     },
+    zoomToLayer,
   }), [worldSize]);
 
   const onCanvasClick = useCallback((e) => {
@@ -241,10 +264,18 @@ export default function CourseScene({
     raycasterRef.current.setFromCamera(pointerRef.current, cameraRef.current);
     const meshes = surfacesRef.current.map(s => s.mesh);
     const hits = raycasterRef.current.intersectObjects(meshes, false);
+    if (placementMode) {
+      if (hits.length > 0 && onPlacePoint) {
+        const p = hits[0].point;
+        onPlacePoint([p.x, p.y, p.z].map(v => Math.round(v * 100) / 100));
+      }
+      return; // don't run layer selection while placing
+    }
+
     console.log(hits);
     const layer = hits.length > 0 ? project._meshes.find(l => l.id === hits[0].object.name) : null;
     if (onSelect) onSelect(layer);
-  }, [project._meshes, onSelect]);
+  }, [project._meshes, onSelect, placementMode, onPlacePoint]);
 
   const onCanvasDblClick = useCallback((e) => {
     const rect = canvasRef.current.getBoundingClientRect();
@@ -257,21 +288,22 @@ export default function CourseScene({
       const layer = project._meshes?.find(l => l.id === hits[0].object.name);
       if (onSelect) onSelect(layer);
 
-      const bbox = new THREE.Box3().setFromObject(hits[0].object);
-      const center = bbox.getCenter(new THREE.Vector3());
-      const size = bbox.getSize(new THREE.Vector3());
-      const maxDim = Math.max(size.x, size.z);
-      controlsRef.current.setLookAt(
-        center.x + maxDim * 0.5,
-        center.y + maxDim * 0.7,
-        center.z + maxDim * 0.5,
-        center.x, center.y, center.z,
-        true
-      );
+      // const bbox = new THREE.Box3().setFromObject(hits[0].object);
+      // const center = bbox.getCenter(new THREE.Vector3());
+      // const size = bbox.getSize(new THREE.Vector3());
+      // const maxDim = Math.max(size.x, size.z);
+      // controlsRef.current.setLookAt(
+      //   center.x + maxDim * 0.5,
+      //   center.y + maxDim * 0.7,
+      //   center.z + maxDim * 0.5,
+      //   center.x, center.y, center.z,
+      //   true
+      // );
 
       // controls.fitToBox(new THREE.Box3().setFromObject(hits[0].object), true);
+      zoomToLayer(hits[0].object.name);
     }
-  }, [project._meshes, onSelect]);
+  }, [project._meshes, onSelect, zoomToLayer]);
 
   const removeClouds = useCallback(() => {
     const ctx = sceneRef.current;
@@ -318,8 +350,8 @@ export default function CourseScene({
     let lightSettings = {
       color: sunSettings?.color,
       qualityLevel,
-      ambient: { enabled: true },
-      directional: { enabled: true },
+      ambient: { enabled: true, intensity: sunSettings?.ambient },
+      directional: { enabled: true, intensity: sunSettings?.directional },
     }
     let cancelled = false;
 
@@ -354,6 +386,8 @@ export default function CourseScene({
     skySettings.hdri?.url,
     worldSize,
     sunSettings?.color,
+    sunSettings?.ambient,
+    sunSettings?.directional,
     rendererReady,
     rebuildClouds,
     removeClouds
@@ -362,8 +396,10 @@ export default function CourseScene({
   // Cheap param updates — no texture reload
   useEffect(() => {
     hdriParamsRef.current = {
-      intensity: skySettings?.hdri?.intensity,
+      // intensity: skySettings?.hdri?.intensity,
       rotation: skySettings?.hdri?.rotation,
+      environmentIntensity: skySettings?.hdri?.environmentIntensity,
+      backgroundIntensity: skySettings?.hdri?.backgroundIntensity,
     };
 
     if (skySettings?.type !== 'hdri' || !skyboxRef.current) return;
@@ -513,7 +549,36 @@ export default function CourseScene({
     };
   }, []);
 
-  // ─── Infinite ocean: add/remove per scene setting ──────────────────
+  // Apply current satellite uri (or fallback color) to the outer plane, in place.
+  const applySatelliteTexture = useCallback((uri) => {
+    const plane = outerRef.current;
+    if (!plane) return;
+    const mat = plane.material;
+    const tint = outerSettings?.color;
+    if (!uri) {
+      mat.map?.dispose();
+      mat.map = null;
+      mat.userData.appliedUri = null;
+      // mat.color.set(0xffff00);
+      mat.color.set(tint ?? 0xaaaaaa);
+      mat.needsUpdate = true;
+      return;
+    }
+    mat.color.set(tint ?? 0xffffff);
+    if (mat.userData.appliedUri === uri) return;
+
+    new THREE.TextureLoader().load(uri, (tex) => {
+      // Plane may have been rebuilt/removed while loading — re-check identity
+      if (outerRef.current?.material !== mat) { tex.dispose(); return; }
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = 8;
+      mat.map?.dispose();
+      mat.map = tex;
+      mat.userData.appliedUri = uri;
+      mat.needsUpdate = true;
+    });
+  }, [outerSettings?.color]);
+  
   const removeOcean = useCallback(() => {
     const ctx = sceneRef.current;
     const ocean = oceanRef.current;
@@ -524,62 +589,82 @@ export default function CourseScene({
     oceanRef.current = null;
   }, []);
 
-   // Build/remove on the enabled flag only
+  const removeOuterPlane = useCallback(() => {
+    const ctx = sceneRef.current;
+    const plane = outerRef.current;
+    if (!ctx || !plane) return;
+    ctx.scene.remove(plane);
+    plane.geometry.dispose();
+    plane.material.map?.dispose();
+    plane.material.dispose();
+    outerRef.current = null;
+  }, []);  
+
   useEffect(() => {
     const ctx = sceneRef.current;
     if (!ctx || !rendererReady) return;
 
-    if (!oceanSettings?.enabled) {
-      removeOcean();
-      return;
-    }
-    if (oceanRef.current) return; // already built
-    const ocean = new OceanSurface({
-      size: 4000,
-      uvTiling: [2, 2],
-      yOffset: oceanSettings.yOffset ?? -15,
-      depthRange: 0.1,
-      envMapIntensity: 0.1,
-      opacity: 0.99,
-      shallowColor: new THREE.Color('#185f57'),
-      deepColor: new THREE.Color('#042a34'),
-    });
-    ctx.scene.add(ocean.water);
-    if (ctx.fuseRenderer.environment) {
-      ocean.updateEnvironment(ctx.fuseRenderer.environment);
-    }
-    oceanRef.current = ocean;
-  }, [oceanSettings?.enabled, rendererReady, removeOcean]);
+    const type = outerSettings?.type ?? 'none';
 
-  // Cheap yOffset update — no rebuild (mirrors constructor's sign handling)
+    if (type !== 'ocean') removeOcean();
+    if (type !== 'satellite') removeOuterPlane();
+
+    if (type === 'ocean' && !oceanRef.current) {
+      const ocean = new OceanSurface({
+        size: 4000,
+        uvTiling: [2, 2],
+        yOffset: outerSettings.yOffset ?? -15,
+        depthRange: 0.1,
+        envMapIntensity: 0.1,
+        opacity: 0.99,
+        shallowColor: new THREE.Color('#185f57'),
+        deepColor: new THREE.Color('#042a34'),
+      });
+      ctx.scene.add(ocean.water);
+      if (ctx.fuseRenderer.environment) {
+        ocean.updateEnvironment(ctx.fuseRenderer.environment);
+      }
+      oceanRef.current = ocean;
+    }
+
+    if (type === 'satellite' && !outerRef.current) {
+      const geometry = new THREE.PlaneGeometry(3000, 3000);
+      geometry.rotateX(-Math.PI / 2);             // lie flat (XZ), +Y normal
+      const material = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+      const plane = new THREE.Mesh(geometry, material);
+      const center = worldSize / 2;
+      plane.position.set(center, -(outerSettings.yOffset ?? 0), center);
+      plane.raycast = () => {};                   // don't intercept layer-select clicks
+      ctx.scene.add(plane);
+      outerRef.current = plane;
+      applySatelliteTexture(outerSettings?.satellite?.uri);
+    }
+  }, [outerSettings?.type, rendererReady, worldSize, removeOcean, removeOuterPlane, applySatelliteTexture]);
+
+  // Satellite imagery
   useEffect(() => {
-    const ocean = oceanRef.current;
-    if (!ocean || !oceanSettings?.enabled) return;
-    ocean.water.position.y = -(oceanSettings.yOffset ?? 0);
-  }, [oceanSettings?.yOffset, oceanSettings?.enabled]);
-  //   // Debounced rebuild while dragging yOffset
-  //   const t = setTimeout(() => {
-  //     removeOcean();
-  //     const ocean = new OceanSurface({
-  //       size: 4000,
-  //       uvTiling: [2, 2],
-  //       yOffset: oceanSettings.yOffset ?? -15,
-  //       depthRange: 0.1,
-  //       envMapIntensity: 0.1,
-  //       opacity: 0.99,
-  //       shallowColor: new THREE.Color('#185f57'),
-  //       deepColor: new THREE.Color('#042a34'),
-  //     });
-  //     ocean.water.renderOrder = -1; // blend under grass/trees, same as lakes
-  //     ctx.scene.add(ocean.water);
-  //     if (ctx.fuseRenderer.environment) {
-  //       ocean.updateEnvironment(ctx.fuseRenderer.environment);
-  //     }
-  //     oceanRef.current = ocean;
-  //   }, 250);
+    if (outerSettings?.type !== 'satellite') return;
+    applySatelliteTexture(outerSettings?.satellite?.uri);
+  }, [outerSettings?.type, outerSettings?.satellite?.uri, applySatelliteTexture]);
 
-  //   return () => clearTimeout(t);
-  // }, [oceanSettings?.enabled, oceanSettings?.yOffset, rendererReady, removeOcean]);  
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    canvas.style.cursor = placementMode ? 'crosshair' : '';
+  }, [placementMode]);
+
+  useEffect(() => {
+    // const ocean = oceanRef.current;
+    // if (!ocean || outerSettings?.type !== 'ocean') return;
+    // ocean.water.position.y = -(outerSettings.yOffset ?? 0);
+    const y = -(outerSettings?.yOffset ?? 0);
+    if (outerSettings?.type === 'ocean' && oceanRef.current) {
+      oceanRef.current.water.position.y = y;
+    }
+    if (outerSettings?.type === 'satellite' && outerRef.current) {
+      outerRef.current.position.y = y;
+    }
+  }, [outerSettings?.yOffset, outerSettings?.type]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -811,6 +896,14 @@ export default function CourseScene({
     };
   }, [meshDataState, project._meshes, rendererReady]);
 
+  // Sync mesh visibility with hiddenLayers
+  useEffect(() => {
+    if (!surfacesLoaded) return;
+    for (const { mesh } of surfacesRef.current) {
+      mesh.visible = !hiddenLayers?.[mesh.name];
+    }
+  }, [hiddenLayers, surfacesLoaded]);
+
   useEffect(() => {
     console.log('[state] project._meshes changed!', project._meshes);
   }, [project._meshes]);
@@ -833,8 +926,6 @@ export default function CourseScene({
       const rb = obj.userData?.blendRebuild;
       if (rb) {
         const nSurface = rb.layer.neighbor || 'rough';
-        // const base = (surfaceMap[rb.layer.surface] ?? TEXTURE_MAP[rb.layer.surface])?.tint;
-        // const nTint = (surfaceMap[nSurface] ?? TEXTURE_MAP[nSurface])?.tint;
         const base = (surfaces[rb.layer.surface] ?? TEXTURE_MAP[rb.layer.surface])?.tint;
         const nTint = (surfaces[nSurface] ?? TEXTURE_MAP[nSurface])?.tint;        
         if (obj.userData.appliedTints?.base !== base || obj.userData.appliedTints?.neighbor !== nTint) {
@@ -859,6 +950,10 @@ export default function CourseScene({
         mat.color.set(cfg.tint);
         mat.userData.tint = new THREE.Color(cfg.tint);
       }
+      // if (cfg?.emissive) {
+      //   mat.emissive.set(cfg.emissive);
+      //   mat.userData.emissive = new THREE.Color(cfg.emissive);
+      // }
 
       // Live tile-size: rescale baked UVs in place (sanitized same as build)
       const tile = Number(cfg?.tileSize);
@@ -1024,6 +1119,8 @@ export default function CourseScene({
     };
   // }, [project.trees, heightMap, worldSize, rendererReady]);
   }, [project.trees, worldSize, rendererReady, surfacesLoaded]);
+
+  usePlacedObjects(sceneRef, project.objects, rendererReady, setSurfaceVersion);
 
   return <div ref={containerRef} style={{ width: '100%', height: '100%' }} />;
 }

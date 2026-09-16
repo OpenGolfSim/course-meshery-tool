@@ -76,12 +76,24 @@ const defaultProjectTemplate = {
     },
     sun: {
       color: '#ffffee',
-      elevation: 40,   // degrees above horizon; 90 = noon overhead
-      azimuth: 225     // compass direction light comes from; 225 = southwest
+      // degrees above horizon; 90 = noon overhead
+      elevation: 40,
+      // compass direction light comes from; 225 = southwest
+      azimuth: 225,
+      // ambient intensity
+      ambient: 0.35,
+      // directional intensity
+      directional: 1.3,
     },
-    ocean: {
-      enabled: false,
-      yOffset: 0
+    // ocean: {
+    //   enabled: false,
+    //   yOffset: 0
+    // },
+    outer: {
+      type: 'none', // none | ocean | satellite
+      yOffset: 0,
+      color: '#fff',
+      satellite: null
     },
     bloom: {
       enabled: true,
@@ -91,7 +103,8 @@ const defaultProjectTemplate = {
     },
   },
   trees: [],
-  surfaces: {}
+  surfaces: {},
+  objects: []
 };
 
 export let openProject = { ...defaultProjectTemplate };
@@ -237,11 +250,34 @@ export async function refreshRawData() {
 }
 
 export async function refreshSVG() {
-  if (openProject.svg?.filePath) {
-    await loadSVG(openProject.svg.filePath);
-  }
+  try {
+    if (openProject.svg?.filePath) {
+      await loadSVG(openProject.svg.filePath);
+    }
+    broadcast('project.opened', openProject);
+  } catch(error) {
+    dialog.showErrorBox('SVG Error', error.message);
+    throw new Error(error);
+  } 
+}
 
-  broadcast('project.opened', openProject);
+export async function selectSVG() {
+  const { canceled, filePaths } = await dialog.showOpenDialog({
+    title: 'Select SVG File',
+    filters: [{ name: 'SVG Files', extensions: ['svg'] }]
+  });
+  if (!canceled && filePaths.length) {
+    console.log('filePaths', filePaths[0]);
+    await loadSVG(filePaths[0], true);
+    await saveProjectSettings();
+    broadcast('project.opened', openProject);
+  }
+}
+
+export async function revealSVG() {
+  if (openProject.svg?.filePath) {
+    shell.showItemInFolder(openProject.svg.filePath);
+  }
 }
 
 export async function saveSVG(options = {}) {
@@ -262,7 +298,6 @@ export async function saveSVG(options = {}) {
   // create a simple SVG to start
   // openProject.paths
   openProject.svg = { filePath, fileName: path.basename(filePath) };
-  console.log('openProject.svg', openProject.svg);
   await saveProjectSettings();
 
   if (!filePath) {
@@ -297,7 +332,7 @@ async function updateSVGData() {
   broadcast('project.opened', openProject);
 }
 
-async function loadSVG(filePath) {
+async function loadSVG(filePath, shouldSetProject = false) {
   if (!fs.existsSync(filePath)) {
     log.warn(`SVG does not exist (${filePath})`);
     openProject._svgBuffer = null; 
@@ -308,7 +343,7 @@ async function loadSVG(filePath) {
   const data = await fs.promises.readFile(filePath);
   openProject._svgBuffer = data.toString('utf8');
   
-  if (!openProject.svg) {
+  if (!openProject.svg || shouldSetProject) {
     openProject.svg = { filePath, fileName: path.basename(filePath) };
   }
   
@@ -369,6 +404,15 @@ export async function loadProjectFile(filePath) {
     holes
   });
 
+  // migrate ocean settings to outer
+  if (openProject.ocean?.enabled) {
+    openProject.outer = {
+      type: 'ocean',
+      yOffset: openProject.ocean?.yOffset ?? 0
+    }
+    openProject.ocean = null;
+  }
+
   // migrate tree configs to have filenames
   openProject.trees.forEach(treeLayer => {
     treeLayer.treeConfigs.forEach(config => {
@@ -405,7 +449,9 @@ export async function loadProjectFile(filePath) {
     openProject.stats = openProject.lidar.stats;
   }
 
+
   await refreshSVG();
+
   await refreshRawData();
 
   // await parseShapeCache();
@@ -961,4 +1007,47 @@ export async function generateHeightMap(type) {
   const res = await generateTerrain(type);
   await refreshRawData();
   return res;
+}
+
+export async function importObject() {
+  const { canceled, filePaths } = await dialog.showOpenDialog({
+    title: 'Import 3D Object',
+    filters: [{ name: 'GLB Files', extensions: ['glb'] }]
+  });
+  if (canceled || !filePaths?.length) {
+    return;
+  }
+  const [filePath] = filePaths;
+  const id = randomUUID();
+  const name = path.basename(filePath);
+
+  openProject.objects.push({
+    id,
+    name,
+    filePath,
+    position: [0, 0, 0],
+    rotation: [0, 0, 0],
+    scale: [1, 1, 1],
+    url: `${PROJECT_FILE_PROTOCOL}://objects3d/${id}.glb`,
+  });
+
+  saveProjectSettings();
+  return openProject.objects;
+}
+
+export function updateObject(id, update) {
+  let object = openProject.objects.find(obj => obj.id === id);
+  object = _.merge(object, update);
+  console.log('updated object', object);
+  saveProjectSettings();
+  return openProject.objects;
+}
+
+export function removeObject(id) {
+  const foundIndex = openProject.objects.findIndex(obj => obj.id === id);
+  if (foundIndex > -1) {
+    openProject.objects.splice(foundIndex, 1);
+  }
+  saveProjectSettings();
+  return openProject.objects;
 }

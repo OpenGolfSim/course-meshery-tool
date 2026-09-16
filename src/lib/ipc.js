@@ -53,6 +53,9 @@ ipcMain.handle('project.updateSurfaces', (_event, update) => project.updateSurfa
 ipcMain.handle('project.selectSurfaceTexture', (_event, surface, textureType) => project.selectSurfaceTexture(surface, textureType));
 
 ipcMain.handle('project.updateTrees', (_event, trees) => project.updateTrees(trees));
+ipcMain.handle('project.importObject', (_event) => project.importObject());
+ipcMain.handle('project.updateObject', (_event, id, update) => project.updateObject(id, update));
+ipcMain.handle('project.removeObject', (_event, id) => project.removeObject(id));
 
 ipcMain.handle('trees.updateLayer', (_event, layerId, layerUpdate) => project.updateTreeLayer(layerId, layerUpdate));
 ipcMain.handle('trees.addLayer', (_event) => project.addTreeLayer());
@@ -76,6 +79,8 @@ ipcMain.handle('trees.createCustom', (_event) => createTreeMakerWindow());
 
 ipcMain.handle('svg.refresh', (_event) => project.refreshSVG());
 ipcMain.handle('svg.getMeshLayers', (_event) => project.getMeshLayers());
+ipcMain.handle('svg.select', (_event) => project.selectSVG());
+ipcMain.handle('svg.reveal', (_event) => project.revealSVG());
 
 ipcMain.handle('map.lidarSources', (_event) => map.lidarSources());
 ipcMain.handle('map.searchShapes', (_event, coords) => map.searchShapes(coords));
@@ -96,6 +101,8 @@ ipcMain.handle('imagery.downloadDEM', (_event, courseBounds) => imagery.download
 // ipcMain.handle('imagery.raw', (_event) => imagery.generateRAWFile());
 ipcMain.handle('imagery.hillShade', (_event) => imagery.generateHillShade());
 ipcMain.handle('imagery.satellite', (_event, wmsSource) => imagery.generateSatelliteImage(wmsSource));
+
+ipcMain.handle('imagery.outerSatellite', (_event) => imagery.generateOuterSatelliteImage());
 
 
 ipcMain.handle('tools.getToolsPath', (event) => getToolsPath());
