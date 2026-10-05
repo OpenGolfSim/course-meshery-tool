@@ -24,7 +24,8 @@ function hemiOctaDir(u, v) {
   return new THREE.Vector3(x, y, z).normalize();
 }
 
-function captureAtlas(renderer, scene, sphere) {
+function captureAtlas(renderer, scene, sphere, colorSpace = THREE.SRGBColorSpace) {
+
   const N = IMPOSTOR_GRID, F = IMPOSTOR_FRAME;
   const atlas = document.createElement('canvas');
   atlas.width = atlas.height = N * F;
@@ -50,7 +51,7 @@ function captureAtlas(renderer, scene, sphere) {
   }
   dilateAtlas(atlas);
   const tex = new THREE.CanvasTexture(atlas);
-  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.colorSpace = colorSpace; // NoColorSpace for the normal atlas (raw data)
   return tex;
 }
 
@@ -91,10 +92,12 @@ function dilateAtlas(canvas, iterations = 16) {
   ctx.putImageData(img, 0, 0);
 }
 
-function buildImpostorQuad(sphere, atlasTex) {
+function buildImpostorQuad(sphere, atlasTex, normalTex) {
   const { center, radius: r } = sphere;
   const mat = new THREE.MeshStandardMaterial({
     map: atlasTex,
+    // Carrier slot only: Fuse decodes this as a tree-local normal atlas, not tangent-space
+    normalMap: normalTex,
     alphaTest: 0.5,
     side: THREE.DoubleSide,
     roughness: 1,
@@ -106,6 +109,7 @@ function buildImpostorQuad(sphere, atlasTex) {
   mat.userData.impostor = {
     grid: IMPOSTOR_GRID,
     hemi: true,
+    normals: true,
     radius: r,
     center: [center.x, center.y, center.z],
   };
@@ -116,45 +120,69 @@ function buildImpostorQuad(sphere, atlasTex) {
   group.add(new THREE.Mesh(geo, mat));
   return group;
 }
-async function generateBillboardGLB(treeScene) {
+
+const cutout = (src) => src.alphaTest || (src.transparent ? 0.5 : 0);
+// Pass 1: unlit albedo (color map, tint, vertex colors, alpha). No lighting baked.
+function toAlbedoMaterial(src) {
+  return new THREE.MeshBasicMaterial({
+    map: src.map ?? null,
+    color: src.color ? src.color.clone() : new THREE.Color(0xffffff),
+    alphaMap: src.alphaMap ?? null,
+    vertexColors: !!src.vertexColors,
+    side: src.side,
+    alphaTest: cutout(src),
+  });
+}
+
+// Pass 2: final shading normal (after normal map, if any, and the double-sided
+// flip) in bake world space = tree-local space, packed to 0..1.
+function toNormalMaterial(src) {
+  const m = src.isMeshStandardMaterial
+    ? src.clone() // keeps normalMap/alphaMap/side when present
+    : new THREE.MeshStandardMaterial({ map: src.map ?? null, alphaMap: src.alphaMap ?? null, side: src.side });
+  m.alphaTest = cutout(src);
+  m.transparent = false;
+  m.toneMapped = false;
+  m.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <opaque_fragment>',
+        'gl_FragColor = vec4( inverseTransformDirection( normal, viewMatrix ) * 0.5 + 0.5, 1.0 );')
+      .replace('#include <tonemapping_fragment>', '')
+      .replace('#include <colorspace_fragment>', '');
+  };
+  return m;
+}
+
+// Source materials are shared with the live preview: never mutate, always replace.
+function cloneWith(treeScene, toMat) {
   const clone = treeScene.clone(true);
-  // Capture pure albedo: swap every material for an unlit equivalent that keeps
-  // the color map/tint/alpha. Lighting is NOT baked into the texture — it gets
-  // applied at runtime by the billboard's lit material, matching the PBR LODs.
   clone.traverse((o) => {
     if (!o.isMesh) return;
-    // Keep lit materials for the bake (clone: source materials are shared
-    // with the live preview and must not be mutated)
-    const toCapture = (src) => {
-      const m = src.clone();
-      if ('roughness' in m) { m.roughness = 1; m.metalness = 0; }
-      m.alphaTest = src.alphaTest || (src.transparent ? 0.5 : 0);
-      m.transparent = false;
-      return m;
-    };
-    o.material = Array.isArray(o.material) ? o.material.map(toCapture) : toCapture(o.material);
-
+    o.material = Array.isArray(o.material) ? o.material.map(toMat) : toMat(o.material);
   });
+  return clone;
+}
 
-  const captureScene = new THREE.Scene();
-  // Direction-neutral bake lighting: hemisphere light bakes shape contrast
-  // (bright canopy top, darker undersides/interior) without baking a sun
-  // azimuth into the atlas. Intensity π ≈ albedo-level output for white sky.
-  captureScene.add(new THREE.HemisphereLight(0xffffff, 0x445544, 2.5));
-  captureScene.add(clone);
+async function generateBillboardGLB(treeScene) {
+  const albedoClone = cloneWith(treeScene, toAlbedoMaterial);
+  const albedoScene = new THREE.Scene().add(albedoClone);
+  const normalScene = new THREE.Scene().add(cloneWith(treeScene, toNormalMaterial));
 
-  const box = new THREE.Box3().setFromObject(clone);
+  const box = new THREE.Box3().setFromObject(albedoClone);
 
   const rt = new THREE.WebGLRenderer({ alpha: true });
   rt.setSize(IMPOSTOR_FRAME * IMPOSTOR_SS, IMPOSTOR_FRAME * IMPOSTOR_SS);
   rt.setClearColor(0x000000, 0);
 
   const sphere = box.getBoundingSphere(new THREE.Sphere());
-  const atlas = captureAtlas(rt, captureScene, sphere);
+  // const atlas = captureAtlas(rt, captureScene, sphere);
+  const atlas = captureAtlas(rt, albedoScene, sphere, THREE.SRGBColorSpace);
+  const normalAtlas = captureAtlas(rt, normalScene, sphere, THREE.NoColorSpace);
 
   rt.dispose();
 
-  const impostor = buildImpostorQuad(sphere, atlas);
+  const impostor = buildImpostorQuad(sphere, atlas, normalAtlas);
+
   return new GLTFExporter().parseAsync(impostor, { binary: true }); // ArrayBuffer
 }
 
