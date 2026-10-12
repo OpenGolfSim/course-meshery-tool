@@ -8,18 +8,9 @@ import { openProject, saveProjectSettings } from './project';
 import { broadcast } from './window';
 
 
-let cachedOverpass = {};
+import { buildOverpassQueryTags } from './osmUtils.js';
 
-const tags = [
-  'green',
-  'fairway',
-  'tee',
-  'bunker',
-  'rough',
-  'water_hazard',
-  // 'lateral_water_hazard',
-  // 'cartpath'
-];
+let cachedOverpass = {};
 
 // const USGS_GEOJSON = 'https://usgs.entwine.io/boundaries/resources.geojson';
 const USGS_GEOJSON_PATH = path.join(resourceRoot(), 'extra-resources/usgs.geojson');
@@ -60,9 +51,7 @@ async function turboPassQuery(bbox, endpoint = '') {
     return cachedOverpass.data;
   }
 
-  const queryTags = tags.map(tag => {
-    return `nwr["golf"="${tag}"]`;
-  }).join(';');
+  const queryTags = buildOverpassQueryTags();
 
   const query = `
     [out:json][timeout:25][bbox:${bboxKey}];

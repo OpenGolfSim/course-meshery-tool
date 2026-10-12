@@ -6,6 +6,7 @@ import { lerp, smootherstep, smoothstep, pointInRing } from './utils';
 import cdt2d from 'cdt2d';
 import cleanPSLG from 'clean-pslg';
 import { SurfacePalette } from '../colors';
+import { buildPolygonIndex, PointGrid, buildDistanceField } from '../spatialIndex';
 
 const MIN_DISTANCE = 1e-8; // or whatever small threshold
 
@@ -30,21 +31,37 @@ function digMesh(mesh, shape, layer) {
   const { curvePower, curve, curvePoints, depth, distance } = layer.dig;
   let maxDist = 0;
   const insideList = [];
-  
+
+  // Previously isPointInPolygon/distanceToPolygonEdge (both O(ring length),
+  // no spatial index) ran once per mesh vertex — O(vertexCount * ringLength).
+  // distanceToBoundary alone doesn't fully fix this for a wide shape (a
+  // lake, or a river with wide sections): many mesh vertices sit deep
+  // inside, far from every edge, which is exactly the case where its
+  // exact-distance search falls back to a full ring scan. A precomputed
+  // distance field pays that cost at most once per field cell instead of
+  // once per mesh vertex.
+  //
+  // The field itself has fixed overhead (building up to its cell cap), so
+  // it's only worth it once the mesh has enough vertices to matter — for a
+  // small shape (a sand trap, a cart path) with a few thousand points,
+  // direct per-point distanceToBoundary calls are already fast and the
+  // field would just be pure overhead.
+  const cellSize = Math.max(layer.spacing || 1, 0.05);
+  const polyIndex = buildPolygonIndex(polygon, holes, cellSize);
+  const vertexCount = points.length / 3;
+  const DISTANCE_FIELD_VERTEX_THRESHOLD = 50000;
+  const distanceField = vertexCount > DISTANCE_FIELD_VERTEX_THRESHOLD
+    ? buildDistanceField(polyIndex, getBoundingBox([polygon, ...holes]))
+    : null;
+
   for (let i = 0; i < points.length; i += 3) {
     const x = points[i];
     const y = points[i + 1];
     const z = points[i + 2];
 
     const pt2D = [x, z]; // [x,z] for polygon
-    if (isPointInPolygon(pt2D, polygon, holes)) {
-      // const dist = distanceToPolygonEdge(pt2D, polygon);
-      let dist = distanceToPolygonEdge(pt2D, polygon);
-      for (const hole of (holes || [])) {
-        const hd = distanceToPolygonEdge(pt2D, hole);
-        if (hd < dist) dist = hd;
-      }
-
+    if (polyIndex.isInside(pt2D)) {
+      const dist = distanceField ? distanceField.query(pt2D) : polyIndex.distanceToBoundary(pt2D);
       if (dist > maxDist) maxDist = dist;
       insideList.push({ idx: i / 3, dist, point: [x, y, z] });
     }
@@ -93,28 +110,21 @@ function digMesh(mesh, shape, layer) {
 
 function preserveBoundaryAndDedupe(boundaryPts, holePts, extraPts, minDist = 0.02) {
   if (!minDist) minDist = 1e-6;
-  const minDistSq = minDist * minDist;
 
-  // Start with boundary and hole points always preserved
-  const output = [...boundaryPts, ...holePts];
+  // Previously an O(n^2) scan (each extraPt checked against every point
+  // accepted so far via a growing array). A PointGrid makes each check
+  // O(1)-amortized instead, which matters once extraPts reaches the
+  // hundreds of thousands for a large/fine-spacing shape.
+  const grid = new PointGrid(minDist);
+  const output = [];
 
-  for (let i = 0; i < extraPts.length; i++) {
-    const [x, y] = extraPts[i];
-    let tooClose = false;
+  for (const pt of boundaryPts) { output.push(pt); grid.insert(pt); }
+  for (const pt of holePts) { output.push(pt); grid.insert(pt); }
 
-    // Check against all preserved points
-    for (let j = 0; j < output.length; j++) {
-      const [bx, by] = output[j];
-      const dx = x - bx, dy = y - by;
-      if (dx * dx + dy * dy < minDistSq) {
-        tooClose = true;
-        break;
-      }
-    }
-
-    // Also check already accepted added points
-    if (!tooClose) {
-      output.push(extraPts[i]);
+  for (const pt of extraPts) {
+    if (!grid.hasNeighborWithin(pt, minDist)) {
+      output.push(pt);
+      grid.insert(pt);
     }
   }
   return output;
@@ -124,16 +134,30 @@ function computeVertexColors(allPoints, polygon, holes, blendDist = 2) {
   const vertexColors = []; // Flat array: [r,g,b, r,g,b, ...]
   const bufferDist = blendDist * 0.85; // stop the blending just before the denser grid ends
 
+  // Previously distanceToPolygonEdge (O(ring length), no spatial index) ran
+  // twice per point (once for the outer ring, once per hole) for every
+  // point in allPoints — O(pointCount * ringLength).
+  const polyIndex = buildPolygonIndex(polygon, holes, Math.max(blendDist, 0.05));
+
   for (let i = 0; i < allPoints.length; i++) {
     const [x, z] = allPoints[i];
     const pt = [x, z];
-    const distToOuter = distanceToPolygonEdge(pt, polygon);
 
-    // Calculate min distance to any inner hole edge
+    // Only points within bufferDist of an edge affect the output at all
+    // (everything farther stays plain white either way) — checking that
+    // first is fixed-cost, unlike computing the exact distance, so most
+    // points (typically far interior, not near any edge) skip the
+    // expensive exact-distance calls below entirely.
+    const nearOuter = polyIndex.outer.isWithinDistance(pt, bufferDist);
+    const nearHole = polyIndex.holes.some(h => h.isWithinDistance(pt, bufferDist));
+
+    const distToOuter = nearOuter ? polyIndex.outer.distanceToEdge(pt) : Infinity;
     let distToInner = Infinity;
-    for (const hole of holes) {
-      const d = distanceToPolygonEdge(pt, hole);
-      if (d < distToInner) distToInner = d;
+    if (nearHole) {
+      for (const holeIdx of polyIndex.holes) {
+        const d = holeIdx.distanceToEdge(pt);
+        if (d < distToInner) distToInner = d;
+      }
     }
 
     // We only care about vertices within blendDist of an edge
@@ -417,17 +441,6 @@ function generateEdgeBufferPoints(polygon, holes, spacing) {
   return buffer;
 }
 
-function isTooCloseToConstraintEdge(pt, rings, minDist) {
-  for (const ring of rings) {
-    for (let i = 0; i < ring.length; i++) {
-      const a = ring[i], b = ring[(i + 1) % ring.length];
-      if (pointToSegmentDist(pt[0], pt[1], a[0], a[1], b[0], b[1]) < minDist) {
-        return true;
-      }
-    }
-  }
-  return false;
-}
 
 function tryTriangulate(boundaryPts, holes, steinerPts) {
   const allPoints = [...boundaryPts, ...holes.flat(), ...steinerPts];
@@ -482,6 +495,153 @@ function perturbPoint(x, y, mag = 1e-6) {
   ];
 }
 
+// Test-only hook: poisson-disk-sampling's constructor accepts an optional
+// per-instance RNG (`new PoissonDiskSampling(options, rng)`, defaulting to
+// Math.random when omitted). The perf harness (scripts/perf/) uses this to
+// get fully reproducible sampling without relying on a global Math.random
+// monkey-patch, which turned out to be fragile — its output is sensitive to
+// the exact count of Math.random() calls made anywhere earlier in the
+// process, so unrelated changes (even just adding an unused import) shifted
+// results. Left null, this is a no-op for the real app: PDS falls back to
+// Math.random exactly as before.
+let testRngFactory = null;
+export function __setTestRngFactory(factory) {
+  testRngFactory = factory;
+}
+
+function buildPdsOptions(layer, shape, originX, originY) {
+  let opts = {
+    minDistance: layer.spacing
+  };
+  if (layer.blending?.enabled && layer.blending?.spacing > 0 && layer.blending?.spacing !== layer?.spacing) {
+    opts = {
+      minDistance: layer.blending.spacing,
+      maxDistance: layer.spacing,
+      distanceFunction: adaptiveMinDistanceFactory(layer, shape, originX, originY),
+    }
+  }
+  return opts;
+}
+
+function createPds(options) {
+  return new PoissonDiskSampling(options, testRngFactory ? testRngFactory() : undefined);
+}
+
+// Original behavior: sample the shape's full bounding box in one
+// PoissonDiskSampling instance, then discard everything outside the
+// polygon. Fine when the bbox is small or the polygon roughly fills it.
+function sampleBoundingBox(layer, shape, width, height, minX, minY, polyIndex) {
+  const pds = createPds({
+    shape: [width, height],
+    tries: 30,
+    ...buildPdsOptions(layer, shape, minX, minY),
+  });
+
+  shape.polygon.forEach(point => pds.addPoint([point[0] - minX, point[1] - minY]));
+
+  const samples = pds.fill().map(([x, y]) => [x + minX, y + minY]);
+  return samples.filter(pt => polyIndex.isInside(pt));
+}
+
+// A long, thin, winding polygon (a river is the motivating case) can have a
+// bounding-box area many times its actual footprint. Sampling the full bbox
+// at a fine spacing (as sampleBoundingBox does) then generates and discards
+// a huge number of candidate points — the dominant cost of mesh generation
+// for such shapes. This tiles the bbox and runs a small PoissonDiskSampling
+// instance per tile, skipping tiles that don't touch the polygon at all, so
+// the sampled area shrinks toward the polygon's real footprint instead of
+// its bbox.
+function sampleTiled(layer, shape, width, height, minX, minY, polyIndex) {
+  const spacing = layer.spacing;
+
+  // Tile size: large enough to keep tile-management overhead (one PDS
+  // instance + relevance check per tile) small relative to sample count,
+  // small enough to meaningfully skip empty regions of a thin/winding bbox.
+  const tileSize = Math.min(50, Math.max(4, spacing * 50));
+  // Halo covers Bridson's min-distance exclusion radius across tile seams,
+  // so neighboring tiles' accepted points correctly constrain each other.
+  const halo = spacing * 3;
+
+  const interiorSamples = [];
+
+  const numTilesX = Math.max(1, Math.ceil(width / tileSize));
+  const numTilesY = Math.max(1, Math.ceil(height / tileSize));
+
+  for (let ty = 0; ty < numTilesY; ty++) {
+    for (let tx = 0; tx < numTilesX; tx++) {
+      const tileMinX = minX + tx * tileSize;
+      const tileMinY = minY + ty * tileSize;
+      const tileW = Math.min(tileSize, minX + width - tileMinX);
+      const tileH = Math.min(tileSize, minY + height - tileMinY);
+
+      const centerX = tileMinX + tileW / 2;
+      const centerY = tileMinY + tileH / 2;
+      const halfDiagonal = Math.hypot(tileW / 2, tileH / 2);
+      const isRelevant =
+        polyIndex.isInside([centerX, centerY]) ||
+        polyIndex.distanceToBoundary([centerX, centerY]) <= halfDiagonal + halo;
+      if (!isRelevant) continue;
+
+      const originX = tileMinX - halo;
+      const originY = tileMinY - halo;
+      const paddedW = tileW + 2 * halo;
+      const paddedH = tileH + 2 * halo;
+
+      const pds = createPds({
+        shape: [paddedW, paddedH],
+        tries: 30,
+        ...buildPdsOptions(layer, shape, originX, originY),
+      });
+
+      // Seed only this tile's own boundary/hole points. Seeding points
+      // *accepted by other tiles* was tried and reverted: this library's
+      // addPoint() pushes every seeded point onto its internal growth
+      // queue (not just an occupancy grid), so seeding an ever-growing
+      // "already accepted" set made each successive tile's fill() slower
+      // than the last — the exact O(S^2)-shaped blowup tiling was meant to
+      // eliminate. Any near-duplicate points this leaves at tile seams are
+      // cleaned up by preserveBoundaryAndDedupe below, same as it already
+      // does for the untiled path.
+      for (const pt of shape.polygon) {
+        if (pt[0] >= originX && pt[0] <= originX + paddedW && pt[1] >= originY && pt[1] <= originY + paddedH) {
+          pds.addPoint([pt[0] - originX, pt[1] - originY]);
+        }
+      }
+      for (const hole of shape.holes) {
+        for (const pt of hole) {
+          if (pt[0] >= originX && pt[0] <= originX + paddedW && pt[1] >= originY && pt[1] <= originY + paddedH) {
+            pds.addPoint([pt[0] - originX, pt[1] - originY]);
+          }
+        }
+      }
+
+      const tileSamples = pds.fill().map(([x, y]) => [x + originX, y + originY]);
+      for (const pt of tileSamples) {
+        if (pt[0] < tileMinX || pt[0] >= tileMinX + tileW || pt[1] < tileMinY || pt[1] >= tileMinY + tileH) continue;
+        if (!polyIndex.isInside(pt)) continue;
+        interiorSamples.push(pt);
+      }
+    }
+  }
+
+  return interiorSamples;
+}
+
+// Sampling the full bounding box at a fine spacing costs roughly
+// bboxArea/spacing^2 candidate points. Below this threshold that's cheap
+// enough that tiling would only add overhead for no real benefit; above it
+// (a large and/or thin/winding shape at fine spacing, e.g. a river) tiling
+// keeps the sampled area close to the polygon's real footprint instead of
+// its bounding box.
+const TILED_SAMPLING_CANDIDATE_THRESHOLD = 1_000_000;
+
+function generateSteinerCandidates(layer, shape, width, height, minX, minY, polyIndex) {
+  const estimatedCandidates = (width * height) / (layer.spacing * layer.spacing);
+  return estimatedCandidates > TILED_SAMPLING_CANDIDATE_THRESHOLD
+    ? sampleTiled(layer, shape, width, height, minX, minY, polyIndex)
+    : sampleBoundingBox(layer, shape, width, height, minX, minY, polyIndex);
+}
+
 function triangulatePiece(layer, shape) {
 // export function generateMesh(layer, shape) {
   // if (layer.error) {
@@ -492,28 +652,12 @@ function triangulatePiece(layer, shape) {
   const holePts = shape.holes?.flat() || [];
   const { width, height, minY, minX } = getBoundingBox([shape.polygon, ...shape.holes]);
 
-  // PDS sampling — completely unchanged
-  let opts = {
-    minDistance: layer.spacing
-  };
-  if (layer.blending?.enabled && layer.blending?.spacing > 0 && layer.blending?.spacing !== layer?.spacing) {
-    opts = {
-      minDistance: layer.blending.spacing,
-      maxDistance: layer.spacing,
-      distanceFunction: adaptiveMinDistanceFactory(layer, shape, minX, minY),
-    }
-  }
+  // Built once and reused for sampling (isInside/tile relevance),
+  // constraint-edge filtering, and the retry-widening loop below —
+  // previously each of those ran its own O(ring length) scan per point.
+  const polyIndex = buildPolygonIndex(shape.polygon, shape.holes, Math.max(layer.spacing, 0.05));
 
-  const pds = new PoissonDiskSampling({
-    shape: [width, height],
-    tries: 30,
-    ...opts
-  });
-
-  shape.polygon.forEach(point => pds.addPoint([point[0] - minX, point[1] - minY]));
-
-  const samples = pds.fill().map(([x, y]) => [x + minX, y + minY]);
-  const interiorSamples = samples.filter(pt => isPointInPolygon(pt, shape.polygon, shape.holes));
+  const interiorSamples = generateSteinerCandidates(layer, shape, width, height, minX, minY, polyIndex);
 
   // Add buffer points near edges for large-spacing meshes to prevent spike triangles
   let extraPts = interiorSamples;
@@ -562,9 +706,8 @@ function triangulatePiece(layer, shape) {
   //   finalTriangles.push(pts[0]._idx, pts[2]._idx, pts[1]._idx);
   // }
 
-  const constraintRings = [shape.polygon, ...shape.holes];
   let steinerPts = preserveBoundaryAndDedupe([], [], extraPts, minDist)
-    .filter(pt => !isTooCloseToConstraintEdge(pt, constraintRings, minDist));
+    .filter(pt => !polyIndex.isWithinDistance(pt, minDist));
 
   let allPoints, finalTriangles;
   const MAX_RETRIES = 3;
@@ -586,9 +729,7 @@ function triangulatePiece(layer, shape) {
         );
       }
       const widenedDist = minDist * Math.pow(2, attempt + 1);
-      steinerPts = steinerPts.filter(
-        pt => !isTooCloseToConstraintEdge(pt, constraintRings, widenedDist)
-      );
+      steinerPts = steinerPts.filter(pt => !polyIndex.isWithinDistance(pt, widenedDist));
     }
   }
 
@@ -828,6 +969,43 @@ export function conformMeshToTerrain(layer, mesh, project, heightMap) {
     }
   }
 
+  // For rivers, indexes boundaryHeights so the IDW loop below can query
+  // only nearby boundary vertices instead of scanning all of them per
+  // interior mesh vertex (was O(interior vertices * boundary vertices)).
+  let boundaryGrid = null;
+  const boundaryCellSize = Math.max(layer.spacing || 1, 0.05);
+  if (isRiverSurface) {
+    boundaryGrid = new PointGrid(boundaryCellSize);
+    for (const bv of boundaryHeights) boundaryGrid.insert([bv.x, bv.z, bv.y]);
+  }
+
+  // Approximates the full IDW sum with only the nearby boundary points
+  // (weight falls off as 1/distance^2, so far-away points barely
+  // contributed anyway) - expands the search radius until enough
+  // candidates are found, falling back to the full set in the rare case
+  // the grid has too few nearby points (e.g. a hairpin bend where the
+  // opposite bank is geometrically close but the grid search under-reaches).
+  function idwHeightFromNearbyBoundary(x, z) {
+    const MIN_CANDIDATES = 8;
+    let radius = boundaryCellSize * 4;
+    let candidates = boundaryGrid.queryRadius([x, z], radius);
+    while (candidates.length < MIN_CANDIDATES && radius < boundaryCellSize * 256) {
+      radius *= 2;
+      candidates = boundaryGrid.queryRadius([x, z], radius);
+    }
+    if (!candidates.length) {
+      candidates = boundaryHeights.map(bv => [bv.x, bv.z, bv.y]);
+    }
+    let weightSum = 0, heightSum = 0;
+    for (const c of candidates) {
+      const dx = x - c[0], dz = z - c[1];
+      const w = 1 / (dx * dx + dz * dz + 0.001);
+      weightSum += w;
+      heightSum += w * c[2];
+    }
+    return heightSum / weightSum;
+  }
+
   // const mesh = layer.mesh;
   for (let index = 0; index < mesh.points.length; index += 3) {
     const x = mesh.points[index];
@@ -843,15 +1021,7 @@ export function conformMeshToTerrain(layer, mesh, project, heightMap) {
         const [tx, tz] = svgToTerrain(x, z, svgSize, heightSize);
         y = (interpHeight(heightData, tx, tz, heightSize) / 65535) * heightScale;
       } else {
-        let weightSum = 0, heightSum = 0;
-        for (const bv of boundaryHeights) {
-          const dx = x - bv.x;
-          const dz = z - bv.z;
-          const w = 1 / (dx * dx + dz * dz + 0.001);
-          weightSum += w;
-          heightSum += w * bv.y;
-        }
-        y = heightSum / weightSum;
+        y = idwHeightFromNearbyBoundary(x, z);
       }
     // } else if (isRiverSurface) {
     //   const [tx, tz] = svgToTerrain(x, z, svgSize, heightSize);
@@ -1088,20 +1258,34 @@ function generateBlendMap(shape, blendSettings, svgSize, targetMPP = 0.25) {
   // const data = new Uint8Array(texW * texH);
   const data = new Uint8Array(texW * texH * 4);
 
+  // Both branches below clamp edgeDist/blendDist to [0,1] — any pixel
+  // farther than blendDist from every edge produces the same output
+  // regardless of its exact distance. isWithinDistance is fixed-cost, so
+  // checking it first lets the (potentially expensive-for-far-points)
+  // exact distance only get computed for pixels actually near an edge —
+  // for a texture up to 2048x2048 (~4.19M pixels) over a large/thin shape,
+  // most pixels are far from any edge.
+  const polyIndex = buildPolygonIndex(polygon, holes, Math.max(blendDist, 0.05));
+
   for (let ty = 0; ty < texH; ty++) {
     const worldY = by + (ty + 0.5) / scaleY;
     for (let tx = 0; tx < texW; tx++) {
       const worldX = bx + (tx + 0.5) / scaleX;
       const pt = [worldX, worldY];
 
-      const inside = isPointInPolygon(pt, polygon, holes);
-      const dist = distanceToPolygonEdge(pt, polygon);
+      const inside = polyIndex.isInside(pt);
+      const nearOuter = polyIndex.outer.isWithinDistance(pt, blendDist);
+      const nearHole = polyIndex.holes.some(h => h.isWithinDistance(pt, blendDist));
+
+      const dist = nearOuter ? polyIndex.outer.distanceToEdge(pt) : Infinity;
 
       // Also check distance to hole edges
       let holeDist = Infinity;
-      for (const hole of holes) {
-        const hd = distanceToPolygonEdge(pt, hole);
-        if (hd < holeDist) holeDist = hd;
+      if (nearHole) {
+        for (const holeIdx of polyIndex.holes) {
+          const hd = holeIdx.distanceToEdge(pt);
+          if (hd < holeDist) holeDist = hd;
+        }
       }
       const edgeDist = Math.min(dist, holeDist);
 

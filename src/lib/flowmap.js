@@ -55,10 +55,36 @@ export function generateFlowMap(polygon, spine, maxResolution = 512) {
     return { tx: tx / len, ty: ty / len };
   });
 
+  // Indexes spine segments by grid cell so closestOnSpine doesn't scan every
+  // segment for every query — previously O((polygonVertices + w*h) *
+  // spineSegments), with polygon vertices up to ~10,000 and w*h up to
+  // 512*512 raster pixels. Building the grid (and the per-query cell-hash
+  // lookups) has its own overhead, which only pays off once there are
+  // enough segments to make a full scan actually expensive — below the
+  // threshold, a plain scan measured faster.
+  const SEGMENT_INDEX_THRESHOLD = 500;
+  let findClosest;
+  if (segments.length > SEGMENT_INDEX_THRESHOLD) {
+    let spineMinX = Infinity, spineMinY = Infinity, spineMaxX = -Infinity, spineMaxY = -Infinity;
+    for (const [x, y] of spine) {
+      if (x < spineMinX) spineMinX = x;
+      if (y < spineMinY) spineMinY = y;
+      if (x > spineMaxX) spineMaxX = x;
+      if (y > spineMaxY) spineMaxY = y;
+    }
+    const spineBBoxDiagonal = Math.hypot(spineMaxX - spineMinX, spineMaxY - spineMinY);
+    const avgSegLen = segments.reduce((sum, s) => sum + s.len, 0) / segments.length;
+    const cellSize = Math.max(avgSegLen, 1e-6);
+    const segmentGrid = buildSegmentGrid(segments, cellSize);
+    findClosest = (px, py) => closestOnSpineIndexed(px, py, segments, vertexTangents, segmentGrid, cellSize, spineBBoxDiagonal);
+  } else {
+    findClosest = (px, py) => closestOnSpineBruteForce(px, py, segments, vertexTangents);
+  }
+
   // --- Find max distance from spine to any polygon vertex (for speed falloff) ---
   let maxDist = 0;
   for (const [px, py] of polygon) {
-    const { dist } = closestOnSpine(px, py, segments, vertexTangents);
+    const { dist } = findClosest(px, py);
     maxDist = Math.max(maxDist, dist);
   }
   if (maxDist === 0) maxDist = 1; // safety
@@ -94,7 +120,7 @@ export function generateFlowMap(polygon, spine, maxResolution = 512) {
 
       // if (!pointInPolygon(px, py, polygon)) continue;
 
-      const { tx, ty, dist } = closestOnSpine(px, py, segments, vertexTangents);
+      const { tx, ty, dist } = findClosest(px, py);
 
       // Parabolic speed falloff: fastest at center, zero at banks
       // const bankFactor = Math.max(0, 1 - (dist / maxDist));
@@ -123,48 +149,115 @@ export function generateFlowMap(polygon, spine, maxResolution = 512) {
 }
 
 
-/**
- * Find the closest point on the spine polyline, returning the
- * interpolated tangent and perpendicular distance.
- */
-function closestOnSpine(px, py, segments, vertexTangents) {
-  let bestDist = Infinity;
-  let bestTx = 0, bestTy = 0;
+// Distance + projection param from a point to one segment, without the
+// tangent interpolation (that only needs to happen once, for the winning
+// segment) — shared by the brute-force and indexed closest-point search.
+function projectOntoSegment(px, py, seg) {
+  const apx = px - seg.ax;
+  const apy = py - seg.ay;
+  let t = seg.len > 0
+    ? (apx * seg.dx + apy * seg.dy) / (seg.len * seg.len)
+    : 0;
+  t = Math.max(0, Math.min(1, t));
+  const closestX = seg.ax + t * seg.dx;
+  const closestY = seg.ay + t * seg.dy;
+  const dx = px - closestX;
+  const dy = py - closestY;
+  return { t, dist: Math.sqrt(dx * dx + dy * dy) };
+}
 
+function tangentAt(segIndex, t, vertexTangents) {
+  const startT = vertexTangents[segIndex];
+  const endT = vertexTangents[segIndex + 1];
+  const lerpTx = startT.tx + t * (endT.tx - startT.tx);
+  const lerpTy = startT.ty + t * (endT.ty - startT.ty);
+  const len = Math.sqrt(lerpTx * lerpTx + lerpTy * lerpTy) || 1;
+  return { tx: lerpTx / len, ty: lerpTy / len };
+}
+
+// Plain O(segments) scan — used directly (no grid) below
+// SEGMENT_INDEX_THRESHOLD, where building and querying a grid costs more
+// than it saves.
+function closestOnSpineBruteForce(px, py, segments, vertexTangents) {
+  let bestDist = Infinity, bestIdx = -1, bestT = 0;
+  for (let i = 0; i < segments.length; i++) {
+    const { t, dist } = projectOntoSegment(px, py, segments[i]);
+    if (dist < bestDist) { bestDist = dist; bestIdx = i; bestT = t; }
+  }
+  if (bestIdx === -1) return { tx: 0, ty: 0, dist: Infinity };
+  const { tx, ty } = tangentAt(bestIdx, bestT, vertexTangents);
+  return { tx, ty, dist: bestDist };
+}
+
+// Buckets each segment into every grid cell its bounding box overlaps, for
+// closestOnSpineIndexed's expanding-shell search.
+function buildSegmentGrid(segments, cellSize) {
+  const grid = new Map();
   for (let i = 0; i < segments.length; i++) {
     const seg = segments[i];
+    const bx2 = seg.ax + seg.dx, by2 = seg.ay + seg.dy;
+    const minCx = Math.floor(Math.min(seg.ax, bx2) / cellSize);
+    const maxCx = Math.floor(Math.max(seg.ax, bx2) / cellSize);
+    const minCy = Math.floor(Math.min(seg.ay, by2) / cellSize);
+    const maxCy = Math.floor(Math.max(seg.ay, by2) / cellSize);
+    for (let cx = minCx; cx <= maxCx; cx++) {
+      for (let cy = minCy; cy <= maxCy; cy++) {
+        const key = cx + ',' + cy;
+        if (!grid.has(key)) grid.set(key, []);
+        grid.get(key).push(i);
+      }
+    }
+  }
+  return grid;
+}
 
-    // Project point onto the line segment
-    const apx = px - seg.ax;
-    const apy = py - seg.ay;
-    let t = seg.len > 0
-      ? (apx * seg.dx + apy * seg.dy) / (seg.len * seg.len)
-      : 0;
-    t = Math.max(0, Math.min(1, t));
+// Same contract as closestOnSpine, accelerated with an expanding grid
+// search (same shape as spatialIndex.js's RingIndex#distanceToEdge) capped
+// at 16 cells before falling back to the brute-force scan below — bounded
+// cost regardless of how far a query point is from the spine.
+function closestOnSpineIndexed(px, py, segments, vertexTangents, grid, cellSize, bboxDiagonal) {
+  if (segments.length === 0) return { tx: 0, ty: 0, dist: Infinity };
 
-    // Distance from point to closest spot on segment
-    const closestX = seg.ax + t * seg.dx;
-    const closestY = seg.ay + t * seg.dy;
-    const dx = px - closestX;
-    const dy = py - closestY;
-    const dist = Math.sqrt(dx * dx + dy * dy);
+  let bestDist = Infinity, bestIdx = -1, bestT = 0;
+  const maxRadius = Math.min(16, Math.ceil(bboxDiagonal / cellSize) + 1);
+  const cx0 = Math.floor(px / cellSize);
+  const cy0 = Math.floor(py / cellSize);
 
-    if (dist < bestDist) {
-      bestDist = dist;
-      // Interpolate tangent between start and end vertex of this segment
-      const startT = vertexTangents[i];
-      const endT = vertexTangents[i + 1];
-      const lerpTx = startT.tx + t * (endT.tx - startT.tx);
-      const lerpTy = startT.ty + t * (endT.ty - startT.ty);
-      const len = Math.sqrt(lerpTx * lerpTx + lerpTy * lerpTy) || 1;
-      bestTx = lerpTx / len;
-      bestTy = lerpTy / len;
+  const visitCell = (cx, cy) => {
+    const idxs = grid.get(cx + ',' + cy);
+    if (!idxs) return;
+    for (const i of idxs) {
+      const { t, dist } = projectOntoSegment(px, py, segments[i]);
+      if (dist < bestDist) { bestDist = dist; bestIdx = i; bestT = t; }
+    }
+  };
+
+  for (let radius = 0; radius <= maxRadius; radius++) {
+    if (radius === 0) {
+      visitCell(cx0, cy0);
+    } else {
+      for (let dx = -radius; dx <= radius; dx++) {
+        visitCell(cx0 + dx, cy0 - radius);
+        visitCell(cx0 + dx, cy0 + radius);
+      }
+      for (let dy = -radius + 1; dy <= radius - 1; dy++) {
+        visitCell(cx0 - radius, cy0 + dy);
+        visitCell(cx0 + radius, cy0 + dy);
+      }
+    }
+    if (bestIdx !== -1 && bestDist <= radius * cellSize) break;
+  }
+
+  if (bestIdx === -1 || bestDist > maxRadius * cellSize) {
+    for (let i = 0; i < segments.length; i++) {
+      const { t, dist } = projectOntoSegment(px, py, segments[i]);
+      if (dist < bestDist) { bestDist = dist; bestIdx = i; bestT = t; }
     }
   }
 
-  return { tx: bestTx, ty: bestTy, dist: bestDist };
+  const { tx, ty } = tangentAt(bestIdx, bestT, vertexTangents);
+  return { tx, ty, dist: bestDist };
 }
-
 
 /**
  * Standard ray-casting point-in-polygon test.
