@@ -334,6 +334,7 @@ export async function write(filePath, project, meshData, imageData) {
             minDistance: config.minDistance,
             randomSeed: config.randomSeed,
             scaleRange: config.scaleRange,
+            colors: config.colors,
           }
         });
         // Hidden — only used as a source for instancing at runtime
@@ -356,7 +357,10 @@ export async function write(filePath, project, meshData, imageData) {
         },
       });
       node.setTranslation(obj.position);
-      if (obj.scale) {
+      console.log('obj.scale', obj.scale);
+      if (Array.isArray(obj.scale)) {
+        node.setScale(obj.scale);
+      } else if (typeof obj.scale === 'number') {
         node.setScale([obj.scale, obj.scale, obj.scale]);
       }
       if (obj.rotation?.length) {

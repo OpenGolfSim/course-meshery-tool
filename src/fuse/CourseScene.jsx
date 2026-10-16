@@ -982,6 +982,11 @@ export default function CourseScene({
         mat.userData.appliedNormal = cfg.normal;
         mat.needsUpdate = true;
       }
+      // if (cfg?.displace && mat.userData.appliedDisplace !== cfg.displace) {
+      //   mat.displacementMap = loadTexture(cfg.displace);
+      //   mat.userData.appliedDisplace = cfg.displace;
+      //   mat.needsUpdate = true;
+      // }
 
     });
 

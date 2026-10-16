@@ -14,7 +14,7 @@ import {
   KHRMaterialsIOR,
   EXTMeshGPUInstancing,
 } from '@gltf-transform/extensions';
-import { dedup, prune, normals } from "@gltf-transform/functions";
+import { dedup, prune, normals, getTextureColorSpace } from "@gltf-transform/functions";
 import BASIS from 'ktx2-basis';
 import { PNG } from 'pngjs';
 import jpeg from 'jpeg-js';
@@ -238,7 +238,16 @@ export async function exportTreePackage(inputFiles, outputFile, treeOptions = {}
     const image = texture.getImage();
     if (!image) continue;
     // texture.setImage(await encodeTexture(image, ktx2Options));
-    texture.setImage(await encodeTexture(image, { ...ktx2Options, textureSize: TREE_TEXTURE_SIZE }));
+    // texture.setImage(await encodeTexture(image, { ...ktx2Options, textureSize: TREE_TEXTURE_SIZE }));
+
+    // Only color textures (base color, emissive) are sRGB. Normal, roughness and
+    // occlusion maps are raw data and must not be color-converted.
+    texture.setImage(await encodeTexture(image, {
+      ...ktx2Options,
+      textureSize: TREE_TEXTURE_SIZE,
+      srgb: getTextureColorSpace(texture) === 'srgb',
+    }));
+
     texture.setMimeType('image/ktx2');
   }
   doc.createExtension(KHRTextureBasisu).setRequired(true);  

@@ -1,10 +1,23 @@
 import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react';
-import { Box, Stack, Typography, Slider, InputBase, Switch, FormControlLabel, Checkbox, TextField, MenuItem, IconButton, Button, Avatar, Paper } from '@mui/material';
+import { Box, Stack, Typography, Slider, InputBase, Switch, FormControlLabel, Checkbox, TextField, MenuItem, IconButton, Button, Avatar, Paper, FormGroup } from '@mui/material';
 import CurveEditDialog from '../dialogs/CurveEditDialog.jsx';
 import NumericInput from './NumericInput.jsx';
 import RouteIcon from '@mui/icons-material/Route';
 import NumberField from './NumberField.jsx';
 import { useProject } from '../contexts/Project.jsx';
+
+// const getSettingsKey = (projectName) => {
+//   return `settings-${projectName}`;
+// }
+
+// const getSettings = (projectName) => {
+//   const item = window.localStorage.getItem(getSettingsKey(projectName));
+//   return item ? JSON.parse(item) : null;
+// }
+
+// const storeSettings = (projectName, settings) => {
+//   return window.localStorage.setItem(getSettingsKey(projectName), JSON.stringify(settings));
+// }
 
 export default function SurfaceSettings(props) {
   const {
@@ -22,11 +35,12 @@ export default function SurfaceSettings(props) {
   // console.log('render', selectedLayer);
   // return null;
   const firstLoad = useRef();
-  const { updateLayerById } = useProject();
+  const { updateLayerById, project } = useProject();
   const [disabled, setDisabled] = useState(false);
   const [tempPrefs, setTempPrefs] = useState({
     spacing: layer.spacing,
-    dig: layer.dig
+    dig: layer.dig,
+    blending: layer.blending,
   });
   const [curveEditorOpen, setCurveEditorOpen] = useState(false);
 
@@ -40,6 +54,9 @@ export default function SurfaceSettings(props) {
 
   const onDigChange = (key, val) => {
     setTempPrefs(old => ({ ...old, dig: { ...old.dig, [key]: val } }));
+  }
+  const onBlendChange = (key, val) => {
+    setTempPrefs(old => ({ ...old, blending: { ...old?.blending || {}, [key]: val } }));
   }
 
   const handleCurveEditClose = (points) => {
@@ -92,58 +109,74 @@ export default function SurfaceSettings(props) {
           onChange={onSpacingChange}
         />
         
+        <FormGroup>
+          <FormControlLabel
+            control={<Checkbox defaultChecked />}
+            label="Blending"
+            checked={!!tempPrefs.blending?.enabled}
+            onChange={(event) => onBlendChange('enabled', event.target.checked)}
+          />
+        </FormGroup>
+
         {showDig ? (
           <React.Fragment>
-            <Switch
-              label="Dig Enabled"
-              checked={!!tempPrefs.dig.enabled}
-              onChange={(event) => onDigChange('enabled', event.target.checked)}
-            />
-            {tempPrefs.dig.enabled ? 'yes': 'no'}
-            <NumberField
-              fullWidth={true}
-              disabled={disabled}
-              label="Dig Depth"
-              value={tempPrefs.dig.depth}
-              size="small"
-              min={-8}
-              max={8}
-              step={0.05}
-              onChange={(newValue) => onDigChange('depth', newValue)}
-            />
-            <NumberField
-              fullWidth={true}
-              disabled={disabled}
-              label="Dig Distance"
-              value={tempPrefs.dig.distance}
-              size="small"
-              min={0}
-              max={6}
-              step={0.05}
-              onChange={(newValue) => onDigChange('distance', newValue)}
-            />
+            <FormGroup>
+              <FormControlLabel
+                control={<Checkbox defaultChecked />}
+                label="Dig"
+                checked={!!tempPrefs.dig.enabled}
+                onChange={(event) => onDigChange('enabled', event.target.checked)}
+              />
+            </FormGroup>
+            {tempPrefs.dig.enabled ? (
+              <React.Fragment>
+                <NumberField
+                  fullWidth={true}
+                  disabled={disabled}
+                  label="Dig Depth"
+                  value={tempPrefs.dig.depth}
+                  size="small"
+                  min={-8}
+                  max={8}
+                  step={0.05}
+                  onChange={(newValue) => onDigChange('depth', newValue)}
+                />
+                <NumberField
+                  fullWidth={true}
+                  disabled={disabled}
+                  label="Dig Distance"
+                  value={tempPrefs.dig.distance}
+                  size="small"
+                  min={0}
+                  max={6}
+                  step={0.05}
+                  onChange={(newValue) => onDigChange('distance', newValue)}
+                />
 
-            <Stack direction="row">
-              <TextField
-                select={true}
-                value={tempPrefs.dig.curve}
-                onChange={(e) => onDigChanged('curve', e.target.value)}
-                fullWidth={true}
-                size="small"
-              >
-                <MenuItem value="smooth">Smoothstep</MenuItem>
-                <MenuItem value="linear">Linear</MenuItem>
-                <MenuItem value="sine">Sine</MenuItem>
-                <MenuItem value="bezier">Bezier</MenuItem>
-              </TextField>
+                <Stack direction="row">
+                  <TextField
+                    select={true}
+                    value={tempPrefs.dig.curve}
+                    onChange={(e) => onDigChanged('curve', e.target.value)}
+                    fullWidth={true}
+                    size="small"
+                  >
+                    <MenuItem value="smooth">Smoothstep</MenuItem>
+                    <MenuItem value="linear">Linear</MenuItem>
+                    <MenuItem value="sine">Sine</MenuItem>
+                    <MenuItem value="bezier">Bezier</MenuItem>
+                  </TextField>
 
-              <IconButton
-                disabled={tempPrefs.dig.curve !== 'bezier'}
-                onClick={() => setCurveEditorOpen(true)}
-              >
-                <RouteIcon />
-              </IconButton>
-            </Stack>
+                  <IconButton
+                    disabled={tempPrefs.dig.curve !== 'bezier'}
+                    onClick={() => setCurveEditorOpen(true)}
+                  >
+                    <RouteIcon />
+                  </IconButton>
+                </Stack>
+              </React.Fragment>
+            ) : null}
+
           </React.Fragment>
         ) : null}
         {/* <pre>{JSON.stringify(tempPrefs, null, 1)}</pre> */}

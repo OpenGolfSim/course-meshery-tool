@@ -67,7 +67,7 @@ ipcMain.handle('trees.remove', (_event, treeLayerId, treeConfigId) => project.re
 
 ipcMain.handle('trees.getAvailablePlants', (_event) => plants.getAvailablePlants());
 ipcMain.handle('trees.downloadPlantAsset', (_event, plant) => plants.downloadPlantAsset(plant));
-ipcMain.handle('trees.importPlant', (_event, layerId, plant) => plants.importPlantAsset(layerId, plant));
+ipcMain.handle('trees.importPlant', (_event, layerId, plant, configId) => plants.importPlantAsset(layerId, plant, configId));
 ipcMain.handle('trees.createCustom', (_event) => createTreeMakerWindow());
 
 

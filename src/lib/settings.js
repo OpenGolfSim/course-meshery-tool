@@ -175,7 +175,7 @@ export const defaultSettings = {
     // blending: { ...defaultBlend },
     // blending: { ...defaultBlend },
     blending: {
-      enabled: true,
+      enabled: false,
       distance: 2.0,       // narrow blend zone
       noiseFreq: 0.8,      // gentle undulation
       noiseAmp: 0.8,      // subtle edge wander

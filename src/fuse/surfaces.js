@@ -99,6 +99,12 @@ export function buildSurfaceMaterial(surfaceName, fallbackHex, grainTex, ctx) {
     mat.userData.appliedNormal = cfg.normal;
     if (cfg?.normalScale) mat.normalScale = new THREE.Vector2(...cfg.normalScale);
   }
+  // if (cfg?.displace) {
+  //   const displaceMap = loadTexture(cfg.displace);
+  //   mat.displacementMap = displaceMap;
+  //   mat.userData.appliedDisplace = cfg.displace;
+  //   if (cfg?.displaceScale) mat.displacementScale = cfg.displaceScale;
+  // }
   if (cfg?.roughnessFactor) {
     mat.roughness = cfg.roughnessFactor;
   }

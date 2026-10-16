@@ -58,6 +58,11 @@ const PHASE_LABELS = {
   trees: (l) => `Planting trees… ${l.loaded}/${l.total}`,
   lightmap: () => 'Generating shadow map…',
 };
+const textureFields = [
+  { key: 'color', fileKey: 'baseColorFile', label: 'Albedo', defaultValue: { baseColorFile: null, baseColor: null } },
+  { key: 'normal', fileKey: 'normalFile', label: 'Normal', defaultValue: { normalFile: null, normal: null } },
+  { key: 'displace', fileKey: 'displaceFile', label: 'Displacement', defaultValue: { displaceFile: null, displace: null } },
+];
 
 function SetCamera({ controlsRef }) {
   const [set, setSet] = useState(false);
@@ -292,17 +297,18 @@ export default function Course() {
   const handleTreeImportClosed = useCallback(async (plant) => {
     // TreeImportDialog
     if (plant) {
-      console.log('Write import to settings', treeImportDialog, plant);
-      await importTreeModel(treeImportDialog, plant);
+      const [layerId, configId] = treeImportDialog;
+      console.log('Write import to settings', layerId, configId, plant);
+      await importTreeModel(layerId, plant, configId);
       // await window.meshery.trees.importPlant(treeImportDialog, plant);
     }
     setTreeImportDialog(null);
   }, [treeImportDialog]);
 
-  const handleTreeModelImport = async (treeLayerId) => {
+  const handleTreeModelImport = async (treeLayerId, treeConfigId) => {
     // await window.meshery.trees.import(treeLayer.id);
     // await importTreeModel(treeLayerId);
-    setTreeImportDialog(treeLayerId);
+    setTreeImportDialog([treeLayerId, treeConfigId].filter(Boolean));
   }
   const handleTreeModelRemove = async (treeLayerId, treeConfigId) => {
     // window.meshery.trees.remove(treeLayerId, treeConfigId)    
@@ -577,13 +583,13 @@ export default function Course() {
                       </Box>
                       <MiniTabPanel value={materialTab} index={0} sx={{ p: 1 }}>
                         <Stack spacing={3}>
-
-                          {['color', 'normal'].map((type) => {
-                            const fileKey = type === 'normal' ? 'normalFile' : 'baseColorFile';
-                            const label = type === 'normal' ? 'Normal Map' : 'Color Map';
+                          {textureFields.map((field) => {
+                            const { fileKey, label, key, defaultValue } = field;
+                            // const fileKey = type === 'normal' ? 'normalFile' : 'baseColorFile';
+                            // const label = type === 'normal' ? 'Normal Map' : 'Color Map';
                             const current = project?.surfaces?.[activeSurface]?.[fileKey];
                             return (
-                              <Stack key={type} direction="column" spacing={1}>
+                              <Stack key={key} direction="column" spacing={1}>
                                 <Typography
                                   variant="subtitle2"
                                   color="textSecondary"
@@ -596,9 +602,7 @@ export default function Course() {
                                   </Typography>
                                   {current ? (
                                     <IconButton size="small" onClick={() => updateSurfaces({
-                                      [activeSurface]: type === 'normal'
-                                        ? { normalFile: null, normal: null }
-                                        : { baseColorFile: null, baseColor: null },
+                                      [activeSurface]: defaultValue,
                                     })}>
                                       <CloseIcon />
                                     </IconButton>
@@ -608,7 +612,7 @@ export default function Course() {
                                     color="secondary"
                                     variant="contained"
                                     sx={{ flexShrink: 0 }}
-                                    onClick={() => selectSurfaceTexture(activeSurface, type)}
+                                    onClick={() => selectSurfaceTexture(activeSurface, key)}
                                   >
                                     Select
                                   </Button>

@@ -184,9 +184,9 @@ export const ProjectProvider = ({ children }) => {
     }
   }
   
-  const importTreeModel = async (treeLayerId, plant) => {
+  const importTreeModel = async (treeLayerId, plant, treeConfigId) => {
     if (plant) {
-      const updated = await window.meshery.trees.importPlant(treeLayerId, plant);
+      const updated = await window.meshery.trees.importPlant(treeLayerId, plant, treeConfigId);
       if (updated) {
         setProject((old) => ({ ...old, trees: updated }))
       }

@@ -1,6 +1,6 @@
 import path from 'path';
 import { app, screen, session, shell, BrowserWindow, ipcMain, dialog, protocol, net } from 'electron';
-import { findTreeConfigById, openProject } from './project';
+import { openProject } from './project';
 import { EXTRA_RESOURCE_PATH, TEXTURES_PATH } from './app';
 import { PROJECT_FILE_PROTOCOL, RESOURCES_FILE_PROTOCOL, TREE_IMPORT_PREFIX } from '../constants';
 import { pathToFileURL } from 'url';

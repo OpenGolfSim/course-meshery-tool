@@ -3,6 +3,7 @@ import { Box, Button, Collapse, List, ListSubheader } from '@mui/material';
 import CustomListItem from '../components/CustomListItem.jsx';
 import ImportIcon from '@mui/icons-material/FileOpen';
 import EditIcon from '@mui/icons-material/Edit';
+import ChangeIcon from '@mui/icons-material/ChangeCircle';
 import DeleteIcon from '@mui/icons-material/Delete';
 import LayerIcon from '@mui/icons-material/Layers';
 import TreeIcon from '@mui/icons-material/Park';
@@ -72,6 +73,11 @@ export default function TreeLayerList({
                     label={treeConfig.name || treeConfig.filePath.split(/[\/\\]/g).pop()}
                     icon={<TreeIcon />}
                     menuItems={[
+                      {
+                        label: 'Change Model',
+                        icon: <ChangeIcon />,
+                        onClick: () => onImportModel(treeLayer.id, treeConfig.id)
+                      },
                       {
                         label: 'Remove Model',
                         icon: <DeleteIcon />,

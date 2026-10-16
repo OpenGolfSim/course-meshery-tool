@@ -803,6 +803,27 @@ export async function removeTreeConfig(treeLayerId, treeConfigId) {
 //   return openProject.trees;
 // }
 
+export async function writeTreeConfig() {
+  await saveProjectSettings();
+  return openProject.trees;
+}
+
+export async function updateTreeConfig(treeLayerId, treeConfigId, update = {}) {
+  const foundLayer = openProject.trees.find(layer => layer.id === treeLayerId);
+  if (!foundLayer) {
+    throw new Error(`Unable to find tree layer ${treeLayerId}`);
+  }
+  const configIndex = foundLayer.treeConfigs.findIndex(config => config.id === treeConfigId);
+  if (configIndex < 0) {
+    throw new Error('Unable to find tree config by ID');
+  }
+  foundLayer.treeConfigs[configIndex] = _.merge(foundLayer.treeConfigs[configIndex], update);
+  // config.url = `${RESOURCES_FILE_PROTOCOL}://plant-cache/${path.basename(plant._cache.filePath)}`;
+  // config.filePath = plant._cache.filePath;
+  // config.name = plant.title;
+  return writeTreeConfig();
+}
+
 export async function saveTreeConfig(treeLayerId, config) {
   const foundLayer = openProject.trees.find(tl => tl.id === treeLayerId);
   if (foundLayer) {
@@ -812,10 +833,9 @@ export async function saveTreeConfig(treeLayerId, config) {
     ];
   }
 
-  await saveProjectSettings();
-
-  return openProject.trees;
+  return writeTreeConfig();
 }
+
 
 export async function importTree(treeLayerId) {
   const { canceled, filePaths } = await dialog.showOpenDialog({
@@ -987,20 +1007,31 @@ export async function selectSurfaceTexture(surface, textureType = 'color') {
   const name = path.basename(filePath);
   const url = `${PROJECT_FILE_PROTOCOL}://custom-texture/${name}`;
 
-  if (textureType === 'normal') {
-    return updateSurfaces({
-      [surface]: {
-        normalFile: filePath,
-        normal: url,
-      },
-    });
-  } else {
-    return updateSurfaces({
-      [surface]: {
-        baseColorFile: filePath,
-        baseColor: url,
-      },
-    });
+  switch (textureType) {
+    case 'normal': {
+      return updateSurfaces({
+        [surface]: {
+          normalFile: filePath,
+          normal: url,
+        },
+      });
+    }
+    case 'color': {
+      return updateSurfaces({
+        [surface]: {
+          baseColorFile: filePath,
+          baseColor: url,
+        },
+      });
+    }
+    case 'displace': {
+      return updateSurfaces({
+        [surface]: {
+          displaceFile: filePath,
+          displace: url,
+        },
+      });
+    }
   }  
 }
 export async function generateHeightMap(type) {
