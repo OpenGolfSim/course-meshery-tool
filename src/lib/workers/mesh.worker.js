@@ -1132,5 +1132,121 @@ function generateBlendMap(shape, blendSettings, svgSize, targetMPP = 0.25) {
   };
 }
 
+/**
+ * Extrude a conformed mesh straight up by `layer.extrude.height`, adding
+ * vertical side faces along every boundary edge (outer ring + holes).
+ * Side faces get unique vertices so they shade flat with a hard top edge.
+ * extrude.top:
+ *   'terrain' (default) - top follows terrain, offset by height
+ *   'flat'              - level top at (highest conformed point + height)
+ */
+function extrudeMesh(mesh, layer) {
+  const { points, triangles, colors } = mesh;
+  const { height = 1, sink = 0, top = 'terrain' } = layer.extrude;
 
-expose({ generateMesh, digMesh, conformMeshToTerrain, smoothMeshEdges, generateBlendMap });
+  let flatY = -Infinity;
+  if (top === 'flat') {
+    for (let i = 1; i < points.length; i += 3) {
+      if (points[i] > flatY) flatY = points[i];
+    }
+    flatY += height;
+  }
+  const topY = (y) => (top === 'flat' ? flatY : y + height);
+
+  // Boundary edges appear in exactly one triangle. Keep the directed (a->b)
+  // order from that triangle so side faces can be wound consistently.
+  const edges = new Map();
+  for (let i = 0; i < triangles.length; i += 3) {
+    for (let e = 0; e < 3; e++) {
+      const a = triangles[i + e];
+      const b = triangles[i + ((e + 1) % 3)];
+      const key = a < b ? `${a},${b}` : `${b},${a}`;
+      const hit = edges.get(key);
+      if (hit) hit.count++;
+      else edges.set(key, { a, b, count: 1 });
+    }
+  }
+
+  const boundary = [];
+  for (const e of edges.values()) {
+    if (e.count === 1) boundary.push(e);
+  }
+
+  // Index boundary edges by start vertex so they can be chained into loops
+  // (keeps u continuous along the wall instead of restarting per segment)
+  const outgoing = new Map();
+  for (const e of boundary) {
+    if (!outgoing.has(e.a)) outgoing.set(e.a, []);
+    outgoing.get(e.a).push(e);
+  }
+
+  const outPoints = Array.from(points);
+  const outColors = colors?.length ? Array.from(colors) : new Array(points.length).fill(1);
+  const outTris = Array.from(triangles);
+
+  // UVs in world meters (consumers divide by tileSize). Top cap: planar XZ.
+  const outUVs = [];
+  for (let i = 0; i < points.length; i += 3) {
+    outUVs.push(points[i], points[i + 2]);
+  }
+
+  // Raise the top cap
+  for (let i = 1; i < outPoints.length; i += 3) {
+    outPoints[i] = topY(outPoints[i]);
+  }
+
+  // Side quads: bottom sits on the conformed terrain height (optionally sunk).
+  // u = distance along the loop, v = world height.
+  const used = new Set();
+  for (const start of boundary) {
+    if (used.has(start)) continue;
+    let u = 0;
+    let edge = start;
+
+    while (edge && !used.has(edge)) {
+      used.add(edge);
+      const { a, b } = edge;
+      const ax = points[a * 3], ay = points[a * 3 + 1], az = points[a * 3 + 2];
+      const bx = points[b * 3], by = points[b * 3 + 1], bz = points[b * 3 + 2];
+      const len = Math.hypot(bx - ax, bz - az);
+      const aTop = topY(ay), bTop = topY(by);
+      const aBot = ay - sink, bBot = by - sink;
+      const base = outPoints.length / 3;
+
+      outPoints.push(
+        ax, aTop, az, // base+0: a top
+        bx, bTop, bz, // base+1: b top
+        bx, bBot, bz, // base+2: b bottom
+        ax, aBot, az, // base+3: a bottom
+      );
+      outColors.push(1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1);
+      outUVs.push(
+        u,       aTop,
+        u + len, bTop,
+        u + len, bBot,
+        u,       aBot,
+      );
+
+      // Walk the edge b->a (opposite the top cap) so the side faces wind outward
+      outTris.push(
+        base + 1, base + 0, base + 3,
+        base + 1, base + 3, base + 2,
+      );
+
+      u += len;
+      edge = outgoing.get(b)?.find(n => !used.has(n));
+    }
+  }
+
+  const newPoints = new Float32Array(outPoints);
+  return {
+    ...mesh,
+    points: newPoints,
+    colors: new Float32Array(outColors),
+    triangles: outTris,
+    uvs: new Float32Array(outUVs),
+    normals: computeSmoothNormals(newPoints, outTris),
+  };
+}
+
+expose({ generateMesh, extrudeMesh, digMesh, conformMeshToTerrain, smoothMeshEdges, generateBlendMap });

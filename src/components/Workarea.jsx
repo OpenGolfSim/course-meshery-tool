@@ -18,7 +18,7 @@ const routes = [
     icon: <CourseIcon />,
   },
   {
-    name: 'Meshes',
+    name: 'Course',
     href: 'lidar',
     icon: <TerrainIcon />,
   }

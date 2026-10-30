@@ -11,6 +11,7 @@ const ProjectContext = createContext({
   // setProject: () => {},
   generateHillShade: () => {},
   generateSatellite: () => {},
+  importTerrainHeightmap: () => {},
   generateTerrainData: () => {},
   setProjectSettings: () => {},
   updateSceneSettings: () => {},
@@ -253,6 +254,12 @@ export const ProjectProvider = ({ children }) => {
       setProject((old) => ({ ...old, stats: res.stats, raw: res.raw }))
     }
   }
+  const importTerrainHeightmap = async () => {
+    const res = await window.meshery.terrain.importHeightMap();
+    if (res) {
+      setProject((old) => ({ ...old, stats: res.stats, raw: res.raw }))
+    }
+  }
 
   const updateLayerById = (layerId, update) => {
     return window.meshery.project.updateLayerById(layerId, update);
@@ -367,6 +374,7 @@ export const ProjectProvider = ({ children }) => {
       handleDownloadCourse,
       generateHillShade,
       generateSatellite,
+      importTerrainHeightmap,
       generateTerrainData,
       palette,
       updateLayerById,

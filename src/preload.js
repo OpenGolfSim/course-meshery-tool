@@ -82,6 +82,7 @@ contextBridge.exposeInMainWorld('meshery', {
     applySmoothing: (data, radius) => ipcRenderer.invoke('terrain.applySmoothing', data, radius),
     smoothRivers: (data) => ipcRenderer.invoke('terrain.smoothRivers', data),
     smoothLakes: (data) => ipcRenderer.invoke('terrain.smoothLakes', data),
+    importHeightMap: () => ipcRenderer.invoke('terrain.importHeightMap'),
     saveHeightMap: (data, heightScale) => ipcRenderer.invoke('terrain.saveHeightMap', data, heightScale),
     generate: (type) => ipcRenderer.invoke('terrain.generate', type),
   },

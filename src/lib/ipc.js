@@ -95,6 +95,7 @@ ipcMain.handle('terrain.smoothLakes', (_event, data) => project.smoothLakes(data
 ipcMain.handle('terrain.saveHeightMap', (_event, data, heightScale) => project.saveHeightMap(data, heightScale));
 ipcMain.handle('terrain.generate', (_event, type) => project.generateHeightMap(type));
 ipcMain.handle('terrain.importTerrainData', (_event) => importTerrainData());
+ipcMain.handle('terrain.importHeightMap', (_event) => project.importHeightMapToProject());
 
 ipcMain.handle('mesh.getCourseMesh', (_event) => project.getCourseMesh());
 ipcMain.handle('imagery.downloadDEM', (_event, courseBounds) => imagery.downloadCourseDEM(courseBounds));

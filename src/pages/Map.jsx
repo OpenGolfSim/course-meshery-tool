@@ -34,6 +34,7 @@ import SportsGolfIcon from '@mui/icons-material/SportsGolf';
 import AimIcon from '@mui/icons-material/FilterTiltShift';
 import FlagIcon from '@mui/icons-material/Flag';
 import EditIcon from '@mui/icons-material/Edit';
+import RawIcon from '@mui/icons-material/RawOn';
 import DeleteIcon from '@mui/icons-material/Delete';
 import FileOpenIcon from '@mui/icons-material/FileOpen';
 import SearchIcon from '@mui/icons-material/Search';
@@ -273,7 +274,8 @@ export default function Map() {
     addTree,
     removeTree,
     updateTree,
-    updateGameSettings
+    updateGameSettings,
+    importTerrainHeightmap
     // lidarFile,
   } = useProject();
   const containerRef = useRef(null);
@@ -361,7 +363,6 @@ export default function Map() {
       mapRef.current?.addLayer(tileLayers[initialLayer]);
       mapRef.current?.setView(DEFAULT_CENTER, DEFAULT_ZOOM);
     } else {
-      console.log('Set initialLayer', initialLayer);
       update.centerPoint = { lat: 0, lng: 0 };
       const [west, south, east, north] = turfPointToBBox(update.centerPoint.lng, update.centerPoint.lat, project.settings.distance);
       update.bounds = { west, south, east, north };
@@ -395,7 +396,6 @@ export default function Map() {
     } else {
       mapRef.current.removeLayer(hillshadeLayer.current);
     }
-    console.log(`HILLSHADE: ${uri}`);
     if (uri?.endsWith('.jpg')) {
       // const bboxPolygon = turf.bboxPolygon([west, south, east, north]);
 
@@ -456,7 +456,6 @@ export default function Map() {
   }, []);
 
   const handleShowHideLayer = useCallback((layerId, layerRef) => {
-    console.log('show=hide');
     setLayerVisibility(old => {
       const newVal = !old[layerId];
       if (newVal && layerRef.current) {
@@ -469,7 +468,6 @@ export default function Map() {
   }, []);
 
   const handleShowHideHillShade = useCallback(() => {
-    console.log('hillshadeLayer.current', hillshadeLayer.current);
     setLayerVisibility(old => {
       const newVal = !old.hillshade;
       if (newVal && hillshadeLayer.current) {
@@ -508,7 +506,6 @@ export default function Map() {
   };
 
   const handleDistanceChanged = useCallback((newValue) => {
-    console.log(`New distance:`, newValue);
     let update = { distance: newValue };
     if (project.settings.centerPoint) {
       const [west, south, east, north] = turfPointToBBox(project.settings.centerPoint.lng, project.settings.centerPoint.lat, newValue);
@@ -522,7 +519,6 @@ export default function Map() {
   }
   const handleTerrainImport = async () => {
     const res = await window.meshery.terrain.importTerrainData();
-    console.log('import terrain', res);
   }
   const handleShapesSave = () => {
     // courseShapesLayer.current.addData(shapesGeoJSON);
@@ -549,7 +545,6 @@ export default function Map() {
       console.warn('No center point found!');
       return;
     }
-    console.log('centerPoint', centerPoint);
     // X axis: horizontal distance in meters (east = positive)
     const xDist = turf.distance(
       turf.point([centerPoint.lng, centerPoint.lat]),
@@ -587,7 +582,6 @@ export default function Map() {
     // const { lat, lng } = centerPointLayer.current.getLatLng();
     const { lat, lng } = latlng;
     const centerPoint = { lat, lng };
-    console.log('New Center POI:', centerPoint);
     const [west, south, east, north] = turfPointToBBox(centerPoint.lng, centerPoint.lat, project.settings.distance);
     setProjectSettings({
       centerPoint: { lat, lng },
@@ -597,7 +591,6 @@ export default function Map() {
 
   
   const handleMapClick = useCallback((evt) => {
-    console.log(`handleMapClick - shiftKey:${evt.originalEvent.shiftKey},isEditingCenter:${isEditingCenter},isEditingHolePoint:${isEditingHolePoint}`, evt.latlng);
     const autoSetCenter = !project.dem && evt.originalEvent.shiftKey;
     if (isEditingCenter || autoSetCenter) {
       setIsEditingCenter(false);
@@ -611,18 +604,19 @@ export default function Map() {
       });
       // e.layer.getElement().classList.toggle('hole-marker-edit');      
       setIsEditingHolePoint(null);
-      console.log('clicked in hole edit mode: ', isEditingHolePoint, evt.latlng, position);
     }
   }, [project.dem, isEditingCenter, isEditingHolePoint, setCenterPoint, latLngToLocalXY, editHole]);
 
   const handleLayerChange = (event) => {
-    console.log("Base layer changed to: " + event.name);
     window.localStorage.setItem(LOCAL_STORAGE_BASE_LAYER, event.name);
   }
 
   const handleZoomChange = (e) => {
     const newZoom = e.target.getZoom();
     setZoomLevel(newZoom);
+  }
+  const handleImportRaw = async () => {
+    await importTerrainHeightmap();
   }
   const handleOpenTerrainEdit = () => {
     setTerrainEditDialogOpen(true);
@@ -691,7 +685,6 @@ export default function Map() {
     // MOVE TO HELPER FN
     courseDetailsLayer.current.clearLayers();
     if (holeData.length) {
-      console.log('holes', holeData);
       courseDetailsLayer.current.addData(holeDataToGeoJSON(holeData));
     }
 
@@ -800,7 +793,6 @@ export default function Map() {
     console.log(e);
   }
   const handleWaypointEdit = (e) => {
-    console.log(`handleWaypointEdit`, e);
     if (e.layer) {
     //   e.layer.dragging.enable();
     //   e.layer.on('dragend', handleWaypointDragEnd);
@@ -820,7 +812,6 @@ export default function Map() {
   }
   const handleRemoveHole = async (hole) => {
     const res = await window.meshery.dialog.confirm({ message: 'Are you sure you want to remove this hole?' });
-    console.log('remove', res, hole);
     if (res) {
       removeHole(hole.number);
     }
@@ -829,12 +820,10 @@ export default function Map() {
     await updateGameSettings({ gameMode: event.target.value });
   }
   const handleZoomToHole = (hole) => {
-    console.log('removhandleZoomToHolee', hole);
     const points = [hole.tee?.latlng, hole.aim?.latlng, hole.pin?.latlng]
       .filter(Boolean)
       .map(point => L.latLng(point[1], point[0]))
 
-    console.log('removhandleZoomToHolee', points);
     // mapRef.current.fitBounds(points);
     if (points?.length) {
       mapRef.current.fitBounds(points);
@@ -878,7 +867,6 @@ export default function Map() {
   const handleWaypointRemove = (e) => {
     if (!e?.feature) { return; }
     const { number, waypoint } = e.feature.properties;
-    console.log(`remove-waypoint ${number} - ${waypoint}`);
     editHole(number, { [waypoint]: null });    
   }
 
@@ -886,7 +874,6 @@ export default function Map() {
     if (!outlineLayer?.current) {
       return;
     }
-    console.log('updateOutlineBox-useEffect');
     updateOutlineBox();
   }, [project.settings.centerPoint, project.settings.distance, project.holes]);
 
@@ -913,16 +900,13 @@ export default function Map() {
   }, [zoomLevel, courseDetailsLayer.current]);
 
   useEffect(() => {
-    console.log('create map...', project.settings);
 
-    
     // const blankLayer = L.layerGroup(null);
     // console.log('blankLayer', blankLayer);
 
     const initialLayer = getInitialLayer();
 
     const mapLayers = project.settings.terrainType === 'real' ? [tileLayers[initialLayer]] : undefined;
-    console.log('mapLayers', mapLayers);
     mapRef.current = L.map(containerRef.current, {
         center: project.settings.centerPoint?.lat ? [project.settings.centerPoint.lat, project.settings.centerPoint.lng] : DEFAULT_CENTER,
         zoom: project.settings.centerPoint?.lat ? 15 : 5,
@@ -974,7 +958,6 @@ export default function Map() {
     // Add it to the map once
     distanceLabelsGroup.current.addTo(mapRef.current);
 
-    console.log('create details layer');
     courseDetailsLayer.current = L.geoJSON(null, {
       snapIgnore: true,
       pmIgnore: true,
@@ -1062,7 +1045,6 @@ export default function Map() {
       },
       pointToLayer: (feature, latlng) => {
         if (feature.properties.waypoint === 'tee') {
-          // console.log('feature.properties', feature.properties);
           return L.marker(latlng, {
             icon: teeIcon(feature.properties.number),
             // draggable: true,
@@ -1088,7 +1070,6 @@ export default function Map() {
     updateCourseLabelVisibility();
 
     return () => {
-      console.log('clean up map...');
       // mapRef.current.off('zoomend', handleZoomChange);
       if (mapRef.current && mapRef.current.remove) {
         mapRef.current.off();
@@ -1120,7 +1101,6 @@ export default function Map() {
     }
     mapRef.current.getContainer().style.cursor = (isEditingCenter || isEditingHolePoint) ? 'crosshair' : ''; // Change map cursor
     
-    console.log(`Rebind click handler: isEditingCenter:${isEditingCenter}, isEditingHolePoint:${isEditingHolePoint}`);
     mapRef.current.on('click', handleMapClick);
     return () => {
       mapRef.current.off('click', handleMapClick);
@@ -1240,24 +1220,46 @@ export default function Map() {
                 {/* {project.lidar ? (<CheckIcon />) : null} */}
               </AccordionSummary>
               <AccordionDetails>
+                <Box sx={{ px: 2 }}>
+                  <Tooltip title="Import RAW File">
+                    <IconButton
+                      // fullWidth={true}
+                      onClick={handleImportRaw}
+                    >
+                      <FileOpenIcon />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title="Edit RAW File">
+                    <IconButton
+                      disabled={!project.stats}
+                      // fullWidth={true}
+                      onClick={handleOpenTerrainEdit}
+                    >
+                      <EditIcon />
+                    </IconButton>
+                  </Tooltip>
+                </Box>
+
                 {project.stats ? (
                   <Stack sx={{ p: 2 }} spacing={2}>
                     <ElevationStats
+                      fileName={project?.raw?.fileName}
                       source={project?.lidar?.points ? `LAZ` : 'Mapzen DSM'}
                       size={(project?.settings?.distance ?? 0) * 1000}
-                      height={project?.stats?.relief ?? 0}
+                      height={project?.stats?.heightScale ?? 0}
                       min={project?.stats?.min ?? 0}
                       max={project?.stats?.max ?? 0}
                       // heightMapSize={project._heightMap?.size}
                     />
-                    <Button
+
+                    {/* <Button
                       fullWidth
                       onClick={handleOpenTerrainEdit}
                       variant="contained"
                       color="secondary"
                     >
                       Edit Terrain
-                    </Button>
+                    </Button> */}
                   </Stack>
                 ) : (
                   project.settings.terrainType === 'generate' ? (
@@ -1495,8 +1497,8 @@ export default function Map() {
                     onChange={handleGameModeChange}
                   >
                     <MenuItem value="course">Course</MenuItem>
-                    <MenuItem value="range">Range</MenuItem>
-                    <MenuItem value="practice">Practice</MenuItem>
+                    {/* <MenuItem value="range">Range</MenuItem> */}
+                    {/* <MenuItem value="practice">Practice</MenuItem> */}
                     <MenuItem value="minigolf">Minigolf</MenuItem>
                   </TextField>
                 </Box>

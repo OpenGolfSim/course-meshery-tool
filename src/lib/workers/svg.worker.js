@@ -94,6 +94,71 @@ function ringArea(ring) {
   return Math.abs(a / 2);
 }
 
+// polygon-clipping drops collinear vertices, so straight runs of a cut ring
+// collapse into long chords that no longer share vertices with the shape that
+// cut them (which keeps its dense samples). On sloped terrain those chords
+// leave gaps between neighboring meshes. These helpers re-insert any original
+// sample points that lie on each output edge.
+const SNAP_CELL = 1; // grid cell size in course units
+
+function snapCellKey(x, y) {
+  return `${Math.floor(x / SNAP_CELL)},${Math.floor(y / SNAP_CELL)}`;
+}
+
+function buildPointGrid(rings) {
+  const grid = new Map();
+  for (const ring of rings) {
+    for (const p of ring) {
+      const key = snapCellKey(p[0], p[1]);
+      let cell = grid.get(key);
+      if (!cell) grid.set(key, (cell = []));
+      cell.push(p);
+    }
+  }
+  return grid;
+}
+
+function restoreCollinearPoints(ring, grid, tol = 1e-4) {
+  const out = [];
+  const n = ring.length;
+  for (let i = 0; i < n; i++) {
+    const a = ring[i];
+    const b = ring[(i + 1) % n];
+    out.push(a);
+
+    const dx = b[0] - a[0], dy = b[1] - a[1];
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq <= tol * tol) continue;
+    const len = Math.sqrt(lenSq);
+
+    // Grid cells along the edge (plus neighbors)
+    const keys = new Set();
+    const steps = Math.ceil(len / SNAP_CELL);
+    for (let s = 0; s <= steps; s++) {
+      const cx = Math.floor((a[0] + dx * (s / steps)) / SNAP_CELL);
+      const cy = Math.floor((a[1] + dy * (s / steps)) / SNAP_CELL);
+      for (let ox = -1; ox <= 1; ox++) {
+        for (let oy = -1; oy <= 1; oy++) keys.add(`${cx + ox},${cy + oy}`);
+      }
+    }
+
+    // Source points strictly between a and b, on the segment
+    const hits = [];
+    for (const key of keys) {
+      for (const p of grid.get(key) || []) {
+        const px = p[0] - a[0], py = p[1] - a[1];
+        const t = (px * dx + py * dy) / lenSq;
+        if (t <= 1e-9 || t >= 1 - 1e-9) continue;
+        if (Math.abs(px * dy - py * dx) / len > tol) continue;
+        hits.push([t, p]);
+      }
+    }
+    hits.sort((u, v) => u[0] - v[0]);
+    for (const [, p] of hits) out.push(p);
+  }
+  return out;
+}
+
 export async function generateCoursePolygons(courseLayers, layerSettings) {
   let meshLayers = [];
   const polygonMap = new Map();
@@ -186,6 +251,7 @@ export async function generateCoursePolygons(courseLayers, layerSettings) {
   }
   
   // Cut-out any layers above
+  const snapGrid = buildPointGrid(originalPolygons.values());
   meshLayers.forEach((layer, index) => {
     try {
       const layersAbove = (meshLayers.slice(index + 1) || []);
@@ -197,13 +263,12 @@ export async function generateCoursePolygons(courseLayers, layerSettings) {
       if (layersToCut.length > 0) {
         // Single combined difference avoids accumulating floating-point errors
         const result = polygonClipping.difference([polygon], ...layersToCut);
-        // if (result.length > 0) {
-        //   const rings = result[0];
-        //   polygon = rings[0];
-        //   holes = rings.slice(1);
-        // }
         // difference() returns a MULTIpolygon: keep every piece, not just the first
-        rawPieces = result.map(rings => ({ polygon: rings[0], holes: rings.slice(1) }));
+        // and restore collinear vertices so shared edges match neighbor shapes exactly
+        rawPieces = result.map(rings => ({
+          polygon: restoreCollinearPoints(rings[0], snapGrid),
+          holes: rings.slice(1).map(h => restoreCollinearPoints(h, snapGrid)),
+        }));
 
       }
 

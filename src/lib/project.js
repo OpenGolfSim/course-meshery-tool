@@ -193,9 +193,11 @@ export async function saveHeightMap(heightMapData, heightScale) {
   console.log('Writing filePath', filePath);
   await fs.promises.writeFile(filePath, Buffer.from(heightMapData.buffer));
 
+  const fileName = path.basename(filePath);
   const raw = {
     filePath,
-    uri: `${PROJECT_FILE_PROTOCOL}:///${path.join(TERRAIN_DIR, path.basename(filePath))}`
+    fileName,
+    uri: `${PROJECT_FILE_PROTOCOL}:///${path.join(TERRAIN_DIR, fileName)}`
   };
 
   openProject.raw = raw;
@@ -432,15 +434,6 @@ export async function loadProjectFile(filePath) {
     }
 
   });
-  // openProject = {
-  //   name: filePathInfo.name,
-  //   _dirty: false,
-  //   _filePath: filePath,
-  //   _workingDir: filePathInfo.dir,
-  //   ...stored,
-  //   holes
-  // }
-
 
   ensureRecent(openProject);
 
@@ -449,6 +442,10 @@ export async function loadProjectFile(filePath) {
     openProject.stats = openProject.lidar.stats;
   }
 
+  // migration for raw fileName
+  if (!openProject.raw?.fileName && openProject.raw?.filePath) {
+    openProject.raw.fileName = path.basename(openProject.raw.filePath);
+  }
 
   await refreshSVG();
 
@@ -700,7 +697,7 @@ export async function updateLayerById(layerId, update) {
   
   console.log('update', layerId, update);
 
-  if (update.spacing || update.dig) {
+  if (update.spacing || update.dig || update.extrude) {
     // save settings to disk?
     // await buildShapeCache();
     // await buildMeshCache();
@@ -1036,6 +1033,11 @@ export async function selectSurfaceTexture(surface, textureType = 'color') {
 }
 export async function generateHeightMap(type) {
   const res = await generateTerrain(type);
+  await refreshRawData();
+  return res;
+}
+export async function importHeightMapToProject() {
+  const res = await importHeightMap();
   await refreshRawData();
   return res;
 }

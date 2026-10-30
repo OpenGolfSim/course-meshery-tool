@@ -84,8 +84,12 @@ function loadTexture(doc, sourceDir, uriPath, name) {
 }
 
 // World-space planar UVs from XZ. Y is up.
-function generateUVs(points, tileSize) {
+function generateUVs(points, tileSize, meshUVs) {
   const uvs = new Float32Array((points.length / 3) * 2);
+  if (meshUVs?.length === uvs.length) {
+    for (let i = 0; i < uvs.length; i++) uvs[i] = meshUVs[i] / tileSize;
+    return uvs;
+  }
   for (let i = 0, j = 0; i < points.length; i += 3, j += 2) {
     uvs[j]     = points[i]     / tileSize; // u from x
     uvs[j + 1] = points[i + 2] / tileSize; // v from z
@@ -141,7 +145,7 @@ function createSurfaceMaterial(doc, surface, fallbackHex) {
 
 
 export function meshNodeForLayer(doc, buffer, layer, mesh, cfg = {}, material) {
-  const { points, triangles, normals, colors } = mesh;
+  const { points, triangles, normals, colors, uvs: meshUVs } = mesh;
 
   const positions = doc.createAccessor()
     .setType('VEC3')
@@ -176,7 +180,7 @@ export function meshNodeForLayer(doc, buffer, layer, mesh, cfg = {}, material) {
   if (material && cfg?.tileSize) {
     const uvs = doc.createAccessor()
       .setType('VEC2')
-      .setArray(generateUVs(points, cfg.tileSize))
+      .setArray(generateUVs(points, cfg.tileSize, meshUVs))
       .setBuffer(buffer);
 
     prim.setAttribute('TEXCOORD_0', uvs);

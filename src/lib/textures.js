@@ -223,6 +223,13 @@ export const TEXTURE_MAP = {
     roughnessFactor: 1.0,
     tint: 'hsl(67, 30%, 83%)',
   },
+  wall: {
+    tileSize: 1.25,
+    roughnessFactor: 1.0,
+    baseColor: 'concrete_tex.png',
+    normal:    'concrete_normal.png',
+    tint: 'hsl(54, 7%, 30%)',
+  },
   custom1: {
     tileSize: 2.5,
     roughnessFactor: 1.0,

@@ -158,10 +158,16 @@ export function buildLayerGeometry(meshData, surfaceName, ctx) {
   if (!(tile > 0)) tile = Number(TEXTURE_MAP[surfaceName]?.tileSize) || 2.0;
 
   const uvs = new Float32Array((points.length / 3) * 2);
-  for (let i = 0, j = 0; i < points.length; i += 3, j += 2) {
-    uvs[j]     = points[i]     / tile;
-    uvs[j + 1] = points[i + 2] / tile;
+  if (meshData.uvs?.length === uvs.length) {
+    // Mesh supplied its own UVs (world meters), e.g. extruded walls
+    for (let i = 0; i < uvs.length; i++) uvs[i] = meshData.uvs[i] / tile;
+  } else {
+    for (let i = 0, j = 0; i < points.length; i += 3, j += 2) {
+      uvs[j]     = points[i]     / tile;
+      uvs[j + 1] = points[i + 2] / tile;
+    }
   }
+
   geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
   geo.userData.appliedTileSize = tile;
 
@@ -190,12 +196,23 @@ export function rebuildBlendMaterial(obj, rb, noiseTex, ctx) {
 }
 
 export async function buildSingleLayer(layer, scene, refs, fuseRenderer, ctx) {
+  const t0 = performance.now();
   const data = await window.meshery.project.getMeshDataForLayer(layer.id);
+  const t1 = performance.now();
+
   if (!data?.mesh) return null;
 
   const geometry = buildLayerGeometry(data.mesh, layer.surface, ctx);
+  const t2 = performance.now();
+  const bm = data.mesh.blendMap;
+  const logTiming = (kind) => console.log(
+    `[layer ${layer.id}] ${layer.surface}/${kind} tris=${data.mesh.triangles.length / 3} ` +
+    `blend=${bm ? `${bm.width}x${bm.height}` : '-'} ` +
+    `ipc=${(t1 - t0).toFixed(0)}ms geo=${(t2 - t1).toFixed(0)}ms build=${(performance.now() - t2).toFixed(0)}ms`
+  );
+
   const isRough = layer.surface.startsWith('rough');
-  const isDeepRough = ['base', 'deep_rough'].includes(layer.surface);
+  const isDeepRough = ['deep_rough'].includes(layer.surface);
   const isLake = layer.surface.startsWith('plane_lake');
   const isRiver = layer.surface.startsWith('plane_river');
   const isSand = layer.surface === 'sand';
@@ -214,6 +231,7 @@ export async function buildSingleLayer(layer, scene, refs, fuseRenderer, ctx) {
     if (fuseRenderer.environment) {
       surface.updateEnvironment(fuseRenderer.environment);
     }
+    logTiming('water');
     return { mesh: surface.water, geometry, material: surface.material };
 
   } else if (data.mesh.blendMap) {
@@ -245,6 +263,7 @@ export async function buildSingleLayer(layer, scene, refs, fuseRenderer, ctx) {
     mesh.name = layer.id;
     mesh.visible = layer.visible !== false;
     scene.add(mesh);
+    logTiming('blend');
     return { mesh, geometry, material: mesh.material };
 
   } else if (isRough) {
@@ -265,6 +284,7 @@ export async function buildSingleLayer(layer, scene, refs, fuseRenderer, ctx) {
       scene.add(grass.mesh);
       refs.grass.push(grass);
     }
+    logTiming('grass');
     return { mesh, geometry, material };
   } else if (isDeepRough) {
     const material = buildSurfaceMaterial(layer.surface, layer.color, grainTex, ctx);
@@ -290,6 +310,7 @@ export async function buildSingleLayer(layer, scene, refs, fuseRenderer, ctx) {
       scene.add(grass.mesh);
       refs.grass.push(grass);
     }
+    logTiming('grass-rough');
     return { mesh, geometry, material };
   } else {
     const material = buildSurfaceMaterial(layer.surface, layer.color, grainTex, ctx);
@@ -298,6 +319,7 @@ export async function buildSingleLayer(layer, scene, refs, fuseRenderer, ctx) {
     mesh.visible = layer.visible !== false;
     mesh.receiveShadow = true;
     scene.add(mesh);
+    logTiming('plain');
     return { mesh, geometry, material };
   }
 }

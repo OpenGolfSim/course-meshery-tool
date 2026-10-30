@@ -194,7 +194,7 @@ export async function captureLightmap(renderer, scene, worldSize, sunDirection, 
     sun.shadow.camera.top = r;   sun.shadow.camera.bottom = -r;
     sun.shadow.camera.near = 1;  sun.shadow.camera.far = 2000;
     // sun.shadow.bias = -0.0005;
-    sun.shadow.bias = -0.0002;
+    sun.shadow.bias = -0.0001;
     // sun.shadow.normalBias = 0.3;
     sun.shadow.normalBias = 0.05; 
     sun.shadow.camera.updateProjectionMatrix();

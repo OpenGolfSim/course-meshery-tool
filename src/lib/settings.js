@@ -190,6 +190,12 @@ export const defaultSettings = {
     },
     dig: { ...defaultDig }
   },
+  wall: {
+    spacing: 0.3,
+    blending: { enabled: false, distance: 0 },
+    dig: { ...defaultDig },
+    extrude: { enabled: true, height: 0.25, top: 'terrain' } // or 'flat'
+  },
   custom1: {
     spacing: 2,
     blending: {

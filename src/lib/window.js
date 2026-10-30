@@ -1,4 +1,5 @@
 import path from 'path';
+import fs from 'fs';
 import { app, screen, session, shell, BrowserWindow, ipcMain, dialog, protocol, net } from 'electron';
 import { openProject } from './project';
 import { EXTRA_RESOURCE_PATH, TEXTURES_PATH } from './app';
@@ -97,6 +98,24 @@ export function setupProtocolHandler() {
           'content-type': 'image/svg+xml'
         }
       });
+    } else if (key.startsWith('custom-raw')) {
+      // return net.fetch(pathToFileURL(openProject.raw.filePath).toString());
+      try {
+        const data = fs.readFileSync(openProject.raw.filePath);
+        return new Response(data, {
+          status: 200,
+          headers: { 
+            'content-type': 'application/octet-stream'
+          }
+        });
+      } catch (error) {
+        return new Response('Error loading RAW', {
+          status: 500,
+          headers: { 
+            'content-type': 'text/plain'
+          }
+        });
+      }
     } else if (key.startsWith('custom-texture')) {
       // custom-texture/<basename> → find the surface record referencing it.
       // URLs are built from path.basename(), so match on basename here too.

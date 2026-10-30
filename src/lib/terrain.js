@@ -246,6 +246,51 @@ export function getHeightMapStats(heightMapData, heightScale) {
   };
 }
 
+export async function importHeightMap() {
+  const files = await dialog.showOpenDialog({
+    properties: ['openFile'],
+    defaultPath: path.join(openProject._workingDir, TERRAIN_DIR),
+    filters: [ { extensions: ['raw'], name: 'RAW HeightMap' }]
+  });
+  if (files.canceled || !files.filePaths?.length) {
+    return;
+  }
+  const filePath = files.filePaths[0];
+  const fileName = path.basename(filePath);
+  console.log('RAW FILE', filePath);
+
+  const raw = {
+    filePath: filePath,
+    fileName,
+    uri: `${PROJECT_FILE_PROTOCOL}://custom-raw/${encodeURIComponent(fileName)}`
+
+  };
+
+  const data = await fs.promises.readFile(filePath);
+  // const s = computeStats(data);
+  if (data.byteLength % 2 !== 0) {
+    throw new Error(`Invalid 16-bit RAW: odd byte length ${data.byteLength}`);
+  }
+  // Uint16Array views need a 2-byte-aligned offset; copy if the Buffer isn't aligned
+  const bytes = data.byteOffset % 2 === 0 ? data : new Uint8Array(data);
+  const heightmap = new Uint16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 2);
+  const s = computeStats(heightmap);  
+  const stats = {
+    ...s,
+    heightScale: openProject.stats?.heightScale ?? 10,
+    relief: s.max - s.min,
+  };
+
+  openProject.raw = raw;
+  openProject.stats = stats;
+  
+  await saveProjectSettings();
+
+  console.log({ raw, stats });
+  return { raw, stats };
+
+}
+
 export async function importTerrainData() {
   const files = await dialog.showOpenDialog({
     properties: ['openFile', 'multiSelections'],
@@ -284,6 +329,10 @@ export async function importTerrainData() {
 
 
 function computeStats(heightmap) {
+  const resolution = Math.sqrt(heightmap.length);
+  if (!Number.isInteger(resolution)) {
+    throw new Error(`Not a square heightmap: ${heightmap.length} samples`);
+  }
   let min = Infinity, max = -Infinity, sum = 0;
   for (const v of heightmap) {
     if (v < min) min = v;
@@ -293,7 +342,7 @@ function computeStats(heightmap) {
   const mean = sum / heightmap.length;
   let varSum = 0;
   for (const v of heightmap) varSum += (v - mean) ** 2;
-  return { min, max, mean, stddev: Math.sqrt(varSum / heightmap.length) };
+  return { resolution, min, max, mean, stddev: Math.sqrt(varSum / heightmap.length) };
 }
 
 
@@ -329,6 +378,7 @@ export async function generateTerrain(type) {
 
   const raw = {
     filePath: outputRaw,
+    fileName: generatedFile,
     uri: `${PROJECT_FILE_PROTOCOL}:///${path.join(TERRAIN_DIR, generatedFile)}`
   };
 
