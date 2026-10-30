@@ -429,6 +429,68 @@ function isTooCloseToConstraintEdge(pt, rings, minDist) {
   return false;
 }
 
+// Rings that touch (hole-hole or hole-outer) share vertices. The deterministic
+// jitter maps every copy to the same spot, which poly2tri rejects
+// ("EdgeEvent: Collinear not supported!"). Nudge each copy of a shared vertex
+// a tiny bit into its own excluded region (inside its hole, or outside the
+// outer ring) so the copies separate. poly2tri coords only: allPoints, and
+// so the final mesh, keep the exact positions.
+function ringSignedArea(ring) {
+  let a = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const [x1, y1] = ring[i];
+    const [x2, y2] = ring[(i + 1) % ring.length];
+    a += x1 * y2 - x2 * y1;
+  }
+  return a / 2;
+}
+
+function separateSharedRingVertices(p2tPoints, boundaryPts, holes, mag = 1e-5) {
+  const rings = [{ ring: boundaryPts, start: 0, isHole: false }];
+  let offset = boundaryPts.length;
+  for (const hole of holes) {
+    rings.push({ ring: hole, start: offset, isHole: true });
+    offset += hole.length;
+  }
+
+  const counts = new Map();
+  const keyOf = ([x, y]) => `${x.toFixed(6)},${y.toFixed(6)}`;
+  for (const { ring } of rings) {
+    for (const pt of ring) {
+      const key = keyOf(pt);
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+  }
+
+  for (const { ring, start, isHole } of rings) {
+    const n = ring.length;
+    if (n < 3) continue;
+    // Unit normal (-dy, dx) points into the ring's own interior when area > 0.
+    // Excluded region: hole interior, or outside the outer ring.
+    const sign = (ringSignedArea(ring) > 0 ? 1 : -1) * (isHole ? 1 : -1);
+
+    for (let i = 0; i < n; i++) {
+      if (counts.get(keyOf(ring[i])) < 2) continue;
+      const [px, py] = ring[(i - 1 + n) % n];
+      const [cx, cy] = ring[i];
+      const [nx, ny] = ring[(i + 1) % n];
+
+      const d1x = cx - px, d1y = cy - py;
+      const d2x = nx - cx, d2y = ny - cy;
+      const l1 = Math.hypot(d1x, d1y) || 1;
+      const l2 = Math.hypot(d2x, d2y) || 1;
+      let bx = -d1y / l1 - d2y / l2;
+      let by = d1x / l1 + d2x / l2;
+      let bl = Math.hypot(bx, by);
+      if (bl < 1e-9) { bx = -d1y / l1; by = d1x / l1; bl = 1; } // spike: use first edge normal
+
+      const p = p2tPoints[start + i];
+      p.x += (bx / bl) * sign * mag;
+      p.y += (by / bl) * sign * mag;
+    }
+  }
+}
+
 function tryTriangulate(boundaryPts, holes, steinerPts) {
   const allPoints = [...boundaryPts, ...holes.flat(), ...steinerPts];
 
@@ -440,6 +502,8 @@ function tryTriangulate(boundaryPts, holes, steinerPts) {
     p._idx = i;
     return p;
   });
+
+  separateSharedRingVertices(p2tPoints, boundaryPts, holes);
 
   const contour = p2tPoints.slice(0, boundaryPts.length);
   const ctx = new poly2tri.SweepContext(contour);
