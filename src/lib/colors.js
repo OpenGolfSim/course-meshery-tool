@@ -77,6 +77,10 @@ export const SurfacePalette = {
     hex: '#6a436e',
     id: 17,
   },
+  wall: {
+    hex: '#242424',
+    id: 18,
+  },
 };
 
 Object.entries(SurfacePalette).forEach(([surface, props]) => {

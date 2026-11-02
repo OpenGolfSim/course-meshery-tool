@@ -175,7 +175,7 @@ export const defaultSettings = {
     // blending: { ...defaultBlend },
     // blending: { ...defaultBlend },
     blending: {
-      enabled: true,
+      enabled: false,
       distance: 2.0,       // narrow blend zone
       noiseFreq: 0.8,      // gentle undulation
       noiseAmp: 0.8,      // subtle edge wander
@@ -189,6 +189,12 @@ export const defaultSettings = {
       sandBaseHeight: 0,             // reference height — set to bunker floor Y
     },
     dig: { ...defaultDig }
+  },
+  wall: {
+    spacing: 0.3,
+    blending: { enabled: false, distance: 0 },
+    dig: { ...defaultDig },
+    extrude: { enabled: true, height: 0.25, top: 'terrain' } // or 'flat'
   },
   custom1: {
     spacing: 2,

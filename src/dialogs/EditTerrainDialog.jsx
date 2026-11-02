@@ -633,17 +633,33 @@ export default function EditTerrainDialog(props) {
           <SidebarAccordionGroup>
             <Accordion expanded={panelExpanded === 'info'} onChange={handlePanelChange('info')}>
               <AccordionSummary id="brush-header">
-                <AccordionHeader>Info</AccordionHeader>
+                <AccordionHeader sx={{ flex: 1, alignContent: 'center' }} variant="h5" color="textSecondary">
+                  Info
+                </AccordionHeader>
               </AccordionSummary>
               <AccordionDetails sx={{ p: 2 }}>
-                <Typography>heightScale: {heightScale?.toFixed(3)}</Typography>
+
+                {/* <Typography>heightScale: {heightScale?.toFixed(3)}</Typography> */}
+                <NumberField
+                  label="Height Scale"
+                  value={heightScale}
+                  size="small"
+                  min={0}
+                  max={1000}
+                  fullWidth={true}
+                  onChange={(val) => setHeightScale(val)}
+                />
               </AccordionDetails>
             </Accordion>
             
             <Accordion expanded={panelExpanded === 'brush'} onChange={handlePanelChange('brush')}>            
               <AccordionSummary id="brush-header">
-                <AccordionHeader>Brush</AccordionHeader>
+                <AccordionHeader sx={{ flex: 1, alignContent: 'center' }} variant="h5" color="textSecondary">
+                  Brush
+                </AccordionHeader>
               </AccordionSummary>
+              
+
               <AccordionDetails sx={{ p: 2 }}>
                 <Stack spacing={3}>
                   <Box sx={{ pt: 2 }}>

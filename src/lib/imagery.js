@@ -490,6 +490,7 @@ export async function generateRAWFile() {
 
   const raw = {
     filePath: outputRaw,
+    fileName: generatedFile,
     uri: `${PROJECT_FILE_PROTOCOL}:///${path.join(TERRAIN_DIR, generatedFile)}`
   };
 

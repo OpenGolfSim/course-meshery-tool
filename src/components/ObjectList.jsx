@@ -11,6 +11,7 @@ export default function ObjectList(props) {
     <List disablePadding={true}>
       {objects?.map(obj => (
         <CustomListItem
+          key={obj.id}
           button={{
             onClick: () => onSelect(obj)
           }}

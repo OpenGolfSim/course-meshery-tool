@@ -64,7 +64,6 @@ export default function CustomListItem({
             primary={label}
             secondary={secondary}
             slotProps={{
-              secondary: { sx: { textTransform: 'capitalize' } },
               primary: {
                 ...hidden && { color: 'textSecondary' },
                 noWrap: true, // Applies text-overflow: ellipsis, overflow: hidden, and white-space: nowrap

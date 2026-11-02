@@ -16,17 +16,80 @@ import {
 import CheckIcon from '@mui/icons-material/CheckCircle';
 import { useProject } from '../contexts/Project.jsx';
 
+function ExportCourseDialogContent(props) {
+  const {
+    jobState,
+    mapImage,
+    exportProgress,
+    exportSettings,
+    setExportSettings
+  } = props;
+
+  const handleTitleChange = (event) => {
+    setExportSettings(old => ({ ...old, title: event.target.value }));
+  }
+  return (
+    <DialogContent>
+      
+      {jobState.phase === 'prepare' ? (
+        <Stack spacing={3} sx={{ justifyItems: 'center', alignItems: 'center' }}>
+          <CircularProgress variant="indeterminate" />
+          <Typography>Preparing for export...</Typography>
+        </Stack>
+      ) : null}
+
+      {jobState.phase === 'settings' ? (
+        <Grid container={true} spacing={3}>
+          <Grid sx={{ width: 200 }}>
+            {mapImage ? (
+              <img src={mapImage} width={200} />
+            ) : null}
+            {/* {data.lightMapImage ? (
+              <img src={data.lightMapImage} width={200} />
+            ) : null} */}
+          </Grid>
+          <Grid flex={1}>
+            <Stack spacing={3} sx={{ py: 2 }}>
+              <TextField
+                fullWidth={true}
+                label="Course Title"
+                value={exportSettings.title}
+                onChange={handleTitleChange}
+              />
+            </Stack>
+          </Grid>
+          
+        </Grid>
+      ) : null}        
+    
+    
+      {jobState.phase === 'generate' ? (
+        <Stack spacing={3} sx={{ justifyItems: 'center', alignItems: 'center' }}>
+          <CircularProgress variant={exportProgress.percent >= 0 ? 'determinate' : 'indeterminate'} value={exportProgress.percent} />
+          <Typography>{exportProgress.status || 'Exporting...'}</Typography>
+        </Stack>
+      ) : null}
+      
+      {jobState.phase === 'complete' ? (
+        <Stack spacing={3} sx={{ justifyItems: 'center', alignItems: 'center' }}>
+          <Box>
+            <CheckIcon color="success" sx={{ fontSize: 48 }} />
+          </Box>
+          <Typography color="textSecondary">Course has been exported</Typography>
+        </Stack>
+      ) : null}
+    </DialogContent>
+  )
+}
 export default function ExportCourseDialog(props) {
   const { project, palette } = useProject();
-  const { onClose, open, data } = props;
+  const { onClose, state, data } = props;
+  const open = Boolean(state);
 
-  const [jobState, setJobState] = useState({ phase: 'settings', count: 0, progress: 0 });
+  const [jobState, setJobState] = useState({ phase: 'prepare', count: 0, progress: 0 });
   const [exportProgress, setExportProgress] = useState({ status: 'Initializing...', percent: -1 });
-  const [exportSettings, setExportSettings] = useState({ format: 'glb' });
+  const [exportSettings, setExportSettings] = useState({ title: '', format: 'glb' });
 
-  const handleFormatChange = (event) => {
-    setExportSettings(old => ({ ...old, format: event.target.value }));
-  }
   const handleConfirm = useCallback(async () => {
     console.log('start', exportSettings);
     
@@ -55,11 +118,14 @@ export default function ExportCourseDialog(props) {
   }, []);
 
   useEffect(() => {
-    if (!open) {
-      setJobState({ phase: 'settings', count: 0, progress: 0 });
+    if (!state) {
+      // const phase = state === 'ready' ? 'settings' : 'prepare';
+      // console.log(`effect open: ${open}, state: ${state}, phase: ${phase}`);
+      setJobState({ phase: 'prepare', count: 0, progress: 0 });
+    } else {
+      setJobState(old => ({ ...old, phase: state === 'ready' ? 'settings' : 'prepare' }));
     }
-  }, [open]);
-
+  }, [state]);
   
   return (
     <Dialog
@@ -75,52 +141,13 @@ export default function ExportCourseDialog(props) {
       </DialogTitle>
   
 
-      <DialogContent>
-
-        {jobState.phase === 'settings' ? (
-          <Grid container={true} spacing={3}>
-            <Grid sx={{ width: 200 }}>
-              {data.mapImage ? (
-                <img src={data.mapImage} width={200} />
-              ) : null}
-              {/* {data.lightMapImage ? (
-                <img src={data.lightMapImage} width={200} />
-              ) : null} */}
-            </Grid>
-            <Grid flex={1}>
-              <Stack spacing={3} sx={{ py: 2 }}>
-                <TextField
-                  select={true}
-                  fullWidth={true}
-                  label="Format"
-                  onChange={handleFormatChange}
-                  value={exportSettings.format}
-                >
-                  <MenuItem value="glb">.GLB (Fuse)</MenuItem>
-                  {/* <MenuItem value="obj">.OBJ (Unity)</MenuItem> */}
-                </TextField>
-              </Stack>
-            </Grid>
-          </Grid>
-        ) : null}        
-      
-      
-        {jobState.phase === 'generate' ? (
-          <Stack spacing={3} sx={{ justifyItems: 'center', alignItems: 'center' }}>
-            <CircularProgress variant={exportProgress.percent >= 0 ? 'determinate' : 'indeterminate'} value={exportProgress.percent} />
-            <Typography>{exportProgress.status || 'Exporting...'}</Typography>
-          </Stack>
-        ) : null}
-        
-        {jobState.phase === 'complete' ? (
-          <Stack spacing={3} sx={{ justifyItems: 'center', alignItems: 'center' }}>
-            <Box>
-              <CheckIcon color="success" sx={{ fontSize: 48 }} />
-            </Box>
-            <Typography color="textSecondary">Course has been exported</Typography>
-          </Stack>
-        ) : null}
-      </DialogContent>
+      <ExportCourseDialogContent
+        mapImage={data.mapImage}
+        jobState={jobState}
+        exportProgress={exportProgress}
+        exportSettings={exportSettings}
+        setExportSettings={setExportSettings}
+      />
 
       <DialogActions>
         <Button

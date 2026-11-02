@@ -58,6 +58,11 @@ const PHASE_LABELS = {
   trees: (l) => `Planting trees… ${l.loaded}/${l.total}`,
   lightmap: () => 'Generating shadow map…',
 };
+const textureFields = [
+  { key: 'color', fileKey: 'baseColorFile', label: 'Albedo', defaultValue: { baseColorFile: null, baseColor: null } },
+  { key: 'normal', fileKey: 'normalFile', label: 'Normal', defaultValue: { normalFile: null, normal: null } },
+  { key: 'displace', fileKey: 'displaceFile', label: 'Displacement', defaultValue: { displaceFile: null, displace: null } },
+];
 
 function SetCamera({ controlsRef }) {
   const [set, setSet] = useState(false);
@@ -155,7 +160,7 @@ export default function Course() {
     removeObject,
   } = useProject();
 
-  const [panelExpanded, setPanelExpanded] = useState('mat');
+  const [panelExpanded, setPanelExpanded] = useState('tools');
   const [matSurface, setMatSurface] = useState('fairway');
   const [skySettings, setSkySettings] = useState({ ...project?.scene?.sky || {} });
   const [sunSettings, setSunSettings] = useState({ ...project?.scene?.sun || {} });
@@ -173,7 +178,7 @@ export default function Course() {
   const [placingObject, setPlacingObject] = useState(false);
   const [materialTab, setMaterialTab] = useState(0);
   const [hiddenLayers, setHiddenLayers] = useState({});
-  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [exportDialogOpen, setExportDialogOpen] = useState(null);
   const [treeEditDialog, setTreeEditDialog] = useState(null);
 
   // Surfaces resolved by main for this course (defaults + overrides)
@@ -220,7 +225,7 @@ export default function Course() {
   const sleep = (ms) => new Promise(resolve => requestAnimationFrame(resolve));
   const handleExport = async () => {
     setSelectedLayer(null);
-    setExportDialogOpen(true);
+    setExportDialogOpen('loading');
     await sleep(200);
     // -- Capture course image here?
     // const mapImage = captureRef.current?.capture(4096);
@@ -228,6 +233,7 @@ export default function Course() {
     // setExportCourseData(old => ({ ...old, mapImage }));
     const lightMapImage = await courseSceneRef.current?.captureLightmap(4096);
     setExportCourseData(old => ({ ...old, mapImage, lightMapImage }));
+    setExportDialogOpen('ready');
   }
 
   const handleScreenshot = async () => {
@@ -292,17 +298,18 @@ export default function Course() {
   const handleTreeImportClosed = useCallback(async (plant) => {
     // TreeImportDialog
     if (plant) {
-      console.log('Write import to settings', treeImportDialog, plant);
-      await importTreeModel(treeImportDialog, plant);
+      const [layerId, configId] = treeImportDialog;
+      console.log('Write import to settings', layerId, configId, plant);
+      await importTreeModel(layerId, plant, configId);
       // await window.meshery.trees.importPlant(treeImportDialog, plant);
     }
     setTreeImportDialog(null);
   }, [treeImportDialog]);
 
-  const handleTreeModelImport = async (treeLayerId) => {
+  const handleTreeModelImport = async (treeLayerId, treeConfigId) => {
     // await window.meshery.trees.import(treeLayer.id);
     // await importTreeModel(treeLayerId);
-    setTreeImportDialog(treeLayerId);
+    setTreeImportDialog([treeLayerId, treeConfigId].filter(Boolean));
   }
   const handleTreeModelRemove = async (treeLayerId, treeConfigId) => {
     // window.meshery.trees.remove(treeLayerId, treeConfigId)    
@@ -336,6 +343,20 @@ export default function Course() {
         config: {
           ...prev.config,
           colors: colorCopy
+        }
+      }
+    });
+  }
+
+  const handleRemoveTreeColor = (index) => {
+    setSelectedLayer(prev => {
+      const copy = [...prev.config.colors];
+      copy.splice(index, 1);
+      return {
+        ...prev,
+        config: {
+          ...prev.config,
+          colors: copy
         }
       }
     });
@@ -529,7 +550,7 @@ export default function Course() {
       >
         <Box sx={{ width: 220, flexGrow: 0, flexShrink: 0, display: 'flex', flexDirection: 'column', maxHeight: '100%' }}>
           
-          <Stack sx={{ p: 3 }} spacing={3}>
+          {/* <Stack sx={{ p: 3 }} spacing={3}>
 
             <GenerateExportButton
               hasLayers={project._layers?.length}
@@ -538,17 +559,61 @@ export default function Course() {
               onGenerate={handleGenerateMeshes}
               onScreenshot={handleScreenshot}
             />
-          </Stack>
+          </Stack> */}
 
 
-          <Box sx={{ mt: 2, flexGrow: 1, overflow: 'hidden', height: '80%', display: 'flex', flexDirection: 'column' }}>
+          <Box sx={{ flexGrow: 1, overflow: 'hidden', height: '80%', display: 'flex', flexDirection: 'column' }}>
             <SidebarAccordionGroup>
-              {/* Materials */}
+              {/* Tools */}
+              <Accordion expanded={panelExpanded === 'tools'} onChange={(e, expanded) => setPanelExpanded(expanded ? 'tools' : null)}>
+                <AccordionSummary id="tools-header">
+                  <AccordionHeader sx={{ flex: 1, alignContent: 'center' }} variant="h5" color="textSecondary">Tools</AccordionHeader>
+                </AccordionSummary>
+                <AccordionDetails sx={{ p: 2 }}>
+                  <Stack spacing={3}>
+                    <Button
+                      fullWidth={true}
+                      disabled={!meshDataState?.generated}
+                      onClick={handleExport}
+                      variant="contained"
+                      color={meshDataState?.generated ? 'primary' : 'secondary'}
+                    >
+                      Export Course
+                    </Button>
+
+                    <Button
+                      fullWidth={true}
+                      onClick={handleGenerateMeshes}
+                      variant="contained"
+                      color={!meshDataState?.generated ? 'primary' : 'secondary'}
+                    >
+                      {meshDataState?.generated ? 'Regenerate' : 'Generate'} Meshes
+                    </Button>
+                    <Button
+                      fullWidth={true}
+                      onClick={handleScreenshot}
+                      variant="contained"
+                      color="secondary"
+                    >
+                      Save Screenshot
+                    </Button>
+                  </Stack>
+
+                  {/* <GenerateExportButton
+                    hasLayers={project._layers?.length}
+                    hasMeshes={meshDataState?.generated}
+                    onExport={handleExport}
+                    onGenerate={handleGenerateMeshes}
+                    onScreenshot={handleScreenshot}
+                  /> */}
+                </AccordionDetails>
+              </Accordion>
+
               <Accordion expanded={panelExpanded === 'mat'} onChange={(e, expanded) => setPanelExpanded(expanded ? 'mat' : null)}>
                 <AccordionSummary id="mat-header">
                   <AccordionHeader sx={{ flex: 1, alignContent: 'center' }} variant="h5" color="textSecondary">Materials</AccordionHeader>
                 </AccordionSummary>
-                <AccordionDetails sx={{ p: 2 }}>
+                <AccordionDetails sx={{ p: 2, pt: 4 }}>
                   
                   {surfaceNames.length ? (
                     <Stack spacing={3}>
@@ -577,13 +642,13 @@ export default function Course() {
                       </Box>
                       <MiniTabPanel value={materialTab} index={0} sx={{ p: 1 }}>
                         <Stack spacing={3}>
-
-                          {['color', 'normal'].map((type) => {
-                            const fileKey = type === 'normal' ? 'normalFile' : 'baseColorFile';
-                            const label = type === 'normal' ? 'Normal Map' : 'Color Map';
+                          {textureFields.map((field) => {
+                            const { fileKey, label, key, defaultValue } = field;
+                            // const fileKey = type === 'normal' ? 'normalFile' : 'baseColorFile';
+                            // const label = type === 'normal' ? 'Normal Map' : 'Color Map';
                             const current = project?.surfaces?.[activeSurface]?.[fileKey];
                             return (
-                              <Stack key={type} direction="column" spacing={1}>
+                              <Stack key={key} direction="column" spacing={1}>
                                 <Typography
                                   variant="subtitle2"
                                   color="textSecondary"
@@ -596,9 +661,7 @@ export default function Course() {
                                   </Typography>
                                   {current ? (
                                     <IconButton size="small" onClick={() => updateSurfaces({
-                                      [activeSurface]: type === 'normal'
-                                        ? { normalFile: null, normal: null }
-                                        : { baseColorFile: null, baseColor: null },
+                                      [activeSurface]: defaultValue,
                                     })}>
                                       <CloseIcon />
                                     </IconButton>
@@ -608,7 +671,7 @@ export default function Course() {
                                     color="secondary"
                                     variant="contained"
                                     sx={{ flexShrink: 0 }}
-                                    onClick={() => selectSurfaceTexture(activeSurface, type)}
+                                    onClick={() => selectSurfaceTexture(activeSurface, key)}
                                   >
                                     Select
                                   </Button>
@@ -1003,14 +1066,21 @@ export default function Course() {
                           onChange={(event, val) => handleTreeConfigChange('scaleRange', val)}
                         />    
                       </Box>
-                      <Stack>
+                      <Stack spacing={2}>
                         {selectedLayer.config.colors?.map((color, index) => (
-                          <ColorField
-                            key={`color-${index}`}
-                            label="Tint"
-                            onChange={(newValue) => handleChangeTreeColor(index, newValue)}
-                            value={color}
-                          />                          
+                          <Stack direction="row" sx={{ width: 150 }}>
+                            <ColorField
+                              key={`color-${index}`}
+                              label="Tint"
+                              onChange={(newValue) => handleChangeTreeColor(index, newValue)}
+                              value={color}
+                            />
+                            <Tooltip title="Remove">
+                              <IconButton onClick={() => handleRemoveTreeColor(index)}>
+                                <CloseIcon />
+                              </IconButton>
+                            </Tooltip>
+                          </Stack>
                         ))}
                         <Button
                           startIcon={<AddIcon />}
@@ -1211,7 +1281,11 @@ export default function Course() {
         onClose={handleTreeImportClosed}
       />
       <GenerateMeshDialog open={generateDialogOpen} onClose={() => setGenerateDialogOpen(false)} />     
-      <ExportCourseDialog data={exportCourseData} open={exportDialogOpen} onClose={() => setExportDialogOpen(false)} />
+      <ExportCourseDialog
+        data={exportCourseData}
+        state={exportDialogOpen}
+        onClose={() => setExportDialogOpen(null)}
+      />
    </React.Fragment>
   );
 }

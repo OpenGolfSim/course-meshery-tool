@@ -5,40 +5,54 @@ import * as _ from 'lodash';
 import { cachePlant, getPlantCache } from '../app';
 import { RESOURCES_FILE_PROTOCOL } from '../../constants';
 import { downloadAsset } from '../download.js';
-import { saveTreeConfig } from '../project.js';
+import { saveTreeConfig, updateTreeConfig } from '../project.js';
 import { randomUUID } from 'crypto';
 
 export const PLANT_CACHE = path.join(app.getPath('userData'), 'plant_cache');
 
 
 const TREES = [
+  // {
+  //   id: 'ash-v1',
+  //   type: 'tree',
+  //   thumbnail: 'https://coursedata.opengolfsim.com/assets/trees/ash-v1/ash-v1.png',
+  //   asset: 'https://coursedata.opengolfsim.com/assets/trees/ash-v1/ash-v1.glb',
+  //   title: 'Ash Tree',
+  // },
+  // {
+  //   id: 'pine-v1',
+  //   type: 'tree',
+  //   thumbnail: 'https://coursedata.opengolfsim.com/assets/trees/pine-v1/pine-1.png',
+  //   asset: 'https://coursedata.opengolfsim.com/assets/trees/pine-v1/pine-1.glb',
+  //   title: 'Pine Tree',
+  // },
+  // {
+  //   id: 'aspen-v1',
+  //   type: 'tree',
+  //   thumbnail: 'https://coursedata.opengolfsim.com/assets/trees/aspen-v1/aspen-1.png',
+  //   asset: 'https://coursedata.opengolfsim.com/assets/trees/aspen-v1/aspen-1.glb',
+  //   title: 'Green Aspen Tree',
+  // },  
   {
-    id: 'ash-v1',
+    id: 'pine-v2',
     type: 'tree',
-    thumbnail: 'https://coursedata.opengolfsim.com/assets/trees/ash-v1/ash-v1.png',
-    asset: 'https://coursedata.opengolfsim.com/assets/trees/ash-v1/ash-v1.glb',
-    title: 'Ash Tree',
-  },
-  {
-    id: 'pine-v1',
-    type: 'tree',
-    thumbnail: 'https://coursedata.opengolfsim.com/assets/trees/pine-v1/pine-1.png',
-    asset: 'https://coursedata.opengolfsim.com/assets/trees/pine-v1/pine-1.glb',
+    thumbnail: 'https://coursedata.opengolfsim.com/assets/trees/v2/pine_tree_v2/pine_tree_v2.png',
+    asset: 'https://coursedata.opengolfsim.com/assets/trees/v2/pine_tree_v2/pine_tree_v2.glb',
     title: 'Pine Tree',
   },
   {
-    id: 'willow-v1',
+    id: 'willow-v2',
     type: 'tree',
-    thumbnail: 'https://coursedata.opengolfsim.com/assets/trees/willow-v1/willow-1.png',
-    asset: 'https://coursedata.opengolfsim.com/assets/trees/willow-v1/willow-1.glb',
+    thumbnail: 'https://coursedata.opengolfsim.com/assets/trees/v2/willow_med_v2/willow_med_v2.png',
+    asset: 'https://coursedata.opengolfsim.com/assets/trees/v2/willow_med_v2/willow_med_v2.glb',
     title: 'Willow Tree',
   },
   {
-    id: 'aspen-v1',
+    id: 'oak-v2',
     type: 'tree',
-    thumbnail: 'https://coursedata.opengolfsim.com/assets/trees/aspen-v1/aspen-1.png',
-    asset: 'https://coursedata.opengolfsim.com/assets/trees/aspen-v1/aspen-1.glb',
-    title: 'Green Aspen Tree',
+    thumbnail: 'https://coursedata.opengolfsim.com/assets/trees/v2/oak_dark_v2/oak_dark_v2.png',
+    asset: 'https://coursedata.opengolfsim.com/assets/trees/v2/oak_dark_v2/oak_dark_v2.glb',
+    title: 'Oak Tree',
   },  
   {
     id: 'palm-v1',
@@ -53,6 +67,13 @@ const TREES = [
     thumbnail: 'https://coursedata.opengolfsim.com/assets/trees/tallgrass-v1/tallgrass-1.png',
     asset: 'https://coursedata.opengolfsim.com/assets/trees/tallgrass-v1/tallgrass-1.glb',
     title: 'Tall Grass',
+  },
+  {
+    id: 'tallgrass-patch-v2',
+    type: 'grasses',
+    thumbnail: 'https://coursedata.opengolfsim.com/assets/trees/v2/tall_grass_v2/tall_grass_v2.png',
+    asset: 'https://coursedata.opengolfsim.com/assets/trees/v2/tall_grass_v2/tall_grass_v2.glb',
+    title: 'Brown Grass Patch',
   },
 ];
 
@@ -96,8 +117,18 @@ export async function downloadPlantAsset(plant, layerId) {
   return getAvailablePlants();
 }
 
-export async function importPlantAsset(layerId, plant) {
+export async function importPlantAsset(layerId, plant, configId) {
   const id = randomUUID();
+  console.log(`(importPlantAsset) plant: ${plant.title}, layerId: ${layerId}, configId: ${configId}`);
+  if (configId) {
+    // swap existing config asset
+    return updateTreeConfig(layerId, configId, {
+      url: `${RESOURCES_FILE_PROTOCOL}://plant-cache/${path.basename(plant._cache.filePath)}`,
+      filePath:  plant._cache.filePath,
+      name: plant.title,
+    });
+  }
+
   return saveTreeConfig(layerId, {
     url: `${RESOURCES_FILE_PROTOCOL}://plant-cache/${path.basename(plant._cache.filePath)}`,
     filePath: plant._cache.filePath,

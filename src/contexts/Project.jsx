@@ -11,6 +11,7 @@ const ProjectContext = createContext({
   // setProject: () => {},
   generateHillShade: () => {},
   generateSatellite: () => {},
+  importTerrainHeightmap: () => {},
   generateTerrainData: () => {},
   setProjectSettings: () => {},
   updateSceneSettings: () => {},
@@ -184,9 +185,9 @@ export const ProjectProvider = ({ children }) => {
     }
   }
   
-  const importTreeModel = async (treeLayerId, plant) => {
+  const importTreeModel = async (treeLayerId, plant, treeConfigId) => {
     if (plant) {
-      const updated = await window.meshery.trees.importPlant(treeLayerId, plant);
+      const updated = await window.meshery.trees.importPlant(treeLayerId, plant, treeConfigId);
       if (updated) {
         setProject((old) => ({ ...old, trees: updated }))
       }
@@ -249,6 +250,12 @@ export const ProjectProvider = ({ children }) => {
   }
   const generateTerrainData = async (terrainType) => {
     const res = await window.meshery.terrain.generate(terrainType);
+    if (res) {
+      setProject((old) => ({ ...old, stats: res.stats, raw: res.raw }))
+    }
+  }
+  const importTerrainHeightmap = async () => {
+    const res = await window.meshery.terrain.importHeightMap();
     if (res) {
       setProject((old) => ({ ...old, stats: res.stats, raw: res.raw }))
     }
@@ -367,6 +374,7 @@ export const ProjectProvider = ({ children }) => {
       handleDownloadCourse,
       generateHillShade,
       generateSatellite,
+      importTerrainHeightmap,
       generateTerrainData,
       palette,
       updateLayerById,

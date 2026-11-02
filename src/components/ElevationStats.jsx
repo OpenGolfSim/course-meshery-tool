@@ -1,8 +1,37 @@
 import React from 'react';
-import { Grid } from '@mui/material';
+import { Box, Grid, Typography } from '@mui/material';
 
+function ElevationStatsRow({ label, value }) {
+  return (
+    <Grid
+      container
+      sx={theme => ({
+        // color: theme.palette.text.secondary,
+        fontSize: 10,
+      })}
+      spacing={1}
+    >
+      <Grid
+        size={4}
+        sx={theme => ({
+          color: theme.palette.text.secondary,
+          textAlign: 'right',
+          pr: 1
+        })}        
+      >
+        {label}
+      </Grid>
+      <Grid size={8}>
+        <Typography title={value} noWrap={true} sx={{ fontSize: 10 }} component="div">
+          {value}
+        </Typography>
+      </Grid>
+    </Grid>
+  )
+}
 
 export default function ElevationStats({
+  fileName,
   source,
   size,
   height,
@@ -12,31 +41,39 @@ export default function ElevationStats({
 }) {
   
   return (
-    <Grid
-      container
-      sx={theme => ({
-        color: theme.palette.text.secondary,
-        fontSize: 10,
-        p: 1
-      })}
-    >
-      <Grid size={6} sx={{ textAlign: 'right', pr: 1 }}>Source</Grid>
-      <Grid size={6}>{source}</Grid>
-      <Grid size={6} sx={{ textAlign: 'right', pr: 1 }}>Terrain Size</Grid>
-      <Grid size={6}>{(size || 0).toFixed(0)}m</Grid>
-      <Grid size={6} sx={{ textAlign: 'right', pr: 1 }}>Terrain Height</Grid>
-      <Grid size={6}>{height.toFixed(2)}m</Grid>
-      <Grid size={6} sx={{ textAlign: 'right', pr: 1 }}>Min</Grid>
-      <Grid size={6}>{min.toFixed(2)}m</Grid>
-      <Grid size={6} sx={{ textAlign: 'right', pr: 1 }}>Max</Grid>
-      <Grid size={6}>{max.toFixed(2)}m</Grid>
-      
+    <Box sx={{ p: 1 }}>
+      <ElevationStatsRow
+        label="File"
+        value={fileName}
+      />
+      <ElevationStatsRow
+        label="Source"
+        value={source}
+      />
+      <ElevationStatsRow
+        label="Size"
+        value={`${(size || 0).toFixed(0)}m`}
+      />
+      <ElevationStatsRow
+        label="Height"
+        value={`${height.toFixed(2)}m`}
+      />
+      <ElevationStatsRow
+        label="Min"
+        value={`${min.toFixed(2)}m`}
+      />
+      <ElevationStatsRow
+        label="Max"
+        value={`${max.toFixed(2)}m`}
+      />
+
       {heightMapSize ? (
-        <React.Fragment>
-          <Grid size={6} sx={{ textAlign: 'right', pr: 1 }}>Resolution</Grid>
-          <Grid size={6}>{heightMapSize}&times;{heightMapSize}</Grid>
-        </React.Fragment>
+        <ElevationStatsRow
+          label="Resolution"
+          value={`${heightMapSize}&times;${heightMapSize}`}
+        />
       ) : null}
-    </Grid>
+      
+    </Box>
   )
 }

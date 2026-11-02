@@ -686,6 +686,7 @@ export default function CourseScene({
 
     const { fuseRenderer, scene, camera, controls } = ctx;
     const timer = new THREE.Timer();
+    let firstFrame = true;
 
     fuseRenderer.renderer.setAnimationLoop(() => {
       if (bakingRef.current) return; // don't draw white-out/LOD0 bake state
@@ -705,7 +706,12 @@ export default function CourseScene({
         flag.update(delta);
       }
       oceanRef.current?.update();
+      const tf = performance.now();
       fuseRenderer.render(scene, camera);
+      if (firstFrame) {
+        firstFrame = false;
+        console.log(`${Date.now()} - first frame (shader/pipeline build) ${(performance.now() - tf).toFixed(0)}ms`);
+      }
     });
 
     return () => fuseRenderer.renderer.setAnimationLoop(null);
@@ -982,6 +988,11 @@ export default function CourseScene({
         mat.userData.appliedNormal = cfg.normal;
         mat.needsUpdate = true;
       }
+      // if (cfg?.displace && mat.userData.appliedDisplace !== cfg.displace) {
+      //   mat.displacementMap = loadTexture(cfg.displace);
+      //   mat.userData.appliedDisplace = cfg.displace;
+      //   mat.needsUpdate = true;
+      // }
 
     });
 

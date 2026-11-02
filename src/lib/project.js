@@ -193,9 +193,11 @@ export async function saveHeightMap(heightMapData, heightScale) {
   console.log('Writing filePath', filePath);
   await fs.promises.writeFile(filePath, Buffer.from(heightMapData.buffer));
 
+  const fileName = path.basename(filePath);
   const raw = {
     filePath,
-    uri: `${PROJECT_FILE_PROTOCOL}:///${path.join(TERRAIN_DIR, path.basename(filePath))}`
+    fileName,
+    uri: `${PROJECT_FILE_PROTOCOL}:///${path.join(TERRAIN_DIR, fileName)}`
   };
 
   openProject.raw = raw;
@@ -432,15 +434,6 @@ export async function loadProjectFile(filePath) {
     }
 
   });
-  // openProject = {
-  //   name: filePathInfo.name,
-  //   _dirty: false,
-  //   _filePath: filePath,
-  //   _workingDir: filePathInfo.dir,
-  //   ...stored,
-  //   holes
-  // }
-
 
   ensureRecent(openProject);
 
@@ -449,6 +442,10 @@ export async function loadProjectFile(filePath) {
     openProject.stats = openProject.lidar.stats;
   }
 
+  // migration for raw fileName
+  if (!openProject.raw?.fileName && openProject.raw?.filePath) {
+    openProject.raw.fileName = path.basename(openProject.raw.filePath);
+  }
 
   await refreshSVG();
 
@@ -700,7 +697,7 @@ export async function updateLayerById(layerId, update) {
   
   console.log('update', layerId, update);
 
-  if (update.spacing || update.dig) {
+  if (update.spacing || update.dig || update.extrude) {
     // save settings to disk?
     // await buildShapeCache();
     // await buildMeshCache();
@@ -803,6 +800,27 @@ export async function removeTreeConfig(treeLayerId, treeConfigId) {
 //   return openProject.trees;
 // }
 
+export async function writeTreeConfig() {
+  await saveProjectSettings();
+  return openProject.trees;
+}
+
+export async function updateTreeConfig(treeLayerId, treeConfigId, update = {}) {
+  const foundLayer = openProject.trees.find(layer => layer.id === treeLayerId);
+  if (!foundLayer) {
+    throw new Error(`Unable to find tree layer ${treeLayerId}`);
+  }
+  const configIndex = foundLayer.treeConfigs.findIndex(config => config.id === treeConfigId);
+  if (configIndex < 0) {
+    throw new Error('Unable to find tree config by ID');
+  }
+  foundLayer.treeConfigs[configIndex] = _.merge(foundLayer.treeConfigs[configIndex], update);
+  // config.url = `${RESOURCES_FILE_PROTOCOL}://plant-cache/${path.basename(plant._cache.filePath)}`;
+  // config.filePath = plant._cache.filePath;
+  // config.name = plant.title;
+  return writeTreeConfig();
+}
+
 export async function saveTreeConfig(treeLayerId, config) {
   const foundLayer = openProject.trees.find(tl => tl.id === treeLayerId);
   if (foundLayer) {
@@ -812,10 +830,9 @@ export async function saveTreeConfig(treeLayerId, config) {
     ];
   }
 
-  await saveProjectSettings();
-
-  return openProject.trees;
+  return writeTreeConfig();
 }
+
 
 export async function importTree(treeLayerId) {
   const { canceled, filePaths } = await dialog.showOpenDialog({
@@ -987,24 +1004,40 @@ export async function selectSurfaceTexture(surface, textureType = 'color') {
   const name = path.basename(filePath);
   const url = `${PROJECT_FILE_PROTOCOL}://custom-texture/${name}`;
 
-  if (textureType === 'normal') {
-    return updateSurfaces({
-      [surface]: {
-        normalFile: filePath,
-        normal: url,
-      },
-    });
-  } else {
-    return updateSurfaces({
-      [surface]: {
-        baseColorFile: filePath,
-        baseColor: url,
-      },
-    });
+  switch (textureType) {
+    case 'normal': {
+      return updateSurfaces({
+        [surface]: {
+          normalFile: filePath,
+          normal: url,
+        },
+      });
+    }
+    case 'color': {
+      return updateSurfaces({
+        [surface]: {
+          baseColorFile: filePath,
+          baseColor: url,
+        },
+      });
+    }
+    case 'displace': {
+      return updateSurfaces({
+        [surface]: {
+          displaceFile: filePath,
+          displace: url,
+        },
+      });
+    }
   }  
 }
 export async function generateHeightMap(type) {
   const res = await generateTerrain(type);
+  await refreshRawData();
+  return res;
+}
+export async function importHeightMapToProject() {
+  const res = await importHeightMap();
   await refreshRawData();
   return res;
 }

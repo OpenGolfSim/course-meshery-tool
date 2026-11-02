@@ -429,6 +429,68 @@ function isTooCloseToConstraintEdge(pt, rings, minDist) {
   return false;
 }
 
+// Rings that touch (hole-hole or hole-outer) share vertices. The deterministic
+// jitter maps every copy to the same spot, which poly2tri rejects
+// ("EdgeEvent: Collinear not supported!"). Nudge each copy of a shared vertex
+// a tiny bit into its own excluded region (inside its hole, or outside the
+// outer ring) so the copies separate. poly2tri coords only: allPoints, and
+// so the final mesh, keep the exact positions.
+function ringSignedArea(ring) {
+  let a = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const [x1, y1] = ring[i];
+    const [x2, y2] = ring[(i + 1) % ring.length];
+    a += x1 * y2 - x2 * y1;
+  }
+  return a / 2;
+}
+
+function separateSharedRingVertices(p2tPoints, boundaryPts, holes, mag = 1e-5) {
+  const rings = [{ ring: boundaryPts, start: 0, isHole: false }];
+  let offset = boundaryPts.length;
+  for (const hole of holes) {
+    rings.push({ ring: hole, start: offset, isHole: true });
+    offset += hole.length;
+  }
+
+  const counts = new Map();
+  const keyOf = ([x, y]) => `${x.toFixed(6)},${y.toFixed(6)}`;
+  for (const { ring } of rings) {
+    for (const pt of ring) {
+      const key = keyOf(pt);
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+  }
+
+  for (const { ring, start, isHole } of rings) {
+    const n = ring.length;
+    if (n < 3) continue;
+    // Unit normal (-dy, dx) points into the ring's own interior when area > 0.
+    // Excluded region: hole interior, or outside the outer ring.
+    const sign = (ringSignedArea(ring) > 0 ? 1 : -1) * (isHole ? 1 : -1);
+
+    for (let i = 0; i < n; i++) {
+      if (counts.get(keyOf(ring[i])) < 2) continue;
+      const [px, py] = ring[(i - 1 + n) % n];
+      const [cx, cy] = ring[i];
+      const [nx, ny] = ring[(i + 1) % n];
+
+      const d1x = cx - px, d1y = cy - py;
+      const d2x = nx - cx, d2y = ny - cy;
+      const l1 = Math.hypot(d1x, d1y) || 1;
+      const l2 = Math.hypot(d2x, d2y) || 1;
+      let bx = -d1y / l1 - d2y / l2;
+      let by = d1x / l1 + d2x / l2;
+      let bl = Math.hypot(bx, by);
+      if (bl < 1e-9) { bx = -d1y / l1; by = d1x / l1; bl = 1; } // spike: use first edge normal
+
+      const p = p2tPoints[start + i];
+      p.x += (bx / bl) * sign * mag;
+      p.y += (by / bl) * sign * mag;
+    }
+  }
+}
+
 function tryTriangulate(boundaryPts, holes, steinerPts) {
   const allPoints = [...boundaryPts, ...holes.flat(), ...steinerPts];
 
@@ -440,6 +502,8 @@ function tryTriangulate(boundaryPts, holes, steinerPts) {
     p._idx = i;
     return p;
   });
+
+  separateSharedRingVertices(p2tPoints, boundaryPts, holes);
 
   const contour = p2tPoints.slice(0, boundaryPts.length);
   const ctx = new poly2tri.SweepContext(contour);
@@ -1132,5 +1196,121 @@ function generateBlendMap(shape, blendSettings, svgSize, targetMPP = 0.25) {
   };
 }
 
+/**
+ * Extrude a conformed mesh straight up by `layer.extrude.height`, adding
+ * vertical side faces along every boundary edge (outer ring + holes).
+ * Side faces get unique vertices so they shade flat with a hard top edge.
+ * extrude.top:
+ *   'terrain' (default) - top follows terrain, offset by height
+ *   'flat'              - level top at (highest conformed point + height)
+ */
+function extrudeMesh(mesh, layer) {
+  const { points, triangles, colors } = mesh;
+  const { height = 1, sink = 0, top = 'terrain' } = layer.extrude;
 
-expose({ generateMesh, digMesh, conformMeshToTerrain, smoothMeshEdges, generateBlendMap });
+  let flatY = -Infinity;
+  if (top === 'flat') {
+    for (let i = 1; i < points.length; i += 3) {
+      if (points[i] > flatY) flatY = points[i];
+    }
+    flatY += height;
+  }
+  const topY = (y) => (top === 'flat' ? flatY : y + height);
+
+  // Boundary edges appear in exactly one triangle. Keep the directed (a->b)
+  // order from that triangle so side faces can be wound consistently.
+  const edges = new Map();
+  for (let i = 0; i < triangles.length; i += 3) {
+    for (let e = 0; e < 3; e++) {
+      const a = triangles[i + e];
+      const b = triangles[i + ((e + 1) % 3)];
+      const key = a < b ? `${a},${b}` : `${b},${a}`;
+      const hit = edges.get(key);
+      if (hit) hit.count++;
+      else edges.set(key, { a, b, count: 1 });
+    }
+  }
+
+  const boundary = [];
+  for (const e of edges.values()) {
+    if (e.count === 1) boundary.push(e);
+  }
+
+  // Index boundary edges by start vertex so they can be chained into loops
+  // (keeps u continuous along the wall instead of restarting per segment)
+  const outgoing = new Map();
+  for (const e of boundary) {
+    if (!outgoing.has(e.a)) outgoing.set(e.a, []);
+    outgoing.get(e.a).push(e);
+  }
+
+  const outPoints = Array.from(points);
+  const outColors = colors?.length ? Array.from(colors) : new Array(points.length).fill(1);
+  const outTris = Array.from(triangles);
+
+  // UVs in world meters (consumers divide by tileSize). Top cap: planar XZ.
+  const outUVs = [];
+  for (let i = 0; i < points.length; i += 3) {
+    outUVs.push(points[i], points[i + 2]);
+  }
+
+  // Raise the top cap
+  for (let i = 1; i < outPoints.length; i += 3) {
+    outPoints[i] = topY(outPoints[i]);
+  }
+
+  // Side quads: bottom sits on the conformed terrain height (optionally sunk).
+  // u = distance along the loop, v = world height.
+  const used = new Set();
+  for (const start of boundary) {
+    if (used.has(start)) continue;
+    let u = 0;
+    let edge = start;
+
+    while (edge && !used.has(edge)) {
+      used.add(edge);
+      const { a, b } = edge;
+      const ax = points[a * 3], ay = points[a * 3 + 1], az = points[a * 3 + 2];
+      const bx = points[b * 3], by = points[b * 3 + 1], bz = points[b * 3 + 2];
+      const len = Math.hypot(bx - ax, bz - az);
+      const aTop = topY(ay), bTop = topY(by);
+      const aBot = ay - sink, bBot = by - sink;
+      const base = outPoints.length / 3;
+
+      outPoints.push(
+        ax, aTop, az, // base+0: a top
+        bx, bTop, bz, // base+1: b top
+        bx, bBot, bz, // base+2: b bottom
+        ax, aBot, az, // base+3: a bottom
+      );
+      outColors.push(1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1);
+      outUVs.push(
+        u,       aTop,
+        u + len, bTop,
+        u + len, bBot,
+        u,       aBot,
+      );
+
+      // Walk the edge b->a (opposite the top cap) so the side faces wind outward
+      outTris.push(
+        base + 1, base + 0, base + 3,
+        base + 1, base + 3, base + 2,
+      );
+
+      u += len;
+      edge = outgoing.get(b)?.find(n => !used.has(n));
+    }
+  }
+
+  const newPoints = new Float32Array(outPoints);
+  return {
+    ...mesh,
+    points: newPoints,
+    colors: new Float32Array(outColors),
+    triangles: outTris,
+    uvs: new Float32Array(outUVs),
+    normals: computeSmoothNormals(newPoints, outTris),
+  };
+}
+
+expose({ generateMesh, extrudeMesh, digMesh, conformMeshToTerrain, smoothMeshEdges, generateBlendMap });

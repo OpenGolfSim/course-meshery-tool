@@ -62,6 +62,9 @@ export async function layerToMesh(layer, shape, project, heightMap) {
   if (layer.dig?.enabled) {
     mesh = await meshWorker.digMesh(mesh, shape, layer);
   }
+  if (layer.extrude?.enabled && layer.extrude?.height) {
+    mesh = await meshWorker.extrudeMesh(mesh, layer);
+  }
 
   if (['river', 'water'].includes(layer.surface)) {
     mesh = await meshWorker.smoothMeshEdges(mesh, 3, 1);

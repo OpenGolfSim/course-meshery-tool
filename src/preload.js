@@ -73,7 +73,7 @@ contextBridge.exposeInMainWorld('meshery', {
     removeLayer: (layerId) => ipcRenderer.invoke('trees.removeLayer', layerId),
     getAvailablePlants: () => ipcRenderer.invoke('trees.getAvailablePlants'),
     downloadPlantAsset: (plant) => ipcRenderer.invoke('trees.downloadPlantAsset', plant),
-    importPlant: (layerId, plant) => ipcRenderer.invoke('trees.importPlant', layerId, plant),
+    importPlant: (layerId, plant, configId) => ipcRenderer.invoke('trees.importPlant', layerId, plant, configId),
     createCustom: () => ipcRenderer.invoke('trees.createCustom'),
   },
   terrain: {
@@ -82,6 +82,7 @@ contextBridge.exposeInMainWorld('meshery', {
     applySmoothing: (data, radius) => ipcRenderer.invoke('terrain.applySmoothing', data, radius),
     smoothRivers: (data) => ipcRenderer.invoke('terrain.smoothRivers', data),
     smoothLakes: (data) => ipcRenderer.invoke('terrain.smoothLakes', data),
+    importHeightMap: () => ipcRenderer.invoke('terrain.importHeightMap'),
     saveHeightMap: (data, heightScale) => ipcRenderer.invoke('terrain.saveHeightMap', data, heightScale),
     generate: (type) => ipcRenderer.invoke('terrain.generate', type),
   },
