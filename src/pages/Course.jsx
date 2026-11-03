@@ -140,7 +140,7 @@ function TerrainMesh({ heightMap, heightScale, maxSegments = 1024, size = 1000 }
   );
 }
 
-export default function Course() {
+export default function Course({ active = true }) {
   const {
     project,
     setProjectSettings,
@@ -970,45 +970,44 @@ export default function Course() {
 
         </Box>
         <Box sx={{ flex: 1, backgroundColor: 'black', position: 'relative', minWidth: 0, overflow: 'hidden' }}>
-          {/* <CourseScene meshDataState={meshDataState} worldSize={worldSize} /> */}
-          {/* <CourseScene meshDataState={meshDataState} heightMap={heightMap} worldSize={worldSize} /> */}
-         <CourseScene
-           meshDataState={meshDataState}
-           hiddenLayers={hiddenLayers}
-           ref={courseSceneRef}
-           sunSettings={sunSettings}
-           skySettings={skySettings}
-           outerSettings={outerSettings}
-           worldSize={worldSize}
-           selectedLayer={selectedLayer}
-           onSelect={handleLayerSelect}
-           onLoadingChange={setLoading}
-           placementMode={placingObject}
-           onPlacePoint={handlePlacePoint}
-         />
+          <CourseScene
+            active={active}
+            meshDataState={meshDataState}
+            hiddenLayers={hiddenLayers}
+            ref={courseSceneRef}
+            sunSettings={sunSettings}
+            skySettings={skySettings}
+            outerSettings={outerSettings}
+            worldSize={worldSize}
+            selectedLayer={selectedLayer}
+            onSelect={handleLayerSelect}
+            onLoadingChange={setLoading}
+            placementMode={placingObject}
+            onPlacePoint={handlePlacePoint}
+          />
 
-         {loading && loading.phase !== 'ready' && (
-           <Stack
-             direction="row"
-             spacing={1.5}
-             alignItems="center"
-             sx={{
-               position: 'absolute',
-               top: 16,
-               left: 16,
-               bgcolor: 'rgba(0,0,0,0.7)',
-               color: 'white',
-               px: 2,
-               py: 1,
-               borderRadius: 1,
-             }}
-           >
-             <CircularProgress size={16} color="inherit" />
-             <Typography variant="body2">
+          {loading && loading.phase !== 'ready' && (
+            <Stack
+              direction="row"
+              spacing={1.5}
+              alignItems="center"
+              sx={{
+                position: 'absolute',
+                top: 16,
+                left: 16,
+                bgcolor: 'rgba(0,0,0,0.7)',
+                color: 'white',
+                px: 2,
+                py: 1,
+                borderRadius: 1,
+              }}
+            >
+              <CircularProgress size={16} color="inherit" />
+              <Typography variant="body2">
               {PHASE_LABELS[loading.phase]?.(loading) ?? 'Loading…'}
-             </Typography>
-           </Stack>
-         )}
+              </Typography>
+            </Stack>
+          )}
 
 
           {selectedLayer ? (
