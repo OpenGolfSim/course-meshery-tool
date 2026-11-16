@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppBar, Box, Tab, Tabs, Typography, useTheme } from "@mui/material";
 import TerrainIcon from '@mui/icons-material/Terrain';
 import DrawIcon from '@mui/icons-material/Draw';
@@ -26,18 +26,28 @@ const routes = [
 
 
 function CustomTabPanel(props) {
-  const { children, value, index, style, ...other } = props;
+  const { children, value, index, style, keepMounted = false, ...other } = props;
+  const active = value === index;
+  const [visited, setVisited] = useState(active);
+  useEffect(() => { if (active) setVisited(true); }, [active]);
+  const shouldRender = keepMounted ? visited : active;
 
   return (
     <div
       role="tabpanel"
-      style={{ width: '100%', height: 'calc(100% - 45px)' }}
-      hidden={value !== index}
+      aria-hidden={!active}
+      style={{
+        position: 'absolute',
+        inset: 0,
+        // Keep layout size while hidden so FUSE's ResizeObserver never sees 0x0
+        visibility: active ? 'visible' : 'hidden',
+        pointerEvents: active ? 'auto' : 'none',
+      }}
       id={`simple-tabpanel-${index}`}
       aria-labelledby={`simple-tab-${index}`}
       {...other}
     >
-      {value === index && children}
+      {shouldRender && children}
     </div>
   );
 }
@@ -84,13 +94,15 @@ export default function Workarea() {
         </TopNavTabs>
       </AppBar>
 
-      <CustomTabPanel value={currentTab} index={0}>
-        <Map />
-      </CustomTabPanel>
-      
-      <CustomTabPanel value={currentTab} index={1}>
-        <Course />
-      </CustomTabPanel>
+      <Box sx={{ position: 'relative', width: '100%', height: 'calc(100% - 45px)' }}>
+        <CustomTabPanel value={currentTab} index={0}>
+          <Map />
+        </CustomTabPanel>
+
+        <CustomTabPanel value={currentTab} index={1} keepMounted>
+          <Course active={currentTab === 1} />
+        </CustomTabPanel>
+      </Box>
     </Box>
   )
 }

@@ -7,7 +7,7 @@ import { broadcast, mainWindow } from './window';
 import { ensureRecent } from './app';
 import { generateSVG, geoJSONToSvgPaths, parseSVG } from './svg';
 import { parseRaw } from './heightmap';
-import { generateTerrain, getHeightMapStats } from './terrain';
+import { generateTerrain, getHeightMapStats, importHeightMap } from './terrain';
 import { generateFlowMapPNG, layerToMesh, smoothLakeShores, smoothRiverBeds, smoothTerrain, svgToCourseLayers } from './workers';
 import {
   DEFAULT_MASK_SIZE,

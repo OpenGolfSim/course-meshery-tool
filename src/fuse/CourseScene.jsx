@@ -43,6 +43,7 @@ const qualityLevel = 2;
 
 export default function CourseScene({
   ref,
+  active = true,
   meshDataState,
   heightMap,
   hiddenLayers,
@@ -679,7 +680,7 @@ export default function CourseScene({
 
   useEffect(() => {
     const ctx = sceneRef.current;
-    if (!ctx || !surfacesLoaded) return;
+    if (!ctx || !surfacesLoaded || !active) return;
 
     const hasTrees = project.trees?.length > 0 && heightMap?.data;
     if (hasTrees && !treesLoaded) return;
@@ -716,7 +717,7 @@ export default function CourseScene({
 
     return () => fuseRenderer.renderer.setAnimationLoop(null);
 
-  }, [surfacesLoaded, treesLoaded]);
+  }, [surfacesLoaded, treesLoaded, active]);
 
   // ─── Lightmap preview bake: on load and whenever the scene changes ──
   useEffect(() => {
@@ -909,14 +910,6 @@ export default function CourseScene({
       mesh.visible = !hiddenLayers?.[mesh.name];
     }
   }, [hiddenLayers, surfacesLoaded]);
-
-  useEffect(() => {
-    console.log('[state] project._meshes changed!', project._meshes);
-  }, [project._meshes]);
-
-  useEffect(() => {
-    console.log('[state] meshDataState changed!', project._meshes);
-  }, [meshDataState]);
 
   // Live-apply resolved surface configs (currently: tint) to built materials.
   // Newly built materials read surfaceMap at build time.

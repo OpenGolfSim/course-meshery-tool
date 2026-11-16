@@ -66,8 +66,6 @@ async function resizeTexture(decoded, size) {
 
 function decodeImage(data) {
   const buf = Buffer.from(data);
-  
-  console.log('[decode] magic:', buf.subarray(0, 4).toString('hex'), buf.subarray(8, 12).toString('ascii'));
 
   // JPEG magic bytes: 0xFF 0xD8
   if (buf[0] === 0xFF && buf[1] === 0xD8) {
