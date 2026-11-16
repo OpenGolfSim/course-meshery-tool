@@ -360,8 +360,9 @@ export async function write(filePath, project, meshData, imageData) {
           name: obj.name,
         },
       });
+
       node.setTranslation(obj.position);
-      console.log('obj.scale', obj.scale);
+
       if (Array.isArray(obj.scale)) {
         node.setScale(obj.scale);
       } else if (typeof obj.scale === 'number') {
@@ -378,19 +379,8 @@ export async function write(filePath, project, meshData, imageData) {
     }
   }
 
-
   // Deduplicate any identical textures/materials/meshes
   await doc.transform(dedup());
-
-
-  // const { sky } = openProject.scene;
-  
-  // let sceneSettings = { sky };
-  
-  // // TODO: add support for sky-boxes
-  // if (sky.type === 'clouds') {
-  //   sceneSettings.sky.clouds = sky.clouds;
-  // }
 
   doc.getRoot().setExtras({
     exportedBy: 'OGS-Meshery',
@@ -403,17 +393,6 @@ export async function write(filePath, project, meshData, imageData) {
 
   consolidateBuffers(doc);
 
-  // const uncompressedGlb = await io.writeBinary(doc);
-  // // const worker = await spawn(new Worker('./compress-worker.js'));
-  // // const compressedGlb = await worker.compress(Transfer(uncompressedGlb.buffer));
-  // const compressedGlb = await compressTextures(
-  //   uncompressedGlb,
-  //   { wasmUrl: path.join(EXTRA_RESOURCE_PATH, 'basis/basis_encoder.wasm') },
-  //   (progress) => {
-  //     console.log('compress-progress', progress);
-  //   }
-  // );
-  // const finalDoc = await io.readBinary(new Uint8Array(compressedGlb));
   broadcast('export.progress', { type: 'progress', percent: -1, status: 'Compressing textures to KTX2 format' });
 
   // Lightmap embeds BEFORE compression: it's GPU-sampled (unlike masks /
@@ -429,7 +408,6 @@ export async function write(filePath, project, meshData, imageData) {
   await compressTextures(
     doc,
     (progress) => {
-      console.log('compress-progress', progress);
       broadcast('export.progress', {
         type: 'progress',
         status: `Compressing texture ${progress.current} of ${progress.total}`,
